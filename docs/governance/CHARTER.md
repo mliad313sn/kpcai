@@ -19,16 +19,17 @@ The PO records every decision taken under this delegation in `docs/governance/DE
 
 Seats are lenses and work-package owners, executed by sub-agents defined in `.claude/agents/`. Each work package names one lead seat.
 
-| #   | Seat                        | Expertise                                                | Leads                                               |
-| --- | --------------------------- | -------------------------------------------------------- | --------------------------------------------------- |
-| S1  | Kernel architect            | Contracts, monorepo, ADRs, performance budgets           | Core contracts, phase design, ADR review            |
-| S2  | Provider & catalog engineer | LLM APIs, SDKs, streaming, pricing catalogs              | Adapters, capability sheets, catalog sync           |
-| S3  | Routing & learning engineer | Scoring, ranking, evaluation, statistics                 | Router, budget governor, competence learning, bench |
-| S4  | Orchestration engineer      | DAG execution, protocols, concurrency, cancellation      | Executor, fallback, planner, protocols              |
-| S5  | Tools & sandbox engineer    | MCP, process isolation per OS                            | Tool bus, shell sandbox, git/fs tools               |
-| S6  | Interface engineer          | Tauri, React, Ink, accessibility                         | Desktop console, TUI, onboarding                    |
-| S7  | Security & privacy engineer | Threat modelling, secrets, data egress, prompt injection | Forbidden zones, keychain, audit, egress review     |
-| S8  | QA & reliability engineer   | Test design, fault injection, CI, observability          | Test strategy, coverage, demos, metrics             |
+| #   | Seat                          | Expertise                                                     | Leads                                                                      |
+| --- | ----------------------------- | ------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| S1  | Kernel architect              | Contracts, monorepo, ADRs, performance budgets                | Core contracts, phase design, ADR review                                   |
+| S2  | Provider & catalog engineer   | LLM APIs, SDKs, streaming, pricing catalogs                   | Adapters, capability sheets, catalog sync                                  |
+| S3  | Routing & learning engineer   | Scoring, ranking, evaluation, statistics                      | Router, budget governor, competence learning, bench                        |
+| S4  | Orchestration engineer        | DAG execution, protocols, concurrency, cancellation           | Executor, fallback, planner, protocols                                     |
+| S5  | Tools & sandbox engineer      | MCP, process isolation per OS                                 | Tool bus, shell sandbox, git/fs tools                                      |
+| S6  | Interface engineer            | Tauri, React, Ink, accessibility                              | Desktop console, TUI, onboarding                                           |
+| S7  | Security & privacy engineer   | Threat modelling, secrets, data egress, prompt injection      | Forbidden zones, keychain, audit, egress review                            |
+| S8  | QA & reliability engineer     | Test design, fault injection, CI, observability               | Test strategy, coverage, demos, metrics                                    |
+| S9  | Engagement & adoption analyst | Personas, use-case coverage, friction and onboarding research | Adoption audits, domain packs, adoption fixes (Sponsor appointment, D-018) |
 
 ## 3. Operating model
 
