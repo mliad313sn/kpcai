@@ -6,6 +6,8 @@ import type { Io } from '../io.js';
 export interface StudioOptions {
   port?: number;
   db?: string;
+  /** `--allow-test`: plans and runs may use offline mock providers unless a request says no. */
+  allowTest?: boolean;
 }
 
 /** apps/studio/dist next to this CLI (same relative path from src/ and dist/). */
@@ -30,8 +32,10 @@ export async function studioCommand(io: Io, o: StudioOptions): Promise<number> {
     staticDir: io.env['KPAI_STUDIO_DIST']?.trim() || defaultStaticDir(),
     ...(o.port !== undefined ? { port: o.port } : {}),
     origins,
+    ...(o.allowTest ? { defaults: { allowTest: true } } : {}),
   });
   io.out(`KP Studio: ${server.studioUrl}\n`);
+  if (o.allowTest) io.err('test providers allowed (--allow-test): offline mocks may be routed\n');
   io.err(
     `kernel server on ${server.url} (token also in $KPAI_HOME/server.json) · Ctrl+C to stop\n`,
   );

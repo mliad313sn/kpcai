@@ -34,7 +34,8 @@ Usage:
   kpai discard <run-id>                Remove an isolated run's worktree
   kpai pack list|show|detect|check|init  Domain packs (see kpai pack help)
   kpai tools                           Tools models can use, their risk and source
-  kpai studio [--port N]               Start KP Studio's local kernel server, print its URL
+  kpai studio [--port N] [--allow-test] Start KP Studio's local kernel server, print its URL
+                                       (--allow-test: offline mock providers by default)
   kpai run <request>                   Classify, route by competence, budget-check,
                                        run with automatic fallback, journal everything
   kpai route <request>                 Same plan and routing, dry run (nothing sent)
@@ -183,7 +184,8 @@ const COMMANDS: Readonly<Record<string, Handler>> = {
   run: (io, v, rest) => runCommand(io, runOptions(v, rest)),
   route: (io, v, rest) => routeCommand(io, runOptions(v, rest)),
   tools: (io) => toolsCommand(io),
-  studio: (io, v) => studioCommand(io, { db: v.db, port: portNumber(v.port) }),
+  studio: (io, v) =>
+    studioCommand(io, { db: v.db, port: portNumber(v.port), allowTest: v['allow-test'] }),
   stats: (io, v) => statsCommand(io, { db: v.db, session: v.session }),
   providers: (io) => providersCommand(io),
   ask: (io, v, rest) => askCommand(io, askOptions(v, rest)),

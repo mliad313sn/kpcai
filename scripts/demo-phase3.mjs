@@ -74,7 +74,7 @@ function recordBand(label, estimate, costUsd) {
   const inBand = costUsd >= band.lowUsd && costUsd <= band.highUsd;
   bands.push({ label, ...band, costUsd, inBand });
   console.log(
-    `  cost ${usd(costUsd)} vs band ${usd(band.lowUsd)}–${usd(band.highUsd)} (${band.basis ?? 'min–total'}), cap ${usd(estimate.totalUsd)}: ${inBand ? 'inside' : 'outside'} the band`,
+    `  cost ${usd(costUsd)} vs band ${usd(band.lowUsd)}–${usd(band.highUsd)} (${band.basis ?? 'min–total'}), likely ${usd(estimate.expectedUsd ?? estimate.totalUsd)}, cap ${usd(estimate.capUsd ?? band.highUsd)}: ${inBand ? 'inside' : 'outside'} the band`,
   );
 }
 
@@ -123,7 +123,7 @@ try {
     );
   const b = plan.estimate.band;
   console.log(
-    `  estimate ${usd(b.lowUsd)}–${usd(b.highUsd)} (${b.basis}) · cap ${usd(plan.estimate.totalUsd)}`,
+    `  estimate ${usd(b.lowUsd)}–${usd(b.highUsd)} (${b.basis}) · likely ${usd(plan.estimate.expectedUsd ?? plan.estimate.totalUsd)} · cap ${usd(plan.estimate.capUsd ?? b.highUsd)}`,
   );
   console.log(`  rules: ${plan.rules.files.map((f) => f.path).join(', ')} (${plan.rules.trust})`);
   check(

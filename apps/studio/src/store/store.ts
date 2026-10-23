@@ -4,12 +4,7 @@
  */
 import { createStore, useStore } from 'zustand';
 import type { NotificationName, NotificationParams } from '../rpc/client';
-import {
-  GraphEstimateSchema,
-  GraphEventSchema,
-  TaskGraphSchema,
-  parseArtifacts,
-} from '../rpc/schemas';
+import { GraphEventSchema, TaskGraphSchema, parseArtifacts, parseEstimate } from '../rpc/schemas';
 import { resolveLocale, setLocale, t, type Key } from '../i18n/core';
 import { controlText } from './controls';
 import { loadPrefs, savePrefs } from './prefs';
@@ -28,6 +23,7 @@ export function initialState(): StudioState {
     runs: {},
     sessions: [],
     providers: [],
+    testAllowed: false,
     models: [],
     runOptions: { profile: prefs.profile, ...(prefs.localOnly ? { localOnly: true } : {}) },
     onboardingOpen: false,
@@ -41,6 +37,7 @@ export function initialState(): StudioState {
     tab: 'conversation',
     paletteOpen: false,
     prefs,
+    surface: 'web',
   };
 }
 
@@ -100,9 +97,9 @@ function onRunEvent(p: NotificationParams<'run.event'>): void {
 
 function onPlanned(p: NotificationParams<'run.planned'>): void {
   const graph = TaskGraphSchema.safeParse(p.graph);
-  const estimate = GraphEstimateSchema.safeParse(p.estimate);
-  if (!graph.success || !estimate.success) return log('warn', t('store.badPlan'));
-  updateRun(p.runId, (r) => ({ ...r, graph: graph.data, estimate: estimate.data }));
+  const estimate = parseEstimate(p.estimate, p);
+  if (!graph.success || !estimate) return log('warn', t('store.badPlan'));
+  updateRun(p.runId, (r) => ({ ...r, graph: graph.data, estimate }));
 }
 
 function onDone(p: NotificationParams<'run.done'>): void {
@@ -113,7 +110,8 @@ function onDone(p: NotificationParams<'run.done'>): void {
     artifacts,
     ...(p.worktree ? { worktree: p.worktree } : {}),
   }));
-  if (p.patches.length) announce(t('run.announce.patches', { count: p.patches.length }));
+  const key = studio.getState().surface === 'tui' ? 'tui.announce.patches' : 'run.announce.patches';
+  if (p.patches.length) announce(t(key, { count: p.patches.length }));
 }
 
 function onControl(p: NotificationParams<'run.control'>): void {

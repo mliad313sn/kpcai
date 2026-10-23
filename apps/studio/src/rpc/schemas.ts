@@ -97,8 +97,41 @@ export const GraphEstimateSchema = z.looseObject({
   complete: z.boolean(),
   problems: z.array(z.string()).default([]),
   band: BandSchema.optional(),
+  /** D-021: the likely cost and the hard cap (the band's top), when the kernel sends them. */
+  expectedUsd: z.number().optional().catch(undefined),
+  capUsd: z.number().optional().catch(undefined),
 });
 export type GraphEstimate = z.infer<typeof GraphEstimateSchema>;
+
+const COST_KEYS = { expectedUsd: ['expectedUsd', 'expected'], capUsd: ['capUsd', 'cap'] } as const;
+
+function costNumber(o: unknown, keys: readonly string[]): number | undefined {
+  if (!o || typeof o !== 'object') return undefined;
+  for (const k of keys) {
+    const v = (o as Record<string, unknown>)[k];
+    if (typeof v === 'number' && Number.isFinite(v) && v >= 0) return v;
+  }
+  return undefined;
+}
+
+/**
+ * An estimate with its D-021 figures read leniently: `expectedUsd`/`expected` and
+ * `capUsd`/`cap`, on the estimate or on the result that carries it (plan, run.planned,
+ * plan.validate). The estimate's own fields win. Undefined when the estimate is invalid.
+ */
+export function parseEstimate(raw: unknown, container?: unknown): GraphEstimate | undefined {
+  const parsed = GraphEstimateSchema.safeParse(raw);
+  if (!parsed.success) return undefined;
+  const est = { ...parsed.data };
+  for (const [field, keys] of Object.entries(COST_KEYS) as Array<
+    [keyof typeof COST_KEYS, readonly string[]]
+  >) {
+    const v = costNumber(raw, keys) ?? costNumber(container, keys);
+    if (v === undefined) delete est[field];
+    else est[field] = v;
+  }
+  return est;
+}
 
 const VerdictSchema = z.looseObject({
   approve: z.boolean(),
@@ -185,11 +218,16 @@ const ProviderSchema = z.looseObject({
   models: z.array(z.union([z.string(), z.looseObject({ id: z.string() })])).default([]),
 });
 
+/** Descriptor kind; `unknown` when a kernel does not say (shown as "cloud?"). */
+export type ProviderKind = 'local' | 'cloud' | 'test' | 'unknown';
+
+const KINDS = new Set<string>(['local', 'cloud', 'test']);
+
 export interface ProviderView {
   id: string;
   name: string;
-  /** `cloud`, `local` or `test` (descriptor kind); `local` costs nothing. */
-  kind: string;
+  /** `local` costs nothing; `test` providers are offline fakes, hidden unless allowed. */
+  kind: ProviderKind;
   available: boolean;
   reason: string;
   models: string[];
@@ -211,7 +249,7 @@ export function parseProviders(raw: unknown): ProviderView[] {
       {
         id: d.id,
         name: d.name ?? d.id,
-        kind: d.kind ?? 'cloud',
+        kind: d.kind && KINDS.has(d.kind) ? (d.kind as ProviderKind) : 'unknown',
         available: d.available !== false,
         reason: d.reason ?? '',
         models,
@@ -220,9 +258,27 @@ export function parseProviders(raw: unknown): ProviderView[] {
   });
 }
 
-/** Models of the available providers, as provider/model refs (model suggestions). */
-export function parseModels(raw: unknown): Ref[] {
-  return parseProviders(raw).flatMap((p) =>
+/**
+ * True when the server says test providers may be used (`kpai studio --allow-test`): a
+ * top-level `testAllowed: true` on the `providers.list` result.
+ */
+export function serverAllowsTest(raw: unknown): boolean {
+  return (
+    !!raw &&
+    typeof raw === 'object' &&
+    !Array.isArray(raw) &&
+    (raw as { testAllowed?: unknown }).testAllowed === true
+  );
+}
+
+/** Rows to show: `test` providers only when they are allowed (S8 bug 4). */
+export function visibleProviders(rows: ProviderView[], allowTest: boolean): ProviderView[] {
+  return allowTest ? rows : rows.filter((p) => p.kind !== 'test');
+}
+
+/** Models of the available, visible providers, as provider/model refs (model pickers). */
+export function parseModels(raw: unknown, allowTest = false): Ref[] {
+  return visibleProviders(parseProviders(raw), allowTest).flatMap((p) =>
     p.available ? p.models.map((model) => ({ provider: p.id, model })) : [],
   );
 }

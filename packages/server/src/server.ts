@@ -14,6 +14,7 @@ import {
   SUBPROTOCOL,
   parseNotification,
   type NotificationName,
+  type RunOptions,
 } from '@kernelpai/kernel/protocol';
 import { WebSocketServer, type WebSocket } from 'ws';
 import {
@@ -46,6 +47,11 @@ export interface ServerOptions {
   token?: string;
   /** Write `$KPAI_HOME/server.json` (default true). */
   serverFile?: boolean;
+  /**
+   * Default `RunOptions` of every plan and run that does not set them (`kpai studio
+   * --allow-test`: offline mock providers, for demos). A request's own options win.
+   */
+  defaults?: Pick<RunOptions, 'allowTest'>;
 }
 
 export interface KernelServer {
@@ -63,7 +69,12 @@ export async function startServer(o: ServerOptions): Promise<KernelServer> {
   const broadcast = broadcaster(clients);
   const broker = new ConfirmBroker(broadcast, o.confirmTimeoutMs ?? DEFAULT_CONFIRM_TIMEOUT_MS);
   const kernel = new Kernel(kernelHost(o, broker, broadcast));
-  const h = handlers({ kernel, broker, watch: (r) => watchRun(r, broadcast) });
+  const h = handlers({
+    kernel,
+    broker,
+    watch: (r) => watchRun(r, broadcast),
+    defaults: o.defaults ?? {},
+  });
   const http = createServer((req, res) => {
     if (!isLoopbackHost(req.headers.host, port())) {
       res.writeHead(421).end();

@@ -10,7 +10,12 @@ describe('terminal keys', () => {
     expect(keyAction('', { return: true }, false)).toEqual({ kind: 'submit' });
     expect(keyAction('', { backspace: true }, false)).toEqual({ kind: 'backspace' });
     expect(keyAction('', { tab: true }, false)).toEqual({ kind: 'nextNode' });
-    expect(keyAction('', { escape: true }, false)).toEqual({ kind: 'none' });
+    expect(keyAction('', { escape: true }, false)).toEqual({ kind: 'escape' });
+    expect(keyAction('', { meta: true }, false)).toEqual({ kind: 'none' });
+    expect(keyAction('o', { ctrl: true }, false)).toEqual({ kind: 'diff' });
+    expect(keyAction('a', { ctrl: true }, false)).toEqual({ kind: 'apply' });
+    expect(keyAction('n', { ctrl: true }, false)).toEqual({ kind: 'instruct' });
+    expect(keyAction('t', { ctrl: true }, false)).toEqual({ kind: 'redirect' });
     expect(keyAction('r', { ctrl: true }, false)).toEqual({ kind: 'run' });
     expect(keyAction('z', { ctrl: true }, false)).toEqual({ kind: 'none' });
     expect(keyAction('q', { ctrl: true }, false)).toEqual({ kind: 'quit' });

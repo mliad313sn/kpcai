@@ -45,11 +45,13 @@ describe('protocol results and extensions (ADR-0019)', () => {
     const { parseResult } = await import('./protocol.js');
     expect(parseResult('run.start', { runId: 'r' })).toMatchObject({ ok: true });
     expect(parseResult('run.start', {})).toMatchObject({ ok: false });
+    const provider = { id: 'p', kind: 'test', available: true, models: [{ id: 'm', extra: 1 }] };
     expect(
-      parseResult('providers.list', {
-        providers: [{ id: 'p', available: true, models: [{ id: 'm', extra: 1 }] }],
-      }),
-    ).toMatchObject({ ok: true, value: { providers: [{ models: [{ extra: 1 }] }] } });
+      parseResult('providers.list', { providers: [provider], testAllowed: false }),
+    ).toMatchObject({ ok: true, value: { providers: [{ kind: 'test', models: [{ extra: 1 }] }] } });
+    // A console hides test providers by kind: a provider without one is refused.
+    const kindless = { ...provider, kind: undefined };
+    expect(parseResult('providers.list', { providers: [kindless] }).ok).toBe(false);
     expect(
       parseResult('sessions.list', { sessions: [{ id: 's', createdAt: 't', title: 'x' }] }),
     ).toMatchObject({ ok: true });
@@ -63,6 +65,18 @@ describe('protocol results and extensions (ADR-0019)', () => {
           expectedUsd: 0,
           reason: 'r',
           score: 1,
+          steps: [
+            {
+              role: 'critic',
+              ref: { provider: 'p', model: 'm' },
+              calls: { min: 1, max: 4 },
+              minUsd: 0,
+              expectedUsd: 0,
+              reason: 'r',
+              score: 0.5,
+              runnerUp: { ref: { provider: 'q', model: 'm' }, score: 0.4 },
+            },
+          ],
         },
       ],
       minUsd: 0,
@@ -70,9 +84,17 @@ describe('protocol results and extensions (ADR-0019)', () => {
       complete: true,
       problems: [],
       band: { lowUsd: 0, highUsd: 1, basis: 'heuristic' },
+      expectedUsd: 0,
+      capUsd: 1,
     };
     const graph = { id: 'g', request: 'r', nodes: [], createdBy: 'template', reason: '' };
-    expect(parseResult('plan', { planId: 'p', graph, estimate })).toMatchObject({ ok: true });
+    expect(parseResult('plan', { planId: 'p', graph, estimate })).toMatchObject({
+      ok: true,
+      value: { estimate: { capUsd: 1, nodes: [{ steps: [{ runnerUp: { score: 0.4 } }] }] } },
+    });
+    const badStep = { ...estimate.nodes[0], steps: [{ role: 'critic' }] };
+    const bad = { ...estimate, nodes: [badStep] };
+    expect(parseResult('plan', { planId: 'p', graph, estimate: bad }).ok).toBe(false);
   });
 
   it('carries routing data, tokens, patches and control events', async () => {

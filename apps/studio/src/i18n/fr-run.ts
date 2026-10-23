@@ -41,9 +41,9 @@ export const frRun: Record<keyof typeof enRun, Message> = {
   'fail.discard': 'L’abandon de l’exécution a échoué : {error}',
   'fail.artifacts': 'L’enregistrement des livrables a échoué : {error}',
   'plan.announce.ready': {
-    one: 'Plan prêt : {count} nœud, de {low} à {high}. Choisissez un nœud pour le modifier, puis appuyez sur Lancer.',
+    one: 'Plan prêt : {count} nœud, probablement {expected}, au plus {cap}. Choisissez un nœud pour le modifier, puis appuyez sur Lancer.',
     other:
-      'Plan prêt : {count} nœuds, de {low} à {high}. Choisissez un nœud pour le modifier, puis appuyez sur Lancer.',
+      'Plan prêt : {count} nœuds, probablement {expected}, au plus {cap}. Choisissez un nœud pour le modifier, puis appuyez sur Lancer.',
   },
   'plan.announce.discarded': 'Plan abandonné',
   'plan.announce.removed': 'Nœud {id} retiré du plan',
@@ -104,10 +104,11 @@ export const frRun: Record<keyof typeof enRun, Message> = {
   'cost.basis.calibrated': 'calibrée sur vos exécutions passées',
   'cost.basis.heuristic': 'heuristique : pas encore de calibration',
   'cost.basis.mixed': 'en partie calibrée',
-  'cost.band': 'Estimation {range} ({basis}) · plafond {cap}',
+  'cost.band': 'Estimation : probablement {expected} · au plus {cap} (plafond strict) · {basis}',
   'cost.soFar': 'Coût à ce stade {cost}',
   'cost.spent': 'Dépensé {cost} sur un plafond de {cap}',
-  'cost.valuetext': '{cost} dépensés, {pct} % du plafond, fourchette {range}',
+  'cost.valuetext':
+    '{cost} dépensés, {pct} % du plafond, probablement {expected}, fourchette {range}',
   'cost.above': 'au-dessus de la fourchette {range}',
   'cost.bandOnly': 'fourchette {range}',
   'thread.run': 'Exécution',

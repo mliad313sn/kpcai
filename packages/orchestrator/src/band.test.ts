@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { Journal } from '@kernelpai/journal';
-import { HEURISTIC_SPREAD, outputSpread, quantile, stepBand, sumBands } from './band.js';
+import {
+  HEURISTIC_INPUT_RATIO,
+  HEURISTIC_SPREAD,
+  outputSpread,
+  quantile,
+  stepBand,
+  sumBands,
+} from './band.js';
 import { estimateGraph } from './estimate.js';
 import { RoleAdapter, friendly, gnode, graph, setup } from './test-helpers/fakes.js';
 
@@ -12,12 +19,17 @@ function journalWith(outs: number[], extra: Record<string, unknown> = {}) {
   outs.forEach((out, i) => {
     const base = { sessionId, nodeId: 'n1', provider: 'a', model: 'm' };
     const requestId = `r${i}`;
-    journal.append({ ...base, type: 'call', payload: { requestId, taskType: 'analysis' } });
+    journal.append({
+      ...base,
+      type: 'call',
+      payload: { requestId, taskType: 'analysis', estimatedInputTokens: 100 },
+    });
     journal.append({
       ...base,
       type: 'response',
       payload: {
         requestId,
+        inputTokens: 100,
         outputTokens: out,
         usageBasis: 'reported',
         stopReason: 'end',
@@ -41,11 +53,16 @@ describe('outputSpread (R-302)', () => {
   it('learns low, median and high output per model and task type from the journal', () => {
     const j = journalWith([100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1100]);
     const s = outputSpread(j)(A, 'analysis');
-    expect(s).toEqual({ low: 200, median: 600, high: 1000, samples: 11 });
+    const one = { low: 1, high: 1 }; // reported = estimated input
+    expect(s).toEqual({ low: 150, median: 600, high: 1050, samples: 11, inputRatio: one });
+    expect(outputSpread(j, { lowQuantile: 0.1, highQuantile: 0.9 })(A, 'analysis')).toMatchObject({
+      low: 200,
+      high: 1000,
+    });
     expect(outputSpread(j)(A, 'code_generation')).toBeUndefined();
     expect(
       outputSpread(j, { window: 2, minSamples: 2, lowQuantile: 0, highQuantile: 1 })(A, 'analysis'),
-    ).toEqual({ low: 1000, median: 1050, high: 1100, samples: 2 });
+    ).toEqual({ low: 1000, median: 1050, high: 1100, samples: 2, inputRatio: one });
   });
 
   it('needs minSamples and ignores estimated, cancelled and unmatched responses', () => {
@@ -83,16 +100,23 @@ describe('stepBand / sumBands', () => {
 
   it('uses the heuristic spread around the expected output without history', () => {
     const b = stepBand(card, estimate, { min: 1, max: 3 }, undefined);
-    expect(HEURISTIC_SPREAD).toEqual({ low: 0.5, high: 2 });
-    expect(b.perCallLowUsd).toBeCloseTo(0.001 + 125 * 2e-6, 9);
-    expect(b.perCallHighUsd).toBeCloseTo(0.001 + 500 * 2e-6, 9);
+    expect(HEURISTIC_SPREAD).toEqual({ low: 0.01, high: 2 });
+    expect(HEURISTIC_INPUT_RATIO).toEqual({ low: 0.8, high: 1.25 });
+    expect(b.perCallLowUsd).toBeCloseTo(0.0008 + 2.5 * 2e-6, 9);
+    expect(b.perCallHighUsd).toBeCloseTo(0.00125 + 500 * 2e-6, 9);
     expect(b).toMatchObject({ basis: 'heuristic', samples: 0 });
     expect(b.lowUsd).toBeCloseTo(b.perCallLowUsd, 9);
     expect(b.highUsd).toBeCloseTo(3 * b.perCallHighUsd, 9);
   });
 
   it('uses the calibration spread, clipped to the output cap', () => {
-    const spread = { low: 100, median: 400, high: 5000, samples: 7 };
+    const spread = {
+      low: 100,
+      median: 400,
+      high: 5000,
+      samples: 7,
+      inputRatio: { low: 1, high: 1 },
+    };
     const b = stepBand(card, estimate, { min: 0, max: 2 }, spread);
     expect(b.perCallLowUsd).toBeCloseTo(0.001 + 100 * 2e-6, 9);
     expect(b.perCallHighUsd).toBeCloseTo(0.001 + 1000 * 2e-6, 9);

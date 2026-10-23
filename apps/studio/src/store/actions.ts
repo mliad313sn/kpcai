@@ -2,13 +2,16 @@
 import type { MethodName, MethodResult, Params } from '../rpc/client';
 import {
   PlanResultSchema,
+  parseEstimate,
   parseModels,
   parseProviders,
   parseSessions,
+  serverAllowsTest,
   type Ref,
 } from '../rpc/schemas';
 import { t, type Key } from '../i18n/core';
 import { helpText, parseInput } from './commands';
+import { costOf } from './cost';
 import { formatUsd } from './format';
 import { newRun } from './reducer';
 import { announce, log, patch, studio, updateRun } from './store';
@@ -53,7 +56,8 @@ export async function requestPlan(request: string): Promise<void> {
     const raw = await call('plan', { request, options }, PLAN_TIMEOUT_MS);
     const parsed = PlanResultSchema.safeParse(raw);
     if (!parsed.success) throw new Error(t('error.badPlan'));
-    const { planId, graph, estimate } = parsed.data;
+    const { planId, graph } = parsed.data;
+    const estimate = parseEstimate(raw.estimate, raw) ?? parsed.data.estimate;
     const plan = {
       planId,
       request,
@@ -66,12 +70,12 @@ export async function requestPlan(request: string): Promise<void> {
       ...(raw.scope ? { scope: raw.scope } : {}),
     };
     patch({ plan, selectedNodeId: undefined });
-    const band = estimate.band ?? { lowUsd: estimate.minUsd, highUsd: estimate.totalUsd };
+    const cost = costOf(estimate);
     announce(
       t('plan.announce.ready', {
         count: graph.nodes.length,
-        low: formatUsd(band.lowUsd),
-        high: formatUsd(band.highUsd),
+        expected: formatUsd(cost.expected),
+        cap: formatUsd(cost.cap),
       }),
     );
   } catch (e) {
@@ -189,7 +193,8 @@ export async function loadSessions(): Promise<void> {
 export async function loadModels(): Promise<void> {
   try {
     const raw = await call('providers.list', {});
-    patch({ providers: parseProviders(raw), models: parseModels(raw) });
+    const testAllowed = serverAllowsTest(raw) || studio.getState().runOptions.allowTest === true;
+    patch({ providers: parseProviders(raw), testAllowed, models: parseModels(raw, testAllowed) });
   } catch (e) {
     fail('fail.models', e);
   }

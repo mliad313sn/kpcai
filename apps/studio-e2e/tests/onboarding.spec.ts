@@ -22,7 +22,7 @@ test('first run: providers, profile, $0 path and a guided first task', async ({ 
 
   await expect(dialog).toBeHidden();
   await expect(page.locator('.plan-bar')).toBeVisible();
-  await expect(page.locator('.plan-bar')).toContainText(/Estimate \$/);
+  await expect(page.locator('.plan-bar')).toContainText(/Estimate: likely \$/);
 
   // The choice is kept: a reload goes straight to the console.
   const prefs = await page.evaluate(() => localStorage.getItem('kp-studio.prefs'));

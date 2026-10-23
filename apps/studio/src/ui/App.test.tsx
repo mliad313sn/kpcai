@@ -12,7 +12,7 @@ afterEach(() => teardown(kernel));
 
 async function planAndRun(user: ReturnType<typeof userEvent.setup>) {
   await user.type(screen.getByRole('combobox', { name: /Ask KP Studio/ }), 'add OAuth{Enter}');
-  const run = await screen.findByRole('button', { name: 'Run (cap $0.40)' });
+  const run = await screen.findByRole('button', { name: 'Run (cap $0.50)' });
   await user.click(run);
   await until(() => studio.getState().activeRunId === 'r1');
 }
@@ -38,11 +38,11 @@ describe('KP Studio layout', () => {
     const thread = screen.getByRole('region', { name: 'Execution thread' });
     await within(thread).findByText('Design the OAuth flow');
     expect(within(thread).getAllByText('planned').length).toBeGreaterThanOrEqual(3);
-    expect(within(thread).getByText(/Estimate \$0\.12–\$0\.35/)).toBeTruthy();
+    expect(within(thread).getByText(/Estimate: likely \$0\.40 · at most \$0\.50/)).toBeTruthy();
     expect(within(thread).getByText('est. $0.09–$0.30')).toBeTruthy();
     expect(kernel.calls('run.start')).toEqual([]);
     expect(screen.getByRole('status').textContent).toMatch(/Plan ready/);
-    await user.click(screen.getByRole('button', { name: 'Run (cap $0.40)' }));
+    await user.click(screen.getByRole('button', { name: 'Run (cap $0.50)' }));
     await until(() => kernel!.calls('run.start').length === 1);
   });
 

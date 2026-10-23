@@ -11,11 +11,10 @@ import {
   type Router,
   type RoutingDecision,
   type ScoreParts,
-  type TaskGraph,
+  type ScoredCandidate,
 } from '@kernelpai/core';
 import type { Journal, JournalEventInput } from '@kernelpai/journal';
-import type { GraphEstimate, NodeEstimate, PlannedNode } from '@kernelpai/orchestrator';
-import type { GraphSetup } from './setup.js';
+import type { GraphEstimate, NodeEstimate, StepEstimate } from '@kernelpai/orchestrator';
 
 export interface RoutingExplained {
   /** The router's one-line justification (principle 1). */
@@ -25,10 +24,22 @@ export interface RoutingExplained {
   runnerUp?: { ref: ModelRef; score: number };
 }
 
-/** A plan estimate whose nodes may carry their routing explanation. */
+/**
+ * A plan estimate as the kernel presents it: each node and each planned step may carry its
+ * routing explanation (R-303), and the two cost figures of D-021 (ADR-0026).
+ */
 export type ExplainedEstimate = Omit<GraphEstimate, 'nodes'> & {
-  nodes: Array<NodeEstimate & RoutingExplained>;
+  nodes: Array<Omit<NodeEstimate, 'steps'> & RoutingExplained & { steps: ExplainedStep[] }>;
+  /** The likely cost: the sum of the nodes' expected costs (`totalUsd`). */
+  expectedUsd: number;
+  /**
+   * The most the run may spend without asking again: the top of the band (D-021). It is
+   * what the user approves, what the graph budget check uses and the run's `maxGraphUsd`.
+   */
+  capUsd: number;
 };
+
+export type ExplainedStep = StepEstimate & RoutingExplained;
 
 /** A live event, possibly with routing data (node_state) or token counts (contribution). */
 export type KernelEvent = GraphEvent & {
@@ -43,38 +54,103 @@ export const USER_CHOICE = 'model chosen by the user (no automatic fallback)';
 const same = (a: ModelRef, b: ModelRef): boolean =>
   a.provider === b.provider && a.model === b.model;
 
-function explain(d: RoutingDecision): RoutingExplained {
-  const second = d.fallbacks[0];
+/** The decision's candidates, best first. */
+const ranked = (d: RoutingDecision): ScoredCandidate[] => [d.chosen, ...d.fallbacks];
+
+/**
+ * Explains `ref` from a decision that offered it. The chosen model gets the router's reason;
+ * a lower-ranked one (a revision or rebuttal kept on its author's model) says so.
+ */
+function explainRef(d: RoutingDecision, ref: ModelRef): RoutingExplained {
+  const all = ranked(d);
+  const i = all.findIndex((c) => same(c.ref, ref));
+  const own = all[i] as ScoredCandidate;
+  const other = all.find((c) => !same(c.ref, ref));
   return {
-    reason: d.reason,
-    score: d.chosen.score,
-    parts: d.chosen.parts,
-    ...(second ? { runnerUp: { ref: second.ref, score: second.score } } : {}),
+    reason:
+      i === 0
+        ? d.reason
+        : `kept on the author's model ${refToString(ref)} (ranked #${i + 1}); ${d.reason}`,
+    score: own.score,
+    parts: own.parts,
+    ...(other ? { runnerUp: { ref: other.ref, score: other.score } } : {}),
   };
 }
 
 /**
- * Adds each node's routing reason to the estimate when the router, asked about the node
- * as planned, picks the same first model as the estimate (otherwise nothing is claimed).
+ * A router that records every decision it returns, per node and in order. The estimator is
+ * given one, so a plan is explained with exactly the decisions it was priced on: the same
+ * prompts, task types and per-step constraints (critic, judge and voter exclusions, a
+ * review away from upstream providers, pinned models, pack rules in front of each node).
  */
-export function explainEstimate(
-  graph: TaskGraph,
-  est: GraphEstimate,
-  s: GraphSetup,
-): ExplainedEstimate {
-  const nodes = est.nodes.map((e) => {
-    const node = graph.nodes.find((n) => n.id === e.nodeId);
-    if (!node || !e.ref) return e;
-    const pinned = (node as PlannedNode).model;
-    if (pinned && same(pinned, e.ref)) return { ...e, reason: USER_CHOICE };
-    try {
-      const d = s.router.route(node, s.candidates, s.constraints);
-      return same(d.chosen.ref, e.ref) ? { ...e, ...explain(d) } : e;
-    } catch {
-      return e;
-    }
+export class DecisionLog implements Router {
+  private readonly byNode = new Map<string, RoutingDecision[]>();
+
+  constructor(private readonly inner: Router) {}
+
+  route(...args: Parameters<Router['route']>): RoutingDecision {
+    const d = this.inner.route(...args);
+    const list = this.byNode.get(d.nodeId) ?? [];
+    list.push(d);
+    this.byNode.set(d.nodeId, list);
+    return d;
+  }
+
+  of(nodeId: string): readonly RoutingDecision[] {
+    return this.byNode.get(nodeId) ?? [];
+  }
+}
+
+/**
+ * The estimator routes each step once, in step order, and only successful routes are
+ * recorded; each step is matched to the next recorded decision that offered its model.
+ */
+function explainSteps(
+  steps: readonly StepEstimate[],
+  decisions: readonly RoutingDecision[],
+  pinned: ModelRef | undefined,
+): ExplainedStep[] {
+  let at = 0;
+  return steps.map((s, i) => {
+    const k = decisions.findIndex((d, j) => j >= at && ranked(d).some((c) => same(c.ref, s.ref)));
+    if (k < 0) return s;
+    at = k + 1;
+    const e = explainRef(decisions[k] as RoutingDecision, s.ref);
+    // The pinned first step was routed among the user's model only (principle 4).
+    return i === 0 && pinned && same(pinned, s.ref)
+      ? { ...s, ...e, reason: USER_CHOICE }
+      : { ...s, ...e };
   });
-  return { ...est, nodes };
+}
+
+/** The node's own explanation is its first step's. */
+function nodeExplained(steps: readonly ExplainedStep[]): RoutingExplained {
+  const f = steps[0];
+  if (!f?.reason) return {};
+  return {
+    reason: f.reason,
+    ...(f.score !== undefined ? { score: f.score } : {}),
+    ...(f.parts ? { parts: f.parts } : {}),
+    ...(f.runnerUp ? { runnerUp: f.runnerUp } : {}),
+  };
+}
+
+/**
+ * The estimate as the kernel presents it: every planned step with the routing decision it
+ * was priced on (R-303), each node with its first step's, and the likely and cap figures
+ * (D-021). `log` must be the router the estimator was given.
+ */
+export function explainEstimate(est: GraphEstimate, log: DecisionLog): ExplainedEstimate {
+  const nodes = est.nodes.map((e) => {
+    const steps = explainSteps(e.steps, log.of(e.nodeId), e.pinned);
+    return { ...e, steps, ...nodeExplained(steps) };
+  });
+  return { ...est, nodes, ...costFigures(est) };
+}
+
+/** Likely and cap figures of an estimate (D-021, ADR-0026). */
+export function costFigures(est: GraphEstimate): { expectedUsd: number; capUsd: number } {
+  return { expectedUsd: est.totalUsd, capUsd: est.band.highUsd };
 }
 
 /** A router that remembers its recent decisions per node, to explain live events. */

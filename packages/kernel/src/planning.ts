@@ -13,7 +13,7 @@ import {
 import { BudgetGate, type GateHost } from './budget-gate.js';
 import { money } from './env.js';
 import { KernelError } from './errors.js';
-import { explainEstimate } from './routing-info.js';
+import { DecisionLog, explainEstimate, type ExplainedEstimate } from './routing-info.js';
 import type { Env } from './env.js';
 import { busPacks, noPacks, policyFor, selectPacks, type SelectedPacks } from './packs.js';
 import { loadRules, withNodeContext, type LoadedRules } from './rules.js';
@@ -26,10 +26,17 @@ export interface PlanningContext {
   journal: Journal;
 }
 
-/** Estimate inputs of a plan; the band uses the output spread learned from this journal. */
-function estimateDeps(s: GraphSetup, o: GraphOptions, journal: Journal): EstimateDeps {
+/**
+ * Estimate inputs of a plan; the band uses the output spread learned from this journal.
+ * The router records its decisions so the plan is explained with them (R-303).
+ */
+function estimateDeps(
+  s: GraphSetup,
+  o: GraphOptions,
+  journal: Journal,
+): EstimateDeps & { router: DecisionLog } {
   return {
-    router: s.router,
+    router: new DecisionLog(s.router),
     candidates: s.candidates,
     constraints: s.constraints,
     allowSameProvider: o.allowSameProvider === true,
@@ -62,8 +69,8 @@ export async function makePlan(
   const graph = await planner.plan(request, { root: host.cwd });
   const scope = await checkScope(packs.selected, host.cwd, options.scope, graph.nodes);
   // Estimated as it will run: with the rules in front of each node.
-  const est = estimateGraph(runnable(graph, rules), estimateDeps(setup, options, journal));
-  const estimate = explainEstimate(graph, est, setup);
+  const deps = estimateDeps(setup, options, journal);
+  const estimate = explainEstimate(estimateGraph(runnable(graph, rules), deps), deps.router);
   const base = { planId: randomUUID(), sessionId, request, graph, estimate, options, setup, m };
   return { ...base, rules, packs, scope };
 }
@@ -84,15 +91,19 @@ export function runnable(graph: TaskGraph, rules: LoadedRules): TaskGraph {
   return withNodeContext(graph, { rules: rules.text });
 }
 
+/** A plan check whose estimate is explained and carries the likely and cap figures. */
+export type KernelPlanCheck = Omit<PlanCheck, 'estimate'> & { estimate?: ExplainedEstimate };
+
 /**
  * Checks a plan the user edited (R-301): untrusted JSON, validated and re-estimated by the
- * orchestrator against the plan as proposed. The graph keeps the proposal's id and request.
+ * orchestrator against the plan as proposed, with the plan's own options (a test provider
+ * stays refused unless the plan allowed it). The graph keeps the proposal's id and request.
  */
 export function checkEdit(
   plan: Plan,
   edited: unknown,
   journal: Journal,
-): { check: PlanCheck; graph: TaskGraph } {
+): { check: KernelPlanCheck; graph: TaskGraph } {
   const g = (edited ?? {}) as Partial<TaskGraph>;
   const graph: TaskGraph = {
     ...plan.graph,
@@ -100,10 +111,12 @@ export function checkEdit(
     id: plan.graph.id,
     request: plan.request,
   };
-  const check = validatePlan(runnable(graph, plan.rules), {
-    ...estimateDeps(plan.setup, plan.options, journal),
+  const deps = estimateDeps(plan.setup, plan.options, journal);
+  const { estimate, ...rest } = validatePlan(runnable(graph, plan.rules), {
+    ...deps,
     original: runnable(plan.graph, plan.rules),
   });
+  const check = estimate ? { ...rest, estimate: explainEstimate(estimate, deps.router) } : rest;
   return { check, graph };
 }
 
@@ -113,6 +126,5 @@ export function editedPlan(plan: Plan, edited: unknown, journal: Journal): Plan 
   if (!check.ok || !check.estimate) {
     throw new KernelError('invalid', `the edited plan cannot run: ${check.problems.join('; ')}`);
   }
-  const estimate = explainEstimate(graph, check.estimate, plan.setup);
-  return { ...plan, graph, estimate, edits: check.changes };
+  return { ...plan, graph, estimate: check.estimate, edits: check.changes };
 }

@@ -1,8 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import type { Router, RoutingDecision, ScoredCandidate } from '@kernelpai/core';
 import { Journal } from '@kernelpai/journal';
-import { RouterTap, UsageTap, annotate, explainEstimate } from './routing-info.js';
-import type { GraphSetup } from './setup.js';
+import {
+  DecisionLog,
+  RouterTap,
+  USER_CHOICE,
+  UsageTap,
+  annotate,
+  explainEstimate,
+} from './routing-info.js';
 
 const cand = (provider: string, score: number): ScoredCandidate =>
   ({ ref: { provider, model: 'm' }, score, parts: {}, estimate: {} }) as ScoredCandidate;
@@ -69,31 +75,47 @@ describe('routing info', () => {
     raw.close();
   });
 
-  it('claims no reason when the router would pick another model or throws', () => {
-    const graph = { nodes: [{ id: 'n' }, { id: 'p', model: { provider: 'z', model: 'm' } }] };
+  it('explains every step with the decision the estimator priced it on', () => {
+    // Recorded as the estimator routes: author, critic (author excluded), revision.
+    const answers = [
+      decision('n', cand('a', 0.9), cand('b', 0.7)),
+      decision('n', cand('b', 0.8), cand('c', 0.6)),
+      decision('n', cand('b', 0.85), cand('a', 0.9)),
+      decision('p', cand('z', 0.5)),
+    ];
+    const log = new DecisionLog({ route: () => answers.shift() as RoutingDecision });
+    for (let i = 0; i < 4; i++) log.route({ id: 'x' } as never, []);
+    const step = (role: string, provider: string) => ({ role, ref: { provider, model: 'm' } });
     const est = {
+      totalUsd: 0.4,
+      band: { lowUsd: 0.1, highUsd: 0.9, basis: 'heuristic' },
       nodes: [
-        { nodeId: 'n', ref: { provider: 'b', model: 'm' } },
-        { nodeId: 'p', ref: { provider: 'z', model: 'm' } },
-        { nodeId: 'gone', ref: null },
+        {
+          nodeId: 'n',
+          ref: { provider: 'a', model: 'm' },
+          steps: [step('author', 'a'), step('critic', 'b'), step('revision', 'a')],
+        },
+        {
+          nodeId: 'p',
+          ref: { provider: 'z', model: 'm' },
+          pinned: { provider: 'z', model: 'm' },
+          steps: [step('solo', 'z'), step('critic', 'nobody')],
+        },
+        { nodeId: 'gone', ref: null, steps: [] },
       ],
     };
-    const setup = (route: Router['route']): GraphSetup =>
-      ({ router: { route }, candidates: [], constraints: {} }) as unknown as GraphSetup;
-    const other = explainEstimate(
-      graph as never,
-      est as never,
-      setup((n) => decision(n.id, cand('a', 1))),
-    );
-    expect(other.nodes[0]).not.toHaveProperty('reason');
-    expect(other.nodes[1]?.reason).toMatch(/chosen by the user/);
-    const boom = explainEstimate(
-      graph as never,
-      est as never,
-      setup(() => {
-        throw new Error('x');
-      }),
-    );
-    expect(boom.nodes[0]).not.toHaveProperty('reason');
+    const out = explainEstimate(est as never, log);
+    const [n, p, gone] = out.nodes;
+    expect(n?.steps.map((x) => [x.reason, x.score, x.runnerUp?.ref.provider])).toEqual([
+      ['a wins', 0.9, 'b'],
+      ['b wins', 0.8, 'c'],
+      ["kept on the author's model a/m (ranked #2); b wins", 0.9, 'b'],
+    ]);
+    expect(n).toMatchObject({ reason: 'a wins', score: 0.9, runnerUp: { score: 0.7 } });
+    expect(p?.reason).toBe(USER_CHOICE);
+    expect(p?.steps[0]).not.toHaveProperty('runnerUp');
+    expect(p?.steps[1]).not.toHaveProperty('reason');
+    expect(gone).not.toHaveProperty('reason');
+    expect(out).toMatchObject({ expectedUsd: 0.4, capUsd: 0.9 });
   });
 });

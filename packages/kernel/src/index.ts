@@ -61,7 +61,13 @@ export {
 } from './workspace-ops.js';
 export { graphSetup, plannerFor, type GraphOptions, type GraphSetup } from './setup.js';
 export type { ProviderInfo, ToolInfo } from './queries.js';
-export type { ExplainedEstimate, KernelEvent, RoutingExplained } from './routing-info.js';
+export type {
+  ExplainedEstimate,
+  ExplainedStep,
+  KernelEvent,
+  RoutingExplained,
+} from './routing-info.js';
+export type { KernelPlanCheck } from './planning.js';
 export type {
   ApplyResult,
   ArtifactApplyResult,

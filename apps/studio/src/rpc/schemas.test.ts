@@ -5,8 +5,12 @@ import {
   GraphEventSchema,
   PlanResultSchema,
   TaskGraphSchema,
+  parseEstimate,
   parseModels,
+  parseProviders,
   parseSessions,
+  serverAllowsTest,
+  visibleProviders,
 } from './schemas';
 
 describe('client schemas', () => {
@@ -49,5 +53,44 @@ describe('client schemas', () => {
     expect(parseModels({ providers: PROVIDERS })).toHaveLength(2);
     expect(parseModels([{ nope: 1 }])).toEqual([]);
     expect(parseModels(undefined)).toEqual([]);
+  });
+
+  it('reads provider kinds: local, cloud, test, or unknown when missing (S8 bug 4)', () => {
+    const rows = parseProviders([
+      { id: 'a', kind: 'local', models: [] },
+      { id: 'b', kind: 'cloud', models: [] },
+      { id: 'mock', name: 'Mock (offline)', kind: 'test', models: ['echo'] },
+      { id: 'c', models: [] },
+      { id: 'd', kind: 'quantum', models: [] },
+    ]);
+    expect(rows.map((r) => r.kind)).toEqual(['local', 'cloud', 'test', 'unknown', 'unknown']);
+    expect(visibleProviders(rows, false).map((r) => r.id)).toEqual(['a', 'b', 'c', 'd']);
+    expect(visibleProviders(rows, true)).toHaveLength(5);
+  });
+
+  it('offers test models only when allowed, by the server or the run options', () => {
+    const mock = { id: 'mock', kind: 'test', available: true, models: [{ id: 'echo' }] };
+    const raw = { providers: [...PROVIDERS, mock] };
+    expect(parseModels(raw)).toHaveLength(2);
+    expect(parseModels(raw, true).at(-1)).toEqual({ provider: 'mock', model: 'echo' });
+    expect(serverAllowsTest(raw)).toBe(false);
+    expect(serverAllowsTest({ ...raw, testAllowed: true })).toBe(true);
+    expect(serverAllowsTest([mock])).toBe(false);
+    expect(serverAllowsTest(null)).toBe(false);
+  });
+
+  it('reads the D-021 likely cost and cap from the estimate or the result around it', () => {
+    const old = { ...ESTIMATE, expectedUsd: undefined, capUsd: undefined };
+    expect(parseEstimate(old)).not.toHaveProperty('capUsd');
+    expect(parseEstimate(old, { expected: 0.3, cap: 0.6 })).toMatchObject({
+      expectedUsd: 0.3,
+      capUsd: 0.6,
+    });
+    expect(parseEstimate(ESTIMATE, { expectedUsd: 9, capUsd: 9 })).toMatchObject({
+      expectedUsd: 0.4,
+      capUsd: 0.5,
+    });
+    expect(parseEstimate({ ...old, capUsd: -1, expectedUsd: 'x' })).not.toHaveProperty('capUsd');
+    expect(parseEstimate({ nodes: 'nope' })).toBeUndefined();
   });
 });

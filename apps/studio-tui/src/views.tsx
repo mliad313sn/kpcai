@@ -6,6 +6,7 @@
 import { Box, Text } from 'ink';
 import { t, type Key } from '../../studio/src/i18n/core';
 import { controlText } from '../../studio/src/store/controls';
+import { costLine, costOf } from '../../studio/src/store/cost';
 import { formatDuration, formatRange, formatUsd } from '../../studio/src/store/format';
 import { refKey } from '../../studio/src/store/reducer';
 import type { ConfirmView, NodeRun, PlanView, RunView } from '../../studio/src/store/types';
@@ -33,22 +34,12 @@ export function Badge({ state }: { state: string }) {
   );
 }
 
-function bandText(p: { estimate: PlanView['estimate'] }): string {
-  const e = p.estimate;
-  const band = e.band ?? { lowUsd: e.minUsd, highUsd: e.totalUsd, basis: 'heuristic' as const };
-  return t('cost.band', {
-    range: formatRange(band.lowUsd, band.highUsd),
-    basis: t(`cost.basis.${band.basis}`),
-    cap: formatUsd(e.totalUsd),
-  });
-}
-
-/** R-301/R-302 in the terminal: nodes, who would do them, the band and the cap. */
+/** R-301/R-302 in the terminal: nodes, who would do them, the likely cost and the cap. */
 export function PlanPane({ plan, selected }: { plan: PlanView; selected?: string }) {
   return (
     <Box flexDirection="column" borderStyle="round" paddingX={1}>
       <Text bold>
-        {t('tui.plan')} · {bandText(plan)}
+        {t('tui.plan')} · {costLine(plan.estimate)}
       </Text>
       {plan.graph.nodes.map((n) => {
         const est = plan.estimate.nodes.find((e) => e.nodeId === n.id);
@@ -76,16 +67,31 @@ function lastLine(n: NodeRun | undefined): string {
   return line.length > 100 ? `${line.slice(0, 100)}…` : line;
 }
 
+/** Spend against the cap (D-021), flagged in words when it goes above the band. */
+function SpendText({ run }: { run: RunView }) {
+  const est = run.estimate;
+  if (!est) return <Text>{t('cost.soFar', { cost: formatUsd(run.costUsd) })}</Text>;
+  const { cap, band } = costOf(est);
+  const over = run.costUsd > band.highUsd;
+  const range = formatRange(band.lowUsd, band.highUsd);
+  return (
+    <Text>
+      {t('cost.spent', { cost: formatUsd(run.costUsd), cap: formatUsd(cap) })} ·{' '}
+      {over ? (
+        <Text color="red">⚠ {t('cost.above', { range })}</Text>
+      ) : (
+        t('cost.bandOnly', { range })
+      )}
+    </Text>
+  );
+}
+
 /** The live thread: every node with its state, model, cost and last line of output. */
 export function ThreadPane({ run, selected }: { run: RunView; selected?: string }) {
-  const est = run.estimate;
   return (
     <Box flexDirection="column" borderStyle="round" paddingX={1}>
       <Text bold>
-        {t('tui.thread')} · <Badge state={run.state} /> ·{' '}
-        {est
-          ? t('cost.spent', { cost: formatUsd(run.costUsd), cap: formatUsd(est.totalUsd) })
-          : t('cost.soFar', { cost: formatUsd(run.costUsd) })}
+        {t('tui.thread')} · <Badge state={run.state} /> · <SpendText run={run} />
       </Text>
       {(run.graph?.nodes ?? []).map((g) => {
         const n = run.nodes[g.id];
@@ -138,6 +144,59 @@ export function ControlPane({ run }: { run: RunView }) {
 }
 
 const MAX_LINES = 12;
+const MAX_DIFF_LINES = 40;
+
+function diffColor(line: string): string | undefined {
+  if (line.startsWith('+++') || line.startsWith('---') || line.startsWith('@@')) return 'cyan';
+  if (line.startsWith('+')) return 'green';
+  if (line.startsWith('-')) return 'red';
+  return undefined;
+}
+
+/** A patch as text: lines keep their own +/- markers, colour only reinforces them. */
+function PatchLines({ patch }: { patch: string }) {
+  const lines = patch.split('\n');
+  return (
+    <>
+      {lines.slice(0, MAX_DIFF_LINES).map((l, i) => {
+        const color = diffColor(l);
+        return (
+          <Text key={i} {...(color ? { color } : {})}>
+            {l || ' '}
+          </Text>
+        );
+      })}
+      {lines.length > MAX_DIFF_LINES ? (
+        <Text dimColor>{t('tui.confirmMore', { count: lines.length - MAX_DIFF_LINES })}</Text>
+      ) : null}
+    </>
+  );
+}
+
+/** The Diff tab in the terminal (Ctrl+O): each patch, its files and whether it is applied. */
+export function DiffPane({ run }: { run: RunView | undefined }) {
+  const patches = run?.patches ?? [];
+  const pending = patches.filter((p) => !run!.applied.includes(p.nodeId)).length;
+  return (
+    <Box flexDirection="column" borderStyle="round" paddingX={1}>
+      <Text bold>
+        {t('tui.diff')} · {t('diff.summary', { count: patches.length })}
+      </Text>
+      {patches.length === 0 ? <Text dimColor>{t('tui.noPatches')}</Text> : null}
+      {patches.map((p) => (
+        <Box key={p.nodeId} flexDirection="column" marginTop={1}>
+          <Text bold>
+            #{p.nodeId} · {t('diff.files', { count: p.files.length })} ·{' '}
+            {run!.applied.includes(p.nodeId) ? t('diff.applied') : t('tui.notApplied')}
+          </Text>
+          {p.files.length > 0 ? <Text dimColor>{p.files.join(', ')}</Text> : null}
+          <PatchLines patch={p.patch} />
+        </Box>
+      ))}
+      <Text>{pending > 0 ? t('tui.applyHint', { count: pending }) : t('tui.diffClose')}</Text>
+    </Box>
+  );
+}
 
 /** A confirmation: the question and any diff or content as text; the default is No. */
 export function ConfirmPane({ c, now }: { c: ConfirmView; now: number }) {

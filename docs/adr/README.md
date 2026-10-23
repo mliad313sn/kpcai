@@ -29,3 +29,4 @@ One page per decision. Format: Context, Decision, Consequences, Revisit when.
 | [0023](0023-two-tier-forbidden-zones.md)             | Two-tier forbidden zones and pack relaxations                   | Accepted |
 | [0024](0024-domain-task-types.md)                    | Domain task types in core, scored on a base type                | Accepted |
 | [0025](0025-packs-at-the-kernel-boundary.md)         | Domain packs at the kernel boundary                             | Accepted |
+| [0026](0026-cost-cap-is-the-band-top.md)             | The cost cap is the top of the band (D-021)                     | Accepted |

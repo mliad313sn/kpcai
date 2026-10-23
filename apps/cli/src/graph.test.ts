@@ -50,7 +50,9 @@ describe('kpai tools / plan / do', () => {
     ]);
     expect(who('review')).not.toBe(who('implementation'));
     expect(who('review')).not.toBe(who('tests'));
-    expect(io.stdout).toMatch(/^total\s+\$[\d.]+–\$[\d.]+ before running/m);
+    expect(io.stdout).toMatch(
+      /^total\s+likely \$[\d.]+ · at most \$[\d.]+ \(cap\) before running/m,
+    );
   });
 
   it('runs the graph with cross-provider review and shows patches without applying', async () => {
@@ -113,5 +115,34 @@ describe('kpai tools / plan / do', () => {
     expect(await main(['do', '--allow-test', '--yes', '--apply', REQ], io)).toBe(0);
     expect(io.questions.some((q) => /git\.apply/.test(q))).toBe(true);
     expect(existsSync(join(io.cwd, 'src/s.ts'))).toBe(false);
+  });
+
+  it('refuses test providers without --allow-test: the plan cannot run as planned', async () => {
+    const io = setup();
+    expect(await main(['plan', REQ], io)).toBe(1);
+    expect(io.stdout).toMatch(/unroutable \(.*kind "test" excluded/);
+    expect(io.stdout).toMatch(/\(cannot run as planned: /);
+  });
+
+  it('does not run outside a project', async () => {
+    const io = setup();
+    io.cwd = mkdtempSync(join(tmpdir(), 'kpai-not-a-project-'));
+    expect(await main(['do', '--allow-test', '--yes', REQ], io)).toBe(2);
+    expect(io.stderr).toMatch(/^not run — /m);
+    expect(await main(['stats', '--session', 'nope'], io)).toBe(1);
+    expect(io.stderr).toMatch(/nope/);
+  });
+
+  it('reports a missing --scope file for a pack that needs a scope, and refuses the run', async () => {
+    const io = setup();
+    writeFileSync(join(io.cwd, 'scope.md'), '# engagement scope\n');
+    const missing = join(io.home, 'scope.yaml');
+    const request = 'write the pentest findings report';
+    expect(await main(['plan', '--allow-test', '--scope', missing, request], io)).toBe(0);
+    expect(io.stdout).toMatch(/^scope {2}required by security-offensive · from --scope$/m);
+    expect(io.stdout).toMatch(/✗ .*needs a declared authorised scope/);
+    const run = ['do', '--allow-test', '--yes', '--scope', missing, request];
+    expect(await main(run, io)).toBe(4);
+    expect(io.stderr).toMatch(/^not run — .*scope/m);
   });
 });

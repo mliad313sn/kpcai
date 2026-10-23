@@ -90,6 +90,7 @@ export function plannerFor(
     constraints: s.constraints,
     // The planner sees the repository rules too, as untrusted context (R-306).
     resolve: rulesResolver((ref) => s.registry.get(ref.provider), extra.rulesText ?? ''),
+    executor: { expectedOutput: outputCalibration(journal) },
     ...packs,
     journal,
     sessionId,

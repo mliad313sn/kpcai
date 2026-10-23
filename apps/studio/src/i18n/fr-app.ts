@@ -135,6 +135,8 @@ export const frApp: Record<keyof typeof enApp, Message> = {
   'onboarding.missing': '{name} ({kind}) : indisponible — {reason}',
   'onboarding.local': 'local, gratuit',
   'onboarding.cloud': 'cloud, payant',
+  'onboarding.test': 'test (hors ligne)',
+  'onboarding.unknown': 'cloud ?',
   'onboarding.detect': 'Détecter à nouveau',
   'onboarding.profile': 'Profil',
   'onboarding.economy': 'Économe',
@@ -156,9 +158,34 @@ export const frApp: Record<keyof typeof enApp, Message> = {
     'Votre premier plan arrive. Relisez-le dans le fil d’exécution, puis appuyez sur Lancer.',
   'tui.title': 'KP Studio — terminal',
   'tui.keys':
-    'Entrée planifier · Ctrl+R lancer · Ctrl+D abandonner · Ctrl+P pause/reprise · Ctrl+X annuler · Tab nœud suivant · Ctrl+Q quitter',
+    'Entrée planifier · Ctrl+R lancer · Ctrl+D abandonner · Ctrl+P pause/reprise · Ctrl+X annuler · Tab nœud suivant · Ctrl+N consigne au nœud · Ctrl+T rediriger le nœud · Ctrl+O diff · Ctrl+A appliquer les correctifs · Échap retour · Ctrl+Q quitter',
   'tui.prompt': 'Demande',
   'tui.placeholder': 'décrivez une tâche, puis Entrée',
+  'tui.instructPrompt': 'Consigne pour #{id}',
+  'tui.instructPlaceholder':
+    'ajoutée au prompt de ce nœud avant son démarrage · Entrée envoie · Échap annule',
+  'tui.redirectPrompt': 'Rediriger #{id} vers',
+  'tui.redirectPlaceholder': 'fournisseur/modèle · Entrée redirige · Échap annule',
+  'tui.redirectBad': 'Saisissez le modèle sous la forme fournisseur/modèle.',
+  'tui.models': 'Modèles : {models}',
+  'tui.steerNoRun': 'Les consignes et redirections demandent une exécution en cours.',
+  'tui.steerSelect': 'Choisissez d’abord un nœud de l’exécution avec Tab.',
+  'tui.instructStarted':
+    'Le nœud #{id} a démarré : une consigne n’atteint qu’un nœud pas encore démarré. Ctrl+T le redirige.',
+  'tui.redirectFinished': 'Le nœud #{id} est terminé : il ne peut plus être redirigé.',
+  'tui.diff': 'Diff',
+  'tui.noPatches': 'Aucun correctif à appliquer. Les correctifs arrivent à la fin d’une exécution.',
+  'tui.notApplied': 'non appliqué',
+  'tui.applyHint': {
+    one: 'Ctrl+A applique le correctif en attente : le noyau montre son diff et demande d’abord. Échap ferme.',
+    other:
+      'Ctrl+A applique les {count} correctifs en attente : le noyau montre chaque diff et demande d’abord. Échap ferme.',
+  },
+  'tui.diffClose': 'Échap ou Ctrl+O ferme le diff.',
+  'tui.announce.patches': {
+    one: '{count} correctif prêt : Ctrl+O l’affiche, Ctrl+A l’applique',
+    other: '{count} correctifs prêts : Ctrl+O les affiche, Ctrl+A les applique',
+  },
   'tui.noPlan':
     'Pas encore de plan : tapez une demande puis Entrée. Rien ne s’exécute avant Ctrl+R.',
   'tui.plan': 'Plan',

@@ -7,12 +7,12 @@
 import { randomUUID } from 'node:crypto';
 import type { ModelRef } from '@kernelpai/core';
 import type { Journal } from '@kernelpai/journal';
-import type { ControlOutcome, PlanCheck, RunControl } from '@kernelpai/orchestrator';
+import type { ControlOutcome, RunControl } from '@kernelpai/orchestrator';
 import { applyAll, applyArtifacts, type ApplyContext } from './apply.js';
 import type { GateHost } from './budget-gate.js';
 import { hostConfirm, type Confirm } from './confirm.js';
 import { KernelError } from './errors.js';
-import { checkEdit, editedPlan, makePlan } from './planning.js';
+import { checkEdit, editedPlan, makePlan, type KernelPlanCheck } from './planning.js';
 import { Queries } from './queries.js';
 import { executeRun, type ActiveRun, type RunContext } from './run.js';
 import type { GraphOptions } from './setup.js';
@@ -106,7 +106,7 @@ export class Kernel extends Queries {
   }
 
   /** Checks a user-edited graph of a plan and re-estimates it (R-301). Runs nothing. */
-  validatePlan(planId: string, graph: unknown): PlanCheck {
+  validatePlan(planId: string, graph: unknown): KernelPlanCheck {
     const plan = this.plans.get(planId);
     if (!plan) throw new KernelError('not_found', `no plan ${planId} (plans expire; plan again)`);
     return checkEdit(plan, graph, this.journal).check;

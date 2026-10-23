@@ -49,7 +49,7 @@ describe('actions against a fake kernel', () => {
     ]);
     expect(kernel.calls('run.start')).toEqual([]);
     expect(s().plan?.estimate.totalUsd).toBe(0.4);
-    expect(s().announcement.text).toMatch(/Plan ready: 3 nodes, \$0.12 to \$0.35/);
+    expect(s().announcement.text).toMatch(/Plan ready: 3 nodes, likely \$0.40, at most \$0.50/);
     await startRun();
     expect(kernel.calls('run.start')).toEqual([
       { request: 'add OAuth with tests', planId: 'p1', options: { profile: 'balanced' } },

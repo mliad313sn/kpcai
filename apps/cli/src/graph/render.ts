@@ -4,8 +4,15 @@ import type { PackContext, RulesSummary, ScopeCheck } from '@kernelpai/kernel';
 import { formatMoney, type Money } from '../config.js';
 import { sanitizeForTerminal } from '../sanitize.js';
 
-/** The plan, before anything runs (spec §4.5 "zéro surprise"). */
-export function renderGraphPlan(graph: TaskGraph, est: GraphEstimate, m: Money): string {
+/** An estimate with the kernel's likely and cap figures (D-021, ADR-0026). */
+export type PlanEstimate = GraphEstimate & { expectedUsd: number; capUsd: number };
+
+/**
+ * The plan, before anything runs (spec §4.5 "zéro surprise"): who does what, each node's
+ * range, and the two figures of D-021: the likely cost and the cap the run cannot pass
+ * without asking again.
+ */
+export function renderGraphPlan(graph: TaskGraph, est: PlanEstimate, m: Money): string {
   const lines = [`plan   ${graph.nodes.length} node(s) · ${graph.createdBy}: ${graph.reason}`];
   for (const node of graph.nodes) {
     const e = est.nodes.find((n) => n.nodeId === node.id);
@@ -18,8 +25,9 @@ export function renderGraphPlan(graph: TaskGraph, est: GraphEstimate, m: Money):
     );
   }
   const status = est.complete ? '' : ` (cannot run as planned: ${est.problems.join('; ')})`;
+  const likely = formatMoney(est.expectedUsd, m);
   lines.push(
-    `total  ${formatMoney(est.minUsd, m)}–${formatMoney(est.totalUsd, m)} before running${status}`,
+    `total  likely ${likely} · at most ${formatMoney(est.capUsd, m)} (cap) before running${status}`,
   );
   return lines.join('\n') + '\n';
 }

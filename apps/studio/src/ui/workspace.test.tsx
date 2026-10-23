@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { setLocale } from '../i18n/core';
 import { patch, setPrefs, studio } from '../store/store';
 import type { FakeKernel } from '../test-helpers/fake-kernel';
+import { PROVIDERS } from '../test-helpers/fixtures';
 import { renderStudio, teardown, until } from '../test-helpers/ui';
 
 let kernel: FakeKernel | undefined;
@@ -181,6 +182,30 @@ describe('onboarding (R-308) and language (WI-S6-02)', () => {
     });
     expect(s().prefs).toMatchObject({ onboarded: true, profile: 'economy', localOnly: false });
     expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('labels provider kinds and hides test providers unless the server allows them', async () => {
+    const mock = { id: 'mock', name: 'Mock (offline)', kind: 'test', available: true };
+    // A kind this console does not know is never assumed free: "cloud?".
+    const other = { id: 'other', name: 'Other', kind: 'edge', available: true, models: [] };
+    let testAllowed = false;
+    ({ kernel } = await renderStudio({
+      'providers.list': () => ({
+        providers: [...PROVIDERS, { ...mock, models: [{ id: 'echo' }] }, other],
+        testAllowed,
+      }),
+    }));
+    act(() => patch({ onboardingOpen: true }));
+    const dialog = await screen.findByRole('dialog', { name: 'Welcome to KP Studio' });
+    await until(() => expect(within(dialog).getByText(/Other \(cloud\?\): ready/)).toBeTruthy());
+    expect(within(dialog).queryByText(/Mock/)).toBeNull();
+    expect(s().models.map((m) => m.provider)).not.toContain('mock');
+    testAllowed = true; // `kpai studio --allow-test`
+    await userEvent.setup().click(within(dialog).getByRole('button', { name: /Detect/ }));
+    await until(() =>
+      expect(within(dialog).getByText(/Mock \(offline\) \(test \(offline\)\): ready/)).toBeTruthy(),
+    );
+    expect(s().models).toContainEqual({ provider: 'mock', model: 'echo' });
   });
 
   it('switches the whole console to French from the header', async () => {

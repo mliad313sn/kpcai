@@ -85,7 +85,10 @@ export const ESTIMATE = {
   totalUsd: 0.4,
   complete: true,
   problems: [],
-  band: { lowUsd: 0.12, highUsd: 0.35, basis: 'mixed' },
+  band: { lowUsd: 0.12, highUsd: 0.5, basis: 'mixed' },
+  // D-021: the likely cost (sum of the nodes' expected) and the hard cap (band top).
+  expectedUsd: 0.4,
+  capUsd: 0.5,
 };
 
 export const PLAN = { planId: 'p1', graph: GRAPH, estimate: ESTIMATE };

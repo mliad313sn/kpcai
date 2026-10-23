@@ -8,6 +8,7 @@ import {
   type RunControlEvent,
   type RunResult,
 } from '@kernelpai/orchestrator';
+import { outputCalibration } from '@kernelpai/executor';
 import { createToolBus } from '@kernelpai/tools';
 import { BudgetGate, type GateHost } from './budget-gate.js';
 import { budgetLimits, formatMoney, kpaiHome } from './env.js';
@@ -149,16 +150,15 @@ async function graphBudget(c: RunContext, run: ActiveRun): Promise<string | unde
   const env = c.host.env;
   const sessionId = p.sessionId;
   const governor = new Governor(budgetLimits(env), new JournalLedger(c.journal));
-  const v = governor.check(p.estimate.totalUsd, {
-    sessionId,
-    project: c.host.cwd,
-    now: new Date(),
-  });
+  // D-021: the figure approved and checked is the cap (the band's top), not the likely cost.
+  const { capUsd, expectedUsd } = p.estimate;
+  const v = governor.check(capUsd, { sessionId, project: c.host.cwd, now: new Date() });
   if (v.action === 'allow') return undefined;
+  const likely = `likely ${formatMoney(expectedUsd, p.m)}`;
   const why =
     v.action === 'block'
-      ? `graph blocked by ${v.scope} budget: ${formatMoney(v.projectedUsd, p.m)} > ${formatMoney(v.limitUsd, p.m)}`
-      : `graph estimate up to ${formatMoney(p.estimate.totalUsd, p.m)} is above your confirmation threshold`;
+      ? `graph blocked by ${v.scope} budget: ${formatMoney(v.projectedUsd, p.m)} > ${formatMoney(v.limitUsd, p.m)} (cap; ${likely})`
+      : `graph estimate up to ${formatMoney(capUsd, p.m)} (cap; ${likely}) is above your confirmation threshold`;
   if (v.action === 'block' && !o.overBudget) {
     c.gateHost.say(`not run — ${why}. Use --over-budget, -p economy, or a smaller request\n`);
   } else if (
@@ -202,12 +202,14 @@ async function runGraph(c: RunContext, run: ActiveRun): Promise<RunResult> {
   const usage = new UsageTap();
   try {
     run.runner = new GraphRunner({
-      // The user accepted this total before the run; going beyond it asks again (P2-F9).
-      maxGraphUsd: p.estimate.totalUsd,
+      // The user accepted this cap (the band's top, D-021); going beyond it asks again (P2-F9).
+      maxGraphUsd: p.estimate.capUsd,
       router,
       candidates: p.setup.candidates,
       constraints: p.setup.constraints,
       resolve: (ref) => p.setup.registry.get(ref.provider),
+      // Per-call estimates use the same calibrated output sizes as routing (S8 finding).
+      executor: { expectedOutput: outputCalibration(c.journal) },
       journal: usage.wrap(c.journal),
       sessionId: p.sessionId,
       budget: (cand, label) => gate.allow(cand, label),

@@ -126,10 +126,13 @@ step(
   ],
   { expect: 1 },
 );
+// --yes accepts the cost prompt: since D-021 the approved figure is the band's top, above the
+// $0.10 confirmation threshold here. Writes would still need --yes-apply.
 step('…unless explicitly waived (journaled)', [
   'do',
   T,
   '--new-session',
+  '--yes',
   '--allow-same-provider',
   '--exclude',
   'mock,mock-alpha,mock-beta,mock-gamma',

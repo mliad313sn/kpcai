@@ -37,7 +37,7 @@ const type = async (text: string) => {
 };
 
 describe('KP Studio in the terminal', () => {
-  it('plans from the request line and shows nodes, band and cap', async () => {
+  it('plans from the request line and shows nodes, likely cost and cap', async () => {
     const { k } = await boot();
     await until(() => expect(frame()).toMatch(/Connected to KernelPAI kernel/));
     expect(frame()).toMatch(/No plan yet/);
@@ -46,7 +46,9 @@ describe('KP Studio in the terminal', () => {
     await type('\r');
     await until(() => expect(k.calls('plan')).toHaveLength(1));
     await until(() =>
-      expect(frame()).toMatch(/Estimate \$0\.12–\$0\.35 \(partly calibrated\) · cap \$0\.40/),
+      expect(frame()).toMatch(
+        /Estimate: likely \$0\.40 · at most \$0\.50 \(hard cap\) · partly calibrated/,
+      ),
     );
     expect(frame()).toMatch(/#impl Implement it · author_critic · openai\/model-b/);
     await type('\t');

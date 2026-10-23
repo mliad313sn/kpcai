@@ -102,6 +102,17 @@ export const BandSchema = z.object({
   basis: z.enum(['calibrated', 'heuristic', 'mixed']),
 });
 
+/** One protocol step of a node: who does it, how often, for how much, and why (R-303). */
+export const StepEstimateSchema = z.looseObject({
+  role: z.string(),
+  ref: Ref,
+  calls: z.object({ min: z.number(), max: z.number() }),
+  minUsd: Usd,
+  expectedUsd: Usd,
+  band: BandSchema.optional(),
+  ...Routing,
+});
+
 export const NodeEstimateSchema = z.looseObject({
   nodeId: z.string(),
   protocol: z.string(),
@@ -110,6 +121,7 @@ export const NodeEstimateSchema = z.looseObject({
   expectedUsd: Usd,
   error: z.string().optional(),
   band: BandSchema.optional(),
+  steps: z.array(StepEstimateSchema).optional(),
   ...Routing,
 });
 
@@ -120,6 +132,13 @@ export const EstimateSchema = z.looseObject({
   complete: z.boolean(),
   problems: z.array(z.string()),
   band: BandSchema.optional(),
+  /** The likely cost (D-021, ADR-0026); equals `totalUsd`. */
+  expectedUsd: Usd.optional(),
+  /**
+   * The cap (D-021, ADR-0026): the band's top. What the user approves, what the graph budget
+   * check uses, and the run's hard cap: going beyond it asks again. Absent from older kernels.
+   */
+  capUsd: Usd.optional(),
 });
 
 /**
@@ -172,6 +191,8 @@ export const RunEventSchema = z.looseObject({
 
 const ProviderSchema = z.looseObject({
   id: z.string(),
+  /** Descriptor kind (`cloud`, `local`, `test`…): a console hides `test` unless allowed. */
+  kind: z.string(),
   available: z.boolean(),
   models: z.array(z.looseObject({ id: z.string() })),
 });
@@ -187,7 +208,11 @@ export const Methods = {
   },
   'providers.list': {
     params: z.object({}).optional(),
-    result: z.object({ providers: z.array(ProviderSchema) }),
+    result: z.object({
+      providers: z.array(ProviderSchema),
+      /** True when this server lets runs use `kind: test` providers by default (`--allow-test`). */
+      testAllowed: z.boolean().optional(),
+    }),
   },
   'tools.list': {
     params: z.object({}).optional(),

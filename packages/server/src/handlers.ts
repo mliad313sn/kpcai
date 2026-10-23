@@ -14,6 +14,7 @@ import {
   PROTOCOL_VERSION,
   type MethodName,
   type Methods,
+  type RunOptions,
 } from '@kernelpai/kernel/protocol';
 import type { z } from 'zod';
 import type { ConfirmBroker } from './confirm-broker.js';
@@ -55,6 +56,8 @@ export interface HandlerDeps {
   broker: ConfirmBroker;
   /** Called once per started run, to stream its end to the clients. */
   watch(handle: RunHandle): void;
+  /** The server's default run options; a request's own options win (`--allow-test`). */
+  defaults?: Pick<RunOptions, 'allowTest'>;
 }
 
 const hello: Handler<'kernel.hello'> = (p) => {
@@ -64,8 +67,8 @@ const hello: Handler<'kernel.hello'> = (p) => {
 };
 
 /** A plan as the console sees it: graph, estimate, rules, packs, zones, scope. */
-async function planResult(kernel: Kernel, p: ParamsOf<'plan'>) {
-  const plan = await kernel.plan(p.request, p.options ?? {});
+async function planResult(kernel: Kernel, p: ParamsOf<'plan'>, defaults: RunOptions) {
+  const plan = await kernel.plan(p.request, { ...defaults, ...p.options });
   return {
     planId: plan.planId,
     graph: plan.graph,
@@ -78,11 +81,16 @@ async function planResult(kernel: Kernel, p: ParamsOf<'plan'>) {
 
 export function handlers(d: HandlerDeps): Handlers {
   const { kernel } = d;
+  const defaults: RunOptions = d.defaults ?? {};
   return {
     'kernel.hello': hello,
-    'providers.list': async () => ({ providers: await kernel.providers() }),
+    'providers.list': async () => ({
+      providers: await kernel.providers(),
+      testAllowed: defaults.allowTest === true,
+    }),
     'tools.list': () => kernel.tools(),
-    plan: (p) => planResult(kernel, p),
+    plan: (p) => planResult(kernel, p, defaults),
+    // Checked with the plan's own options: test providers stay refused unless it allowed them.
     'plan.validate': (p) => {
       const c = kernel.validatePlan(p.planId, p.graph);
       return {
@@ -99,7 +107,7 @@ export function handlers(d: HandlerDeps): Handlers {
         ...(p.planId ? { planId: p.planId } : {}),
         ...(p.graph ? { graph: p.graph } : {}),
         // ADR-0021: console runs are isolated by default when the workspace is a git tree.
-        options: { ...p.options, isolated: p.options?.isolated ?? 'auto' },
+        options: { ...defaults, ...p.options, isolated: p.options?.isolated ?? 'auto' },
       });
       d.watch(handle);
       return { runId: handle.runId };

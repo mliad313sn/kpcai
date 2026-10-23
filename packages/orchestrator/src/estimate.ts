@@ -8,11 +8,13 @@ import type {
   TaskGraph,
 } from '@kernelpai/core';
 import {
-  filler,
+  heuristicText,
+  nodeOutput,
   placeholderContext,
   planSteps,
   type StepContext,
   type StepEstimate,
+  type TextSize,
 } from './estimate-steps.js';
 import { sumBands, type CostBand, type SpreadFn } from './band.js';
 import { effectiveProtocol, upgradeReason } from './runner.js';
@@ -20,12 +22,13 @@ import { DEFAULT_MAX_REVISIONS, DEFAULT_VOTERS, type PlannedNode } from './types
 
 /**
  * Tokens assumed for each dependency's output, and for the work a critic, rebuttal or
- * judge reads, since outputs are unknown before running. 4,000 = a quarter of the default
- * 16,000-token output cap, the same typical-output heuristic as the core cost estimator.
+ * judge reads, when the model producing it has no history (with a history, the producer's
+ * learned output size is used instead). 4,000 = a quarter of the default 16,000-token
+ * output cap, the same typical-output heuristic as the core cost estimator.
  */
 export const DEFAULT_DEPENDENCY_ALLOWANCE_TOKENS = 4000;
 
-/** Model calls per protocol with default settings (tool rounds not included). */
+/** Model calls per protocol with default settings (tool rounds are priced per call). */
 export const PROTOCOL_ROUNDS: Readonly<Record<ProtocolName, { min: number; max: number }>> = {
   solo: { min: 1, max: 1 },
   // author, critic; then per revision a revision and a critic; plus one critic retry.
@@ -55,6 +58,8 @@ export interface NodeEstimate {
   steps: StepEstimate[];
   /** Low–high cost from the calibration spread and the protocol's call counts (R-302). */
   band: CostBand;
+  /** Size of the node's output, the context its dependants read. */
+  output: TextSize;
   /** The user's model for the first step, when the node is pinned (R-301). */
   pinned?: ModelRef;
   /** Why the node cannot run as planned (no provider, diversity impossible). */
@@ -97,23 +102,28 @@ const sum = (xs: number[]): number => r6(xs.reduce((a, b) => a + b, 0));
  * protocol is routed as the runner would route it (critic with the author excluded, judge
  * with the debaters excluded, voters from distinct providers, revisions and rebuttals on
  * their author's model, a review away from upstream providers), with dependency context
- * counted at `dependencyAllowanceTokens` per dependency, times its call count.
+ * counted at each dependency's output size (learned, else `dependencyAllowanceTokens`),
+ * times its call count. The band takes the low and high sizes of every text a step reads.
  */
 export function estimateGraph(graph: TaskGraph, deps: EstimateDeps): GraphEstimate {
   const memo = new Map<string, NodeEstimate>();
   const byId = new Map(graph.nodes.map((n) => [n.id, n]));
+  const allowance = deps.dependencyAllowanceTokens ?? DEFAULT_DEPENDENCY_ALLOWANCE_TOKENS;
   const visit = (node: GraphNode, path: Set<string>): NodeEstimate => {
     const known = memo.get(node.id);
     if (known) return known;
     path.add(node.id);
+    const sizes = new Map<string, TextSize>();
     const upstream = node.dependsOn.flatMap((id) => {
+      const dep = byId.get(id);
+      const e = dep && !path.has(id) ? visit(dep, path) : undefined;
+      if (e) sizes.set(id, e.output);
       const served = deps.known?.get(id);
       if (served) return [...served];
-      const dep = byId.get(id);
-      if (!dep || path.has(id)) return [];
-      return visit(dep, path).steps.map((s) => s.ref.provider);
+      return e ? e.steps.map((s) => s.ref.provider) : [];
     });
-    const e = estimateNode(node, deps, [...new Set(upstream)]);
+    const size = (id: string): TextSize => sizes.get(id) ?? heuristicText(allowance);
+    const e = estimateNode(node, deps, [...new Set(upstream)], size);
     memo.set(node.id, e);
     return e;
   };
@@ -128,7 +138,12 @@ export function estimateGraph(graph: TaskGraph, deps: EstimateDeps): GraphEstima
   };
 }
 
-function estimateNode(node: PlannedNode, deps: EstimateDeps, upstream: string[]): NodeEstimate {
+function estimateNode(
+  node: PlannedNode,
+  deps: EstimateDeps,
+  upstream: string[],
+  size: (id: string) => TextSize,
+): NodeEstimate {
   const protocol = effectiveProtocol(node);
   const allowance = deps.dependencyAllowanceTokens ?? DEFAULT_DEPENDENCY_ALLOWANCE_TOKENS;
   const x: StepContext = {
@@ -139,8 +154,8 @@ function estimateNode(node: PlannedNode, deps: EstimateDeps, upstream: string[])
     maxRevisions: deps.maxRevisions ?? DEFAULT_MAX_REVISIONS,
     voters: deps.voters ?? DEFAULT_VOTERS,
     node,
-    context: placeholderContext(node, allowance),
-    work: filler(allowance),
+    context: placeholderContext(node, allowance, size),
+    allowance,
     upstream,
     pin: node.model,
     spread: deps.spread,
@@ -163,6 +178,7 @@ function estimateNode(node: PlannedNode, deps: EstimateDeps, upstream: string[])
     expectedUsd: sum(steps.map((s) => s.expectedUsd)),
     steps,
     band: sumBands(steps.map((s) => s.band)),
+    output: nodeOutput(steps, allowance),
     ...(node.model ? { pinned: node.model } : {}),
     ...(planned.ok ? {} : { error: planned.error }),
   };

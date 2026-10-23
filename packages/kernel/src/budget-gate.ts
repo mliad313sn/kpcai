@@ -74,13 +74,13 @@ export class BudgetGate {
   }
 
   /**
-   * The run would exceed the graph total the user accepted before it started: always a
+   * The run would exceed the graph cap the user accepted before it started: always a
    * human decision (or overBudget), never a silent governor pass (review P2-F9).
    */
   private async graphCap(label: string): Promise<boolean> {
     const ok =
       this.flags.overBudget === true ||
-      (await this.ask(`${label}: the run would exceed the estimate you accepted. Continue?`));
+      (await this.ask(`${label}: the run would exceed the cap you accepted. Continue?`));
     if (!ok) this.host.say(`not continued — ${label}\n`);
     return this.record(`${ok ? 'accepted' : 'refused'}: ${label}`, { label }, ok);
   }

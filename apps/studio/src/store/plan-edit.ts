@@ -3,7 +3,7 @@
  * edited graph is checked and re-estimated by `plan.validate`. Only the latest check is
  * kept; Run stays disabled while a check is pending or reports a problem.
  */
-import { GraphEstimateSchema, type GraphNode, type Ref } from '../rpc/schemas';
+import { parseEstimate, type GraphNode, type Ref } from '../rpc/schemas';
 import { t } from '../i18n/core';
 import { call, fail, isEdited } from './actions';
 import { announce, patch, studio } from './store';
@@ -111,14 +111,14 @@ export async function validate(mine = ++seq): Promise<void> {
     });
     const current = studio.getState().plan;
     if (mine !== seq || current?.planId !== plan.planId) return;
-    const est = r.estimate ? GraphEstimateSchema.safeParse(r.estimate) : undefined;
+    const est = r.estimate ? parseEstimate(r.estimate, r) : undefined;
     const check = { ok: r.ok, problems: r.problems, warnings: r.warnings, changes: r.changes };
     patch({
       plan: {
         ...current,
         check,
         checking: false,
-        ...(est?.success ? { estimate: est.data } : {}),
+        ...(est ? { estimate: est } : {}),
       },
     });
     announce(

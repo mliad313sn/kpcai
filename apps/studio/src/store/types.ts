@@ -186,7 +186,11 @@ export interface StudioState {
   runs: Record<string, RunView>;
   activeRunId?: string;
   sessions: Session[];
+  /** Every provider the kernel lists, `test` ones included (filter with `testAllowed`). */
   providers: ProviderView[];
+  /** Test providers may be shown and picked: the server allows them or `runOptions` does. */
+  testAllowed: boolean;
+  /** Models offered in the pickers (plan editor, redirect): test ones only when allowed. */
   models: Ref[];
   /** Options sent with `plan` and `run.start` (profile and $0 path come from prefs). */
   runOptions: RunOptions;
@@ -208,4 +212,6 @@ export interface StudioState {
   /** Output of the last `/` command (stats, tools, help), shown as plain text. */
   notice?: { title: string; body: string };
   prefs: Prefs;
+  /** Which client renders this store: wording that names a key or a tab differs. */
+  surface: 'web' | 'tui';
 }

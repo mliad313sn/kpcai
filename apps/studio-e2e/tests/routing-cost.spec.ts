@@ -49,21 +49,29 @@ test('the routing panel shows the kernel reason, score, breakdown and runner-up'
   await expect(steps).toContainText('judge');
 });
 
-test('cost band and cap before launch; live meter updated on every response', async ({ open }) => {
+test('likely cost and cap before launch; live meter updated on every response', async ({
+  open,
+}) => {
   const page = await open();
   await connected(page);
   await plan(page, `${CODE_REQUEST} [[slow]]`);
   const band = page.locator('.plan-bar .cost-band');
+  // D-021: the likely cost, then the hard cap, which is the top of the band.
   await expect(band).toHaveText(
-    /^Estimate \$\d+\.\d+–\$\d+\.\d+ \(heuristic: no calibration yet\) · cap \$\d+\.\d+$/,
+    /^Estimate: likely \$\d+\.\d+ · at most \$\d+\.\d+ \(hard cap\) · heuristic: no calibration yet$/,
   );
-  const cap = /cap (\$[\d.]+)/.exec((await band.textContent()) ?? '')![1]!;
+  const text = (await band.textContent()) ?? '';
+  const likely = /likely (\$[\d.]+)/.exec(text)![1]!;
+  const cap = /at most (\$[\d.]+)/.exec(text)![1]!;
+  expect(Number(likely.slice(1))).toBeLessThanOrEqual(Number(cap.slice(1)));
   await expect(page.getByRole('button', { name: /^Run/ })).toHaveText(`Run (cap ${cap})`);
   await page.getByRole('button', { name: /^Run/ }).click();
 
   const meter = page.getByRole('meter');
   await expect(meter).toBeVisible();
   await expect(page.locator('.cost-meter label')).toContainText(`of cap ${cap}`);
+  expect(Number(await meter.getAttribute('max'))).toBeCloseTo(Number(cap.slice(1)), 2);
+  expect(Number(await meter.getAttribute('high'))).toBeCloseTo(Number(cap.slice(1)), 2);
   const values: number[] = [];
   const read = async () => Number(await meter.getAttribute('value'));
   await expect.poll(read).toBeGreaterThan(0);
@@ -73,23 +81,35 @@ test('cost band and cap before launch; live meter updated on every response', as
   await expect(page.locator('.graph .node.state-done')).toHaveCount(4, { timeout: 45_000 });
   values.push(await read());
   expect(values[2]!).toBeGreaterThanOrEqual(values[1]!);
-  expect(await meter.getAttribute('aria-valuetext')).toMatch(/spent, \d+% of the cap, band \$/);
+  expect(await meter.getAttribute('aria-valuetext')).toMatch(
+    new RegExp(`spent, \\d+% of the cap, likely \\${likely}, band \\$`),
+  );
   // The run finished inside its cap (and, on these mocks, inside its band).
   expect(values[2]!).toBeLessThanOrEqual(Number(cap.slice(1)));
   await expect(page.locator('.cost-meter')).toContainText(/band \$/);
 });
 
-// Known gap (reported to S1): the kernel explains a node only when an unconstrained
-// re-route agrees with the estimate (packages/kernel/src/routing-info.ts:69-71), so the
-// review node, whose model is set by critic diversity (principle 2), shows no reason.
-// `test.fail` keeps the suite green and turns red once the kernel explains that node.
-test('R-303: the diversity-constrained review node shows the router reason', async ({ open }) => {
-  test.fail(true, 'review node has no routing reason (R-303 gap, owner S1)');
+// R-303 on the node where principle 2 applies: the kernel explains each planned step with
+// the decision the estimator priced it on (critic, judge and review exclusions included).
+test('R-303: the diversity-constrained review node shows the router reason', async ({
+  open,
+  kernel,
+}) => {
   const page = await open();
   await connected(page);
   await plan(page, CODE_REQUEST);
+  const r = await rpc(kernel.server.port, kernel.server.token);
+  const est = await r
+    .call<{ estimate: { nodes: NodeEstimate[] } }>('plan', { request: CODE_REQUEST, options: {} })
+    .finally(() => r.close());
+  const review = est.estimate.nodes.find((n) => n.nodeId === 'review')!;
+  expect(review.reason).toBeTruthy();
+  // The review is routed away from every upstream provider: here three of the four mocks
+  // wrote upstream, so the router names no runner-up and says why.
+  if (!review.runnerUp) expect(review.reason).toMatch(/only candidate left after filters/);
   await page.locator('#node-review').click();
   const panel = page.getByRole('region', { name: 'Why this model' });
   await expect(panel).toBeVisible();
-  await expect(panel.getByText(/^No routing reason/)).toHaveCount(0, { timeout: 2000 });
+  await expect(panel.getByText(/^No routing reason/)).toHaveCount(0);
+  await expect(panel).toContainText(review.reason!);
 });

@@ -3,7 +3,16 @@ import { t, type Key } from '../i18n/core';
 import { loadModels, requestPlan } from '../store/actions';
 import { announce, patch, setPrefs, studio, useStudio } from '../store/store';
 import type { PackHelp, Profile } from '../store/types';
+import { visibleProviders, type ProviderKind } from '../rpc/schemas';
 import { Modal } from './Modal';
+
+/** A kernel that does not say the kind gets "cloud?": maybe billed, never assumed free. */
+const KIND: Record<ProviderKind, Key> = {
+  local: 'onboarding.local',
+  cloud: 'onboarding.cloud',
+  test: 'onboarding.test',
+  unknown: 'onboarding.unknown',
+};
 
 const PROFILES: Array<{ id: Profile; label: Key; hint: Key }> = [
   { id: 'economy', label: 'onboarding.economy', hint: 'onboarding.economyHint' },
@@ -12,7 +21,10 @@ const PROFILES: Array<{ id: Profile; label: Key; hint: Key }> = [
 ];
 
 function Providers() {
-  const providers = useStudio((s) => s.providers);
+  const all = useStudio((s) => s.providers);
+  const testAllowed = useStudio((s) => s.testAllowed);
+  // S8 bug 4: test providers are offline fakes; listed only when the server allows them.
+  const providers = visibleProviders(all, testAllowed);
   return (
     <section aria-labelledby="ob-providers">
       <h3 id="ob-providers">{t('onboarding.providers')}</h3>
@@ -25,7 +37,7 @@ function Providers() {
               <span aria-hidden="true">{p.available ? '✓ ' : '✕ '}</span>
               {t(p.available ? 'onboarding.ready' : 'onboarding.missing', {
                 name: p.name,
-                kind: t(p.kind === 'local' ? 'onboarding.local' : 'onboarding.cloud'),
+                kind: t(KIND[p.kind]),
                 reason: p.reason,
               })}
             </li>

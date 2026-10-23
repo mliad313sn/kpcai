@@ -1,7 +1,9 @@
 /**
- * Keyboard of KP Studio in the terminal. The request line always takes printable keys;
- * actions use Ctrl so typing never triggers them. A confirmation takes over the keyboard
- * and only y/o (yes) is a yes: anything else — n, Esc, Enter — is the default No.
+ * Keyboard of KP Studio in the terminal. The input line always takes printable keys;
+ * actions use Ctrl so typing never triggers them. Ctrl+N and Ctrl+T turn the line into an
+ * instruction or a redirect for the selected node; Esc goes back to the request line. A
+ * confirmation takes over the keyboard and only y/o (yes) is a yes: anything else — n,
+ * Esc, Enter — is the default No.
  */
 export type Action =
   | { kind: 'type'; text: string }
@@ -12,6 +14,11 @@ export type Action =
   | { kind: 'pauseResume' }
   | { kind: 'cancel' }
   | { kind: 'nextNode' }
+  | { kind: 'diff' }
+  | { kind: 'apply' }
+  | { kind: 'instruct' }
+  | { kind: 'redirect' }
+  | { kind: 'escape' }
   | { kind: 'quit' }
   | { kind: 'confirm'; ok: boolean }
   | { kind: 'none' };
@@ -31,6 +38,10 @@ const CTRL: Record<string, Action['kind']> = {
   d: 'discard',
   p: 'pauseResume',
   x: 'cancel',
+  o: 'diff',
+  a: 'apply',
+  n: 'instruct',
+  t: 'redirect',
   q: 'quit',
   c: 'quit',
 };
@@ -48,7 +59,8 @@ export function keyAction(input: string, key: KeyInfo, confirming: boolean): Act
   if (key.return) return { kind: 'submit' };
   if (key.tab) return { kind: 'nextNode' };
   if (key.backspace || key.delete) return { kind: 'backspace' };
-  if (key.escape || key.meta || !input) return { kind: 'none' };
+  if (key.escape) return { kind: 'escape' };
+  if (key.meta || !input) return { kind: 'none' };
   // Drop control characters a paste may carry; keep the rest as typed.
   // eslint-disable-next-line no-control-regex
   const text = input.replace(/[\u0000-\u001f\u007f]/g, '');

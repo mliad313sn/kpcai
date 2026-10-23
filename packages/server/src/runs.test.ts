@@ -14,12 +14,17 @@ afterEach(async () => {
 
 const OPTIONS = { allowTest: true };
 
-async function boot(env: Record<string, string>, confirmTimeoutMs = 3000) {
+async function boot(
+  env: Record<string, string>,
+  confirmTimeoutMs = 3000,
+  defaults?: { allowTest?: boolean },
+) {
   const host = recordingHost(env);
   const server = await startServer({
     kernel: { env: host.env, cwd: host.cwd },
     confirmTimeoutMs,
     serverFile: false,
+    ...(defaults ? { defaults } : {}),
   });
   servers.push(server);
   const c = await connect(`ws://127.0.0.1:${server.port}/rpc`, { token: server.token });
@@ -163,5 +168,42 @@ describe('kernel server: runs', () => {
     );
     expect((await c.call('run.resume', { runId })).result).toEqual({ ok: true });
     await c.waitFor(isRun('run.done', runId));
+  });
+
+  it('--allow-test sets the default: test providers by kind, plans, a request can opt out', async () => {
+    const { c } = await boot({ KPAI_CONFIRM_ABOVE_USD: '100' }, 3000, { allowTest: true });
+    const list = (await c.call('providers.list')).result as {
+      providers: Array<{ id: string; kind: string }>;
+      testAllowed: boolean;
+    };
+    expect(list.testAllowed).toBe(true);
+    expect(list.providers.find((p) => p.id === 'mock-beta')?.kind).toBe('test');
+    type Est = { capUsd: number; band: { highUsd: number }; nodes: Array<{ reason?: string }> };
+    const plan = (await c.call('plan', { request: REQ })).result as { estimate: Est };
+    expect(plan.estimate.nodes.every((n) => n.reason)).toBe(true);
+    expect(plan.estimate.capUsd).toBe(plan.estimate.band.highUsd);
+    const opted = (await c.call('plan', { request: REQ, options: { allowTest: false } }))
+      .result as { estimate: { complete: boolean } };
+    expect(opted.estimate.complete).toBe(false);
+  });
+
+  it('plan.validate keeps refusing test providers when they are not allowed', async () => {
+    const { c } = await boot({ KPAI_CONFIRM_ABOVE_USD: '100' });
+    const list = (await c.call('providers.list')).result as { testAllowed: boolean };
+    expect(list.testAllowed).toBe(false);
+    const plan = (await c.call('plan', { request: REQ })).result as {
+      planId: string;
+      graph: { nodes: Array<Record<string, unknown>> };
+      estimate: { complete: boolean };
+    };
+    expect(plan.estimate.complete).toBe(false);
+    const model = { provider: 'mock-alpha', model: 'm1' };
+    const nodes = plan.graph.nodes.map((n) => ({ ...n, model }));
+    const check = await c.call('plan.validate', { planId: plan.planId, graph: { nodes } });
+    const r = check.result as { ok: boolean; problems: string[] };
+    expect(r.ok).toBe(false);
+    expect(r.problems[0]).toMatch(/kind "test" excluded/);
+    const run = await c.call('run.start', { request: REQ, planId: plan.planId, graph: { nodes } });
+    expect(run).toMatchObject({ error: { code: -32602 } });
   });
 });

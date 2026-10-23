@@ -1,5 +1,6 @@
 import { t } from '../i18n/core';
 import { discardPlan, isEdited, startRun } from '../store/actions';
+import { costOf } from '../store/cost';
 import { formatUsd } from '../store/format';
 import { resetPlan } from '../store/plan-edit';
 import { useStudio } from '../store/store';
@@ -137,7 +138,7 @@ export function PlanBar({ plan }: { plan: PlanView }) {
           aria-describedby={blocker ? 'run-blocker' : undefined}
           onClick={() => void startRun()}
         >
-          {t('plan.run', { cap: formatUsd(plan.estimate.totalUsd) })}
+          {t('plan.run', { cap: formatUsd(costOf(plan.estimate).cap) })}
         </button>
         {blocker && (
           <span id="run-blocker" className="sr-only">

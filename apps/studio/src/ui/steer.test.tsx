@@ -14,24 +14,28 @@ const s = () => studio.getState();
 
 async function plan(user: ReturnType<typeof userEvent.setup>) {
   await user.type(screen.getByRole('combobox', { name: /Ask KP Studio/ }), 'add OAuth{Enter}');
-  await screen.findByRole('button', { name: 'Run (cap $0.40)' });
+  await screen.findByRole('button', { name: 'Run (cap $0.50)' });
 }
 
 describe('editable plan (R-301) and cost band (R-302)', () => {
-  it('shows the band, its basis and the cap before launch', async () => {
+  it('shows the likely cost, the hard cap and the basis before launch (D-021)', async () => {
     ({ kernel } = await renderStudio());
     const user = userEvent.setup();
     await plan(user);
     const bar = screen.getByRole('group', { name: 'Plan' });
-    expect(bar.textContent).toMatch(/Estimate \$0\.12–\$0\.35 \(partly calibrated\) · cap \$0\.40/);
+    expect(bar.textContent).toMatch(
+      /Estimate: likely \$0\.40 · at most \$0\.50 \(hard cap\) · partly calibrated/,
+    );
     expect(screen.getByRole('button', { name: /#impl/ }).textContent).toMatch(/\$0\.09–\$0\.30/);
   });
 
   it('edits model, protocol, criticality and budget, validates, and runs the edited graph', async () => {
     const edited = {
       ...ESTIMATE,
-      totalUsd: 0.5,
+      totalUsd: 0.3,
       band: { lowUsd: 0.2, highUsd: 0.45, basis: 'calibrated' },
+      expectedUsd: 0.3,
+      capUsd: 0.45,
     };
     ({ kernel } = await renderStudio({
       'plan.validate': () => ({
@@ -67,7 +71,7 @@ describe('editable plan (R-301) and cost band (R-302)', () => {
     });
     expect(await screen.findByText(/Warning: node "impl": budget/)).toBeTruthy();
     expect(screen.getByText('impl: model routed → anthropic/model-e')).toBeTruthy();
-    const run = screen.getByRole('button', { name: 'Run (cap $0.50)' });
+    const run = screen.getByRole('button', { name: 'Run (cap $0.45)' });
     await user.click(run);
     await until(() => kernel!.calls('run.start').length === 1);
     const start = kernel.calls('run.start')[0] as { graph: { nodes: Array<{ id: string }> } };
@@ -185,8 +189,16 @@ describe('routing panel (R-303), steering (R-304), live meter (R-302)', () => {
     });
     kernel.notify('run.event', contribution(0.1));
     const meter = await screen.findByRole('meter');
-    await until(() => expect(meter.getAttribute('aria-valuetext')).toMatch(/^\$0\.10 spent, 25%/));
-    kernel.notify('run.event', contribution(0.3));
+    await until(() =>
+      expect(meter.getAttribute('aria-valuetext')).toBe(
+        '$0.10 spent, 20% of the cap, likely $0.40, band $0.12–$0.50',
+      ),
+    );
+    expect(meter.getAttribute('max')).toBe('0.5');
+    expect(meter.getAttribute('high')).toBe('0.5');
+    expect(meter.getAttribute('low')).toBe('0.12');
+    expect(screen.getByText('Spent $0.10 of cap $0.50')).toBeTruthy();
+    kernel.notify('run.event', contribution(0.5));
     await until(() => expect(screen.getByText(/above the band/)).toBeTruthy());
     expect(s().runs.r1?.nodes.impl?.tokens).toEqual({ input: 200, output: 40 });
   });
