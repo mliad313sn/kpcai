@@ -11,7 +11,7 @@ import {
   type StreamEvent,
 } from '@kernelpai/core';
 import { readLines } from '../lines.js';
-import { resolveBaseUrl, type Env } from '../env.js';
+import { localHostProblem, resolveBaseUrl, type Env } from '../env.js';
 import { localCard } from '../local-card.js';
 
 const TagsSchema = z.object({
@@ -43,6 +43,8 @@ export class OllamaAdapter extends BaseAdapter {
   }
 
   async detect(): Promise<DetectResult> {
+    const notLocal = localHostProblem(this.descriptor, this.baseUrl);
+    if (notLocal) return { available: false, reason: notLocal };
     try {
       const res = await this.fetchImpl(`${this.baseUrl}/api/tags`, {
         signal: AbortSignal.timeout(DETECT_TIMEOUT_MS),
@@ -88,6 +90,8 @@ export class OllamaAdapter extends BaseAdapter {
   }
 
   private async post(req: ChatRequest, signal: AbortSignal): Promise<Response> {
+    const notLocal = localHostProblem(this.descriptor, this.baseUrl);
+    if (notLocal) throw new ProviderError('unavailable', this.descriptor.id, notLocal);
     let res: Response;
     try {
       res = await this.fetchImpl(`${this.baseUrl}/api/chat`, {

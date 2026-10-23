@@ -54,6 +54,8 @@ export interface SpendFilter {
   sessionId?: string;
   /** Project key: the session's working directory (`sessions.cwd`). */
   project?: string;
-  /** Only events at or after this instant. */
+  /** Only events at or after this instant (inclusive). */
   since?: Date;
+  /** Only events strictly before this instant (exclusive). */
+  until?: Date;
 }

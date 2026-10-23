@@ -37,6 +37,15 @@ export function renderRejections(d: RoutingDecision): string {
   return d.rejected.map((r) => `  ✗ ${refToString(r.ref)}: ${r.reason}\n`).join('');
 }
 
+function errLine(e: {
+  samples: number;
+  meanAbsPct: number | null;
+  meanSignedPct: number | null;
+}): string {
+  if (e.meanAbsPct === null) return `n/a (${e.samples} samples)`;
+  return `${e.meanAbsPct.toFixed(1)} % mean abs, ${(e.meanSignedPct ?? 0).toFixed(1)} % signed (${e.samples} samples)`;
+}
+
 export function renderMetrics(x: ExecutorMetrics, m: Money): string {
   return (
     [
@@ -44,7 +53,9 @@ export function renderMetrics(x: ExecutorMetrics, m: Money): string {
       `fallback rate         ${pct(x.fallbackRate)} (${x.fallbacks} fallbacks)`,
       `fallback success      ${pct(x.fallbackSuccessRate)}`,
       `avg cost per task     ${x.avgCostPerTaskUsd === null ? 'n/a' : formatMoney(x.avgCostPerTaskUsd, m)}`,
-      `estimate error        ${x.estimateError.meanAbsPct === null ? 'n/a' : `${x.estimateError.meanAbsPct.toFixed(1)} % mean abs, ${x.estimateError.meanSignedPct?.toFixed(1)} % signed`} (${x.estimateError.samples} samples)`,
+      `estimate error cost   ${errLine(x.costError)}`,
+      `  output tokens       ${errLine(x.outputTokenError)}`,
+      `  input tokens        ${errLine(x.estimateError)}`,
       `router latency        p50 ${ms(x.routerLatencyMs.p50)} · p95 ${ms(x.routerLatencyMs.p95)} (${x.routerLatencyMs.samples} decisions)`,
     ].join('\n') + '\n'
   );

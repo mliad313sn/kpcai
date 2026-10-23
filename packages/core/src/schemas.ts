@@ -59,7 +59,15 @@ export const ProviderDescriptorSchema = z.object({
   adapter: z.string().min(1),
   baseUrl: z.url().optional(),
   baseUrlEnv: z.string().optional(),
-  auth: z.object({ env: z.string().regex(/^[A-Z_][A-Z0-9_]*$/) }).optional(),
+  auth: z
+    .object({
+      // Only credential-shaped names, so a shared descriptor cannot exfiltrate arbitrary
+      // environment variables such as AWS_SECRET_ACCESS_KEY (review F8).
+      env: z
+        .string()
+        .regex(/^[A-Z][A-Z0-9_]*_API_(KEY|TOKEN)$/, 'must look like <PROVIDER>_API_KEY'),
+    })
+    .optional(),
   jurisdiction: z.string().min(1),
   retention: z.string().min(1),
   discoverModels: z.boolean().default(false),

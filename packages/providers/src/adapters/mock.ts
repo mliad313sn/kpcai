@@ -26,9 +26,13 @@ export class MockAdapter extends BaseAdapter {
     return Promise.resolve({ available: true, reason: 'built-in offline provider' });
   }
 
-  /** `[[fail:kind]]` fails every mock; `[[fail:kind@provider]]` only that provider. */
-  private forcedFailure(prompt: string): string | undefined {
-    for (const m of prompt.matchAll(/\[\[fail:([a-z_]+)(?:@([a-z0-9-]+))?\]\]/g)) {
+  /**
+   * `[[fail:kind]]` fails every mock before any output; `[[fail:kind@provider]]` only that
+   * provider. `[[midfail:…]]` is the same but fails after streaming half the answer.
+   */
+  private forcedFailure(prompt: string, tag = 'fail'): string | undefined {
+    const re = new RegExp(`\\[\\[${tag}:([a-z_]+)(?:@([a-z0-9-]+))?\\]\\]`, 'g');
+    for (const m of prompt.matchAll(re)) {
       if (!m[2] || m[2] === this.descriptor.id) return m[1];
     }
     return undefined;
@@ -46,9 +50,18 @@ export class MockAdapter extends BaseAdapter {
     }
     const answer = `[mock/${req.model}] You asked: ${prompt.trim()}`;
     const delayMs = prompt.includes('[[slow]]') ? 50 : this.behaviour.delayMs;
+    const midFail = this.forcedFailure(prompt, 'midfail');
+    const words = answer.split(/(?<= )/);
     let sent = 0;
-    for (const word of answer.split(/(?<= )/)) {
+    for (const [i, word] of words.entries()) {
       if (signal.aborted) throw Object.assign(new Error('aborted'), { name: 'AbortError' });
+      if (midFail && i === Math.floor(words.length / 2)) {
+        throw new ProviderError(
+          midFail as ProviderError['kind'],
+          this.descriptor.id,
+          `Simulated ${midFail} mid-stream`,
+        );
+      }
       if (delayMs) await sleep(delayMs, undefined, { signal });
       sent += word.length;
       yield { type: 'text', delta: word };

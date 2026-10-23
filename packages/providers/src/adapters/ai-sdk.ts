@@ -4,8 +4,10 @@ import {
   EmptyResponseBodyError,
   InvalidResponseDataError,
   JSONParseError,
+  InvalidStreamPartError,
   LoadAPIKeyError,
   NoContentGeneratedError,
+  NoSuchModelError,
   StreamProviderError,
   TypeValidationError,
   streamText,
@@ -24,7 +26,13 @@ import {
   type StopReason,
   type StreamEvent,
 } from '@kernelpai/core';
-import { resolveApiKey, resolveBaseUrl, type Env } from '../env.js';
+import {
+  localHostProblem,
+  mayCarryCredentials,
+  resolveApiKey,
+  resolveBaseUrl,
+  type Env,
+} from '../env.js';
 import { localCard } from '../local-card.js';
 import { modelFactory, type AiSdkName, type ModelFactory } from './ai-sdk-models.js';
 
@@ -52,6 +60,7 @@ const MALFORMED = [
   InvalidResponseDataError,
   EmptyResponseBodyError,
   NoContentGeneratedError,
+  InvalidStreamPartError,
 ] as const;
 
 /**
@@ -77,6 +86,8 @@ export class AiSdkAdapter extends BaseAdapter {
     if (auth && !resolveApiKey(this.descriptor, this.env)) {
       return { available: false, reason: `${auth.env} is not set` };
     }
+    const notLocal = localHostProblem(this.descriptor, this.baseUrl());
+    if (notLocal) return { available: false, reason: notLocal };
     if (this.descriptor.discoverModels) return this.discover();
     return { available: true, reason: auth ? `${auth.env} is set` : 'no credentials needed' };
   }
@@ -144,9 +155,15 @@ export class AiSdkAdapter extends BaseAdapter {
 
   private async discover(): Promise<DetectResult> {
     const base = this.baseUrl();
+    if (!base) return { available: false, reason: 'model discovery needs a base URL' };
+    const key = resolveApiKey(this.descriptor, this.env);
+    if (key && !mayCarryCredentials(base)) {
+      return { available: false, reason: `refusing to send credentials to ${base}: not https` };
+    }
     try {
       const res = await this.fetchImpl(`${base}/models`, {
-        headers: this.authHeaders(),
+        // Only a descriptor with `auth` ever gets an Authorization header.
+        headers: key ? { authorization: `Bearer ${key}` } : {},
         signal: AbortSignal.timeout(DETECT_TIMEOUT_MS),
       });
       if (!res.ok) return { available: false, reason: `HTTP ${res.status} from ${base}` };
@@ -166,21 +183,26 @@ export class AiSdkAdapter extends BaseAdapter {
     return resolveBaseUrl(this.descriptor, this.env);
   }
 
-  private authHeaders(): Record<string, string> {
-    const key = resolveApiKey(this.descriptor, this.env);
-    return key ? { authorization: `Bearer ${key}` } : {};
-  }
-
   private getFactory(): ModelFactory {
     const auth = this.descriptor.auth;
     const apiKey = resolveApiKey(this.descriptor, this.env);
     if (auth && !apiKey) {
       throw new ProviderError('auth', this.descriptor.id, `${auth.env} is not set`);
     }
+    const baseURL = this.baseUrl();
+    const notLocal = localHostProblem(this.descriptor, baseURL);
+    if (notLocal) throw new ProviderError('unavailable', this.descriptor.id, notLocal);
+    if (apiKey && baseURL && !mayCarryCredentials(baseURL)) {
+      throw new ProviderError(
+        'bad_request',
+        this.descriptor.id,
+        `refusing to send credentials to ${baseURL}: not https`,
+      );
+    }
     this.factory ??= modelFactory(this.sdk, {
       name: this.descriptor.id,
       apiKey,
-      baseURL: this.baseUrl(),
+      baseURL,
       fetch: this.fetchImpl,
     });
     return this.factory;
@@ -213,9 +235,24 @@ export class AiSdkAdapter extends BaseAdapter {
     if (LoadAPIKeyError.isInstance(err)) {
       return new ProviderError('auth', id, err.message, { cause: err });
     }
-    // Parse/validation failures, and exceptions thrown by an SDK while decoding chunks.
-    if (MALFORMED.some((cls) => cls.isInstance(err)) || err instanceof Error) {
+    return this.mapOtherError(err);
+  }
+
+  /**
+   * Review F13: only known parse/validation classes are `malformed`. A retired or
+   * unknown model is `unavailable` (another model may work). Any other Error is a
+   * programming or configuration fault: `bad_request`, never hidden by a fallback.
+   */
+  private mapOtherError(err: unknown): ProviderError {
+    const id = this.descriptor.id;
+    if (MALFORMED.some((cls) => cls.isInstance(err))) {
       return new ProviderError('malformed', id, (err as Error).message, { cause: err });
+    }
+    if (NoSuchModelError.isInstance(err)) {
+      return new ProviderError('unavailable', id, err.message, { cause: err });
+    }
+    if (err instanceof Error) {
+      return new ProviderError('bad_request', id, `${err.name}: ${err.message}`, { cause: err });
     }
     // Anything else is opaque provider data: treat the provider as unavailable.
     return new ProviderError('unavailable', id, `Provider error: ${describe(err)}`, {

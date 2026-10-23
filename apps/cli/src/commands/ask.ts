@@ -12,6 +12,7 @@ import {
 import type { Journal } from '@kernelpai/journal';
 import { buildRegistry, confirmThreshold, openJournal } from '../context.js';
 import type { Io } from '../io.js';
+import { sanitizeForTerminal } from '../sanitize.js';
 
 export interface AskOptions {
   model?: string;
@@ -123,7 +124,7 @@ async function run(c: Call): Promise<number> {
     for await (const ev of c.adapter.send(c.req, { requestId })) {
       if (ev.type === 'text') {
         text += ev.delta;
-        c.io.out(ev.delta);
+        c.io.out(c.io.stdoutIsTTY ? sanitizeForTerminal(ev.delta) : ev.delta);
       } else if (ev.type === 'usage') usage = ev.usage;
       else if (ev.type === 'end') stopReason = ev.stopReason;
     }
@@ -175,6 +176,8 @@ function failed(c: Call, err: unknown, partial: string): number {
     type: 'error',
     payload: { kind, message, partialText: partial },
   });
-  c.io.err(`\nerror (${kind}): ${message} · session ${c.sessionId.slice(0, 8)}\n`);
+  c.io.err(
+    `\nerror (${kind}): ${sanitizeForTerminal(message)} · session ${c.sessionId.slice(0, 8)}\n`,
+  );
   return 1;
 }

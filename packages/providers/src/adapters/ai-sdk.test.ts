@@ -244,7 +244,13 @@ describe('AiSdkAdapter credentials and detection', () => {
   });
 
   it('refuses an openai-compatible descriptor without a base URL', async () => {
-    const d = { ...byId('llamacpp'), baseUrl: undefined, baseUrlEnv: undefined };
+    // kind cloud: a local descriptor without a base URL is refused as not local first.
+    const d = {
+      ...byId('llamacpp'),
+      kind: 'cloud' as const,
+      baseUrl: undefined,
+      baseUrlEnv: undefined,
+    };
     const a = new AiSdkAdapter(d, {}, 'openai-compatible');
     const req = { model: 'x', messages: [{ role: 'user' as const, content: 'hi' }] };
     await expect(collect(a, req.model)).rejects.toThrow(/needs a base URL/);

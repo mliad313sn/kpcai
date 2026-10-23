@@ -16,6 +16,24 @@ describe('schemas', () => {
     expect(ok.discoverModels).toBe(false);
   });
 
+  it('accepts only credential-shaped auth env names (review F8)', () => {
+    const base = {
+      id: 'ok',
+      name: 'X',
+      kind: 'cloud',
+      adapter: 'x',
+      jurisdiction: 'US',
+      retention: 'r',
+    };
+    const env = (name: string) =>
+      ProviderDescriptorSchema.safeParse({ ...base, auth: { env: name } }).success;
+    expect(env('AWS_SECRET_ACCESS_KEY')).toBe(false);
+    expect(env('HOME')).toBe(false);
+    expect(env('lower_API_KEY')).toBe(false);
+    expect(env('XAI_API_KEY')).toBe(true);
+    expect(env('GOOGLE_GENERATIVE_AI_API_KEY')).toBe(true);
+  });
+
   it('requires at least one message and a sane output cap', () => {
     expect(ChatRequestSchema.safeParse({ model: 'm', messages: [] }).success).toBe(false);
     expect(

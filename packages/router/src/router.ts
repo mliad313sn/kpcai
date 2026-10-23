@@ -5,6 +5,7 @@ import {
   type Candidate,
   type CostEstimate,
   type MeasuredCompetence,
+  type ModelRef,
   type Rejection,
   type Router,
   type RoutingConstraints,
@@ -13,6 +14,7 @@ import {
   type RoutingWeights,
   type ScoredCandidate,
   type TaskNode,
+  type TaskType,
 } from '@kernelpai/core';
 import {
   capabilityRejection,
@@ -30,8 +32,36 @@ export interface CompetenceRouterOptions {
   weights?: Partial<RoutingWeights>;
   /** Competence learned on this project (phase 4); absent means static only. */
   measured?: MeasuredCompetence;
+  /**
+   * Absolute cost reference used when the node has no `budgetUsd`:
+   * cost penalty = min(1, expected cost / reference). Default 0.10 USD.
+   * Absolute (not the priciest survivor) so the order of two candidates never
+   * depends on a third, unrelated one (independence of irrelevant alternatives).
+   */
+  costReferenceUsd?: number;
+  /**
+   * Absolute latency reference used when the node has no `maxLatencyMs`:
+   * latency penalty = min(1, typical latency / reference). Default 20 000 ms.
+   */
+  latencyReferenceMs?: number;
+  /**
+   * Calibrated typical output tokens for a model on a task type (from history);
+   * `undefined` falls back to the heuristic of `estimateRequest`.
+   */
+  expectedOutput?: (ref: ModelRef, type: TaskType) => number | undefined;
   /** Monotonic clock in ms, injectable for tests. */
   clock?: () => number;
+}
+
+/** Default `costReferenceUsd`: a 10-cent call gets the full cost penalty. */
+export const DEFAULT_COST_REFERENCE_USD = 0.1;
+/** Default `latencyReferenceMs`: a 20 s typical latency gets the full latency penalty. */
+export const DEFAULT_LATENCY_REFERENCE_MS = 20_000;
+
+function positive(name: string, value: number | undefined, fallback: number): number {
+  if (value === undefined) return fallback;
+  if (!Number.isFinite(value) || value <= 0) throw new RangeError(`${name} must be > 0`);
+  return value;
 }
 
 /** How many rejections the "nothing survives" error lists before summarising. */
@@ -51,13 +81,27 @@ interface Ranked {
 export class CompetenceRouter implements Router {
   readonly weights: Readonly<RoutingWeights>;
   readonly profile: RoutingProfile;
+  readonly costReferenceUsd: number;
+  readonly latencyReferenceMs: number;
   private readonly measured: MeasuredCompetence | undefined;
+  private readonly expectedOutput: CompetenceRouterOptions['expectedOutput'];
   private readonly clock: () => number;
 
   constructor(options: CompetenceRouterOptions = {}) {
     this.profile = options.profile ?? 'balanced';
     this.weights = weightsFor(this.profile, options.weights);
+    this.costReferenceUsd = positive(
+      'costReferenceUsd',
+      options.costReferenceUsd,
+      DEFAULT_COST_REFERENCE_USD,
+    );
+    this.latencyReferenceMs = positive(
+      'latencyReferenceMs',
+      options.latencyReferenceMs,
+      DEFAULT_LATENCY_REFERENCE_MS,
+    );
     this.measured = options.measured;
+    this.expectedOutput = options.expectedOutput;
     this.clock = options.clock ?? (() => performance.now());
   }
 
@@ -104,6 +148,7 @@ export class CompetenceRouter implements Router {
       const estimate = estimateRequest(
         { model: cand.ref.model, messages: node.messages, maxOutputTokens: node.maxOutputTokens },
         cand.card,
+        { expectedOutputTokens: this.expectedOutput?.(cand.ref, node.type) },
       );
       const capability = capabilityRejection(cand, node, estimate);
       if (capability) rejected.push({ ref: cand.ref, reason: capability });
@@ -113,10 +158,10 @@ export class CompetenceRouter implements Router {
   }
 
   private rank(node: TaskNode, survivors: readonly Survivor[]): Ranked[] {
-    // Without a node budget / latency cap, normalise against the worst surviving candidate.
-    const budgetUsd = node.budgetUsd ?? maxOf(survivors, (s) => s.estimate.expectedCostUsd);
-    const maxLatencyMs =
-      node.maxLatencyMs ?? maxOf(survivors, (s) => s.cand.card.latencyMsTypical ?? 0);
+    // Without a node budget / latency cap, normalise against absolute references,
+    // never against other survivors, so each candidate's score is independent.
+    const budgetUsd = node.budgetUsd ?? this.costReferenceUsd;
+    const maxLatencyMs = node.maxLatencyMs ?? this.latencyReferenceMs;
     const ranked = survivors.map((s) => this.score(node, s, budgetUsd, maxLatencyMs));
     return ranked.sort(compareRanked);
   }
@@ -136,12 +181,6 @@ export class CompetenceRouter implements Router {
     const score = sumContributions(contrib);
     return { scored: { ref, score, parts, estimate: s.estimate }, parts: contrib };
   }
-}
-
-function maxOf<T>(xs: readonly T[], f: (x: T) => number): number {
-  let m = 0;
-  for (const x of xs) m = Math.max(m, f(x));
-  return m;
 }
 
 /** Score desc; ties broken by expected cost asc, then "provider/model" asc. */

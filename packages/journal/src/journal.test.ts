@@ -140,6 +140,11 @@ describe('Journal.spend', () => {
     expect(j.spend({ project: '/p1', sessionId: b })).toBe(0);
     expect(j.spend({ since: new Date('2026-10-01T00:00:01Z') })).toBe(2.75);
     expect(j.spend({ project: '/none' })).toBe(0);
+    expect(j.spend({ until: new Date('2026-10-01T00:00:01Z') })).toBe(1);
+    expect(j.spend({ until: new Date('2026-10-01T00:00:00Z') })).toBe(0);
+    expect(
+      j.spend({ since: new Date('2026-10-01T00:00:01Z'), until: new Date('2026-10-01T00:00:03Z') }),
+    ).toBe(2.5);
   });
 
   it('migrates a v1 journal without touching its chain', () => {
@@ -162,5 +167,64 @@ describe('Journal.spend', () => {
     );
     expect(j1.spend({ project: '/repo' })).toBe(0.5);
     expect(j1.verify().ok).toBe(true);
+  });
+});
+
+describe('Journal session resumption', () => {
+  const MIN = 60_000;
+  function clocked(): { j: Journal; at: (iso: string) => void } {
+    let next = '2026-10-23T10:00:00Z';
+    const j = Journal.open(':memory:', { now: () => new Date(next) });
+    open.push(j);
+    return { j, at: (iso) => (next = iso) };
+  }
+
+  it('reports last activity: last event, else creation', () => {
+    const { j, at } = clocked();
+    const s = j.startSession('s', '/repo');
+    expect(j.lastActivity(s)?.toISOString()).toBe('2026-10-23T10:00:00.000Z');
+    at('2026-10-23T10:05:00Z');
+    j.append({ sessionId: s, type: 'call', payload: {} });
+    expect(j.lastActivity(s)?.toISOString()).toBe('2026-10-23T10:05:00.000Z');
+    expect(j.lastActivity('missing')).toBeUndefined();
+  });
+
+  it('resumes the most recent session of the cwd within the idle window', () => {
+    const { j, at } = clocked();
+    const old = j.startSession('old', '/repo');
+    at('2026-10-23T10:01:00Z');
+    const cur = j.startSession('cur', '/repo');
+    at('2026-10-23T10:02:00Z');
+    j.append({ sessionId: old, type: 'call', payload: {} }); // old is now the most active
+    at('2026-10-23T10:03:00Z');
+    j.startSession('other', '/elsewhere');
+    const now = new Date('2026-10-23T10:10:00Z');
+    expect(j.resumableSession('/repo', 30 * MIN, now)?.id).toBe(old);
+    expect(j.resumableSession('/repo', 30 * MIN, now)?.eventCount).toBe(1);
+    expect(j.resumableSession('/nowhere', 30 * MIN, now)).toBeUndefined();
+    expect(cur).not.toBe(old);
+  });
+
+  it('respects the idle boundary (inclusive) and ignores other cwds', () => {
+    const { j, at } = clocked();
+    const s = j.startSession('s', '/repo');
+    at('2026-10-23T10:20:00Z');
+    j.append({ sessionId: s, type: 'response', costUsd: 0.1, payload: {} });
+    at('2026-10-23T10:50:00Z');
+    const other = j.startSession('o', '/other');
+    const edge = new Date('2026-10-23T10:50:00Z'); // exactly 30 min after the last event
+    expect(j.resumableSession('/repo', 30 * MIN, edge)?.id).toBe(s);
+    const past = new Date(edge.getTime() + 1);
+    expect(j.resumableSession('/repo', 30 * MIN, past)).toBeUndefined();
+    expect(j.resumableSession('/other', 30 * MIN, past)?.id).toBe(other);
+    expect(j.resumableSession('/repo', Number.NaN, edge)).toBeUndefined();
+  });
+
+  it('uses creation time for a session without events', () => {
+    const { j } = clocked();
+    const s = j.startSession('empty', '/repo');
+    const now = new Date('2026-10-23T10:15:00Z');
+    expect(j.resumableSession('/repo', 15 * MIN, now)?.id).toBe(s);
+    expect(j.resumableSession('/repo', 15 * MIN - 1, now)).toBeUndefined();
   });
 });

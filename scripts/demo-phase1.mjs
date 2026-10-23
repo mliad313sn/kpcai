@@ -63,45 +63,58 @@ const CODE = 'write a typescript function that validates an OAuth state paramete
 console.log(`KernelPAI phase 1 demo — journal in ${home}`);
 step('Providers: 10 real (need keys or local servers) + offline mocks', ['providers']);
 step('Mocks are never routed to unless allowed (kind "test")', ['route', CODE], { expect: 1 });
-step('Dry run: classify → plan → route, with one-line justification', [
-  'route',
-  T,
-  '--verbose',
-  CODE,
-]);
-step('Same request, "performance" profile: competence beats cost', [
-  'route',
-  T,
-  '-p',
-  'performance',
-  CODE,
-]);
+step('Dry run: classify → plan → route, one-line justification', ['route', T, '--verbose', CODE]);
+const tight = { KPAI_BUDGET_TASK_USD: '0.012' };
+step('Tight task budget, "economy": the cheaper model', ['route', T, '-p', 'economy', CODE], {
+  extraEnv: tight,
+});
+step(
+  'Same budget, "performance": the most competent model',
+  ['route', T, '-p', 'performance', CODE],
+  { extraEnv: tight },
+);
 step('French writing task routes to the best writer', [
   'route',
   T,
   'rédige un courriel pour annoncer la release',
 ]);
 step('Run: execute the routed model, journal everything', ['run', T, CODE]);
-step('Automatic fallback: the chosen model is rate-limited', [
+step('Fallback: the chosen model is rate-limited', [
   'run',
   T,
-  `${CODE} [[fail:rate_limit@mock-beta]]`,
+  `${CODE} [[fail:rate_limit@mock-alpha]]`,
 ]);
 step('Fallback chain: two providers down, the third answers', [
   'run',
   T,
-  `${CODE} [[fail:unavailable@mock-beta]] [[fail:unavailable@mock-alpha]]`,
+  `${CODE} [[fail:unavailable@mock-alpha]] [[fail:unavailable@mock-beta]]`,
 ]);
+step('Mid-stream failure: partial text discarded, fallback answers', [
+  'run',
+  T,
+  `${CODE} [[midfail:unavailable@mock-alpha]]`,
+]);
+const gated = ['run', T, '--exclude', 'mock,mock-gamma', `${CODE} [[fail:unavailable@mock-beta]]`];
+const econ = { KPAI_BUDGET_TASK_USD: '0.005', KPAI_PROFILE: 'economy' };
+step('Every fallback is budget-checked: the pricier one is blocked', gated, {
+  expect: 1,
+  extraEnv: econ,
+});
+step(
+  '…unless the user explicitly overrides (journaled)',
+  [...gated.slice(0, 2), '--over-budget', ...gated.slice(2)],
+  { extraEnv: econ },
+);
 step(
   'Every provider down: reported, nothing invented',
   ['run', T, `${CODE} [[fail:unavailable]]`],
   { expect: 1 },
 );
-step('Budget: session limit blocks before spending, with options', ['run', T, '--yes', CODE], {
+step('Session budget (the session spans runs) blocks before spending', ['run', T, '--yes', CODE], {
   expect: 4,
   extraEnv: { KPAI_BUDGET_SESSION_USD: '0.0001' },
 });
-step('Budget: above the confirmation threshold, non-interactive declines', ['run', T, CODE], {
+step('Above the confirmation threshold, non-interactive declines', ['run', T, CODE], {
   expect: 4,
   extraEnv: { KPAI_CONFIRM_ABOVE_USD: '0' },
 });
@@ -114,7 +127,7 @@ if (process.env.KPAI_DEMO_LIVE === '1') {
     'Explain in two sentences what OAuth PKCE protects against',
   ]);
 }
-step('Phase metrics from the journal (display in EUR at an explicit rate)', ['stats'], {
+step('Phase metrics from the journal (EUR at an explicit rate)', ['stats'], {
   extraEnv: { KPAI_CURRENCY: 'EUR', KPAI_USD_RATE: '0.92' },
 });
 step('Journal hash chain intact', ['verify']);

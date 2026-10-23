@@ -23,6 +23,7 @@ export function fakeIo(env: Record<string, string> = {}): FakeIo {
     questions: [],
     env: { KPAI_HOME: home, OLLAMA_HOST: 'http://127.0.0.1:9', ...env },
     cwd: '/work/repo',
+    stdoutIsTTY: true,
     out: (t) => void (io.stdout += t),
     err: (t) => void (io.stderr += t),
     confirm: (q) => {

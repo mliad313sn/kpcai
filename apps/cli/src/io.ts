@@ -7,6 +7,8 @@ export interface Io {
   err(text: string): void;
   env: Env;
   cwd: string;
+  /** True when stdout is a terminal (stream live); false when piped (print final answer only). */
+  stdoutIsTTY: boolean;
   confirm(question: string): Promise<boolean>;
   /** Registers a Ctrl+C handler; returns an unregister function. */
   onInterrupt(handler: () => void): () => void;
@@ -18,6 +20,7 @@ export function processIo(): Io {
     err: (t) => process.stderr.write(t),
     env: process.env,
     cwd: process.cwd(),
+    stdoutIsTTY: process.stdout.isTTY === true,
     confirm: async (question) => {
       if (!process.stdin.isTTY) return false;
       const rl = createInterface({ input: process.stdin, output: process.stderr });

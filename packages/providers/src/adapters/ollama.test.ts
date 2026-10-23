@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ProviderDescriptor, StreamEvent } from '@kernelpai/core';
 import { OllamaAdapter } from './ollama.js';
 import { BUILTIN_DESCRIPTOR_DIR, loadDescriptors } from '../registry.js';
@@ -121,5 +121,27 @@ describe('OllamaAdapter', () => {
 
   it('accepts host:port without scheme in OLLAMA_HOST', () => {
     expect(() => at('127.0.0.1:11434')).not.toThrow();
+  });
+
+  it.each(['10.0.0.5:11434', 'http://192.168.1.20:11434', 'https://ollama.example.com'])(
+    'refuses OLLAMA_HOST=%s as not local, without any request',
+    async (host) => {
+      const f = vi.fn<typeof fetch>(() => Promise.reject(new Error('no network')));
+      const a = new OllamaAdapter(descriptor, { OLLAMA_HOST: host }, f);
+      expect(await a.detect()).toMatchObject({
+        available: false,
+        reason: expect.stringMatching(/host is not local: .*check OLLAMA_HOST/),
+      });
+      await expect(collect(a)).rejects.toMatchObject({ kind: 'unavailable' });
+      expect(f).not.toHaveBeenCalled();
+    },
+  );
+
+  it('refuses an override descriptor with kind local and a remote baseUrl', async () => {
+    const d = { ...descriptor, baseUrl: 'http://203.0.113.7:11434' };
+    expect(await new OllamaAdapter(d, {}).detect()).toMatchObject({
+      available: false,
+      reason: expect.stringMatching(/host is not local/),
+    });
   });
 });

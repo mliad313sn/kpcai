@@ -2,7 +2,7 @@ import type { BudgetLimits, SpendContext, SpendLedger } from '@kernelpai/core';
 import { Journal } from '@kernelpai/journal';
 import { afterEach, describe, expect, it } from 'vitest';
 import { Governor } from './governor.js';
-import { JournalLedger, startOfMonthUtc } from './ledger.js';
+import { JournalLedger, startOfMonthUtc, startOfNextMonthUtc } from './ledger.js';
 
 const ctx: SpendContext = {
   sessionId: 's1',
@@ -130,7 +130,9 @@ describe('JournalLedger', () => {
     expect(ledger.spent('session', c)).toBe(1);
     expect(ledger.spent('project', c)).toBe(4);
     expect(ledger.spent('month', c)).toBe(1.5);
-    expect(ledger.spent('month', { ...c, now: new Date('2026-09-15T00:00:00Z') })).toBe(4.5);
+    // September is bounded at 1 October 00:00 UTC: October spend is not counted.
+    expect(ledger.spent('month', { ...c, now: new Date('2026-09-15T00:00:00Z') })).toBe(3);
+    expect(ledger.spent('month', { ...c, now: new Date('2026-08-15T00:00:00Z') })).toBe(0);
   });
 
   it('drives the governor end to end', () => {
@@ -141,6 +143,17 @@ describe('JournalLedger', () => {
     const c = { sessionId: s, project: '/repo', now: new Date('2026-10-23T00:00:00Z') };
     expect(g.check(0.05, c).action).toBe('allow');
     expect(g.check(0.2, c)).toMatchObject({ action: 'block', scope: 'session', limitUsd: 1 });
+  });
+});
+
+describe('startOfNextMonthUtc', () => {
+  it('rolls over months and years in UTC', () => {
+    expect(startOfNextMonthUtc(new Date('2026-12-31T23:59:59.999Z')).toISOString()).toBe(
+      '2027-01-01T00:00:00.000Z',
+    );
+    expect(startOfNextMonthUtc(new Date('2026-10-01T00:00:00Z')).toISOString()).toBe(
+      '2026-11-01T00:00:00.000Z',
+    );
   });
 });
 

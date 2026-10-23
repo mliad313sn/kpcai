@@ -45,6 +45,30 @@ function toEvent(r: EventRow): JournalEvent {
   };
 }
 
+interface SessionDbRow {
+  id: string;
+  created_at: string;
+  title: string;
+  cwd: string;
+  n: number;
+  cost: number;
+}
+
+const SESSION_SELECT = `SELECT s.id, s.created_at, s.title, s.cwd, COUNT(e.seq) AS n,
+    COALESCE(SUM(e.cost_usd), 0) AS cost
+  FROM sessions s LEFT JOIN events e ON e.session_id = s.id`;
+
+function toSessionRow(r: SessionDbRow): SessionRow {
+  return {
+    id: r.id,
+    createdAt: r.created_at,
+    title: r.title,
+    cwd: r.cwd,
+    eventCount: r.n,
+    costUsd: r.cost,
+  };
+}
+
 /** Append-only, hash-chained session journal stored in a local SQLite file. */
 export class Journal {
   private readonly db: DatabaseSync;
@@ -132,27 +156,38 @@ export class Journal {
 
   sessions(limit = 20): SessionRow[] {
     const rows = this.db
+      .prepare(`${SESSION_SELECT} GROUP BY s.id ORDER BY s.created_at DESC, s.rowid DESC LIMIT ?`)
+      .all(limit) as unknown as SessionDbRow[];
+    return rows.map(toSessionRow);
+  }
+
+  /** Instant of the session's last event, or its creation when it has none. */
+  lastActivity(sessionId: string): Date | undefined {
+    const row = this.db
       .prepare(
-        `SELECT s.id, s.created_at, s.title, s.cwd, COUNT(e.seq) AS n, COALESCE(SUM(e.cost_usd), 0) AS cost
+        `SELECT COALESCE(MAX(e.ts), s.created_at) AS last
          FROM sessions s LEFT JOIN events e ON e.session_id = s.id
-         GROUP BY s.id ORDER BY s.created_at DESC, s.rowid DESC LIMIT ?`,
+         WHERE s.id = ? GROUP BY s.id`,
       )
-      .all(limit) as unknown as Array<{
-      id: string;
-      created_at: string;
-      title: string;
-      cwd: string;
-      n: number;
-      cost: number;
-    }>;
-    return rows.map((r) => ({
-      id: r.id,
-      createdAt: r.created_at,
-      title: r.title,
-      cwd: r.cwd,
-      eventCount: r.n,
-      costUsd: r.cost,
-    }));
+      .get(sessionId) as { last: string } | undefined;
+    return row ? new Date(row.last) : undefined;
+  }
+
+  /**
+   * Most recent session for `cwd` whose last activity (last event, else creation)
+   * is within `idleMs` of `now` (inclusive), so a new run can continue it.
+   */
+  resumableSession(cwd: string, idleMs: number, now: Date): SessionRow | undefined {
+    if (!(idleMs >= 0)) return undefined;
+    const cutoff = new Date(now.getTime() - idleMs).toISOString();
+    const row = this.db
+      .prepare(
+        `${SESSION_SELECT} WHERE s.cwd = ? GROUP BY s.id
+         HAVING COALESCE(MAX(e.ts), s.created_at) >= ?
+         ORDER BY COALESCE(MAX(e.ts), s.created_at) DESC, s.rowid DESC LIMIT 1`,
+      )
+      .get(cwd, cutoff) as SessionDbRow | undefined;
+    return row ? toSessionRow(row) : undefined;
   }
 
   findSession(idPrefix: string): SessionRow | undefined {
@@ -167,12 +202,14 @@ export class Journal {
          FROM events e JOIN sessions s ON s.id = e.session_id
          WHERE (?1 IS NULL OR e.session_id = ?1)
            AND (?2 IS NULL OR s.cwd = ?2)
-           AND (?3 IS NULL OR e.ts >= ?3)`,
+           AND (?3 IS NULL OR e.ts >= ?3)
+           AND (?4 IS NULL OR e.ts < ?4)`,
       )
       .get(
         filter.sessionId ?? null,
         filter.project ?? null,
         filter.since?.toISOString() ?? null,
+        filter.until?.toISOString() ?? null,
       ) as {
       total: number;
     };

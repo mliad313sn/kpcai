@@ -1,0 +1,165 @@
+import {
+  refToString,
+  type Attempt,
+  type ExecutionResult,
+  type ScoredCandidate,
+} from '@kernelpai/core';
+import { Governor, JournalLedger } from '@kernelpai/budget';
+import { FallbackExecutor, outputCalibration } from '@kernelpai/executor';
+import type { Journal } from '@kernelpai/journal';
+import { budgetLimits, formatMoney, type Money } from '../config.js';
+import { buildRegistry } from '../context.js';
+import type { Io } from '../io.js';
+import { sanitizeForTerminal } from '../sanitize.js';
+import type { Planned } from './run.js';
+
+interface GateContext {
+  sessionId: string;
+  nodeId: string;
+  m: Money;
+}
+
+/**
+ * Principle 6 at every spend point: the first choice and each fallback (review F1).
+ * Block → stop unless --over-budget (journaled override, review F10); confirm → ask or --yes.
+ */
+export class BudgetGate {
+  private readonly governor: Governor;
+
+  constructor(
+    private readonly io: Io,
+    private readonly journal: Journal,
+    private readonly ctx: GateContext,
+    private readonly flags: { yes?: boolean; overBudget?: boolean },
+  ) {
+    this.governor = new Governor(budgetLimits(io.env), new JournalLedger(journal));
+  }
+
+  async allow(c: ScoredCandidate, label: string): Promise<boolean> {
+    const est = c.estimate.expectedCostUsd;
+    const v = this.governor.check(est, {
+      sessionId: this.ctx.sessionId,
+      project: this.io.cwd,
+      now: new Date(),
+    });
+    const who = `${label} ${refToString(c.ref)}`;
+    if (v.action === 'allow') return true;
+    if (v.action === 'block') {
+      const why = `${who} blocked by ${v.scope} budget: ${this.money(v.projectedUsd)} > ${this.money(v.limitUsd)}`;
+      if (this.flags.overBudget)
+        return this.record(`budget override (--over-budget): ${why}`, v, true);
+      this.io.err(
+        `${why}. Options: --over-budget to continue, -p economy or --exclude for cheaper models, or a smaller request\n`,
+      );
+      return this.record(`budget: ${why}`, v, false);
+    }
+    const ok =
+      this.flags.yes === true ||
+      (await this.io.confirm(
+        `${who}: expected ${this.money(est)} is above your confirmation threshold. Continue?`,
+      ));
+    if (!ok) this.io.err(`not run — ${who} declined at confirmation\n`);
+    return ok ? true : this.record(`budget: ${who} declined at confirmation`, v, false);
+  }
+
+  private money(usd: number): string {
+    return formatMoney(usd, this.ctx.m);
+  }
+
+  private record(action: string, verdict: unknown, result: boolean): boolean {
+    this.journal.append({
+      sessionId: this.ctx.sessionId,
+      type: 'intervention',
+      nodeId: this.ctx.nodeId,
+      payload: { action, verdict },
+    });
+    return result;
+  }
+}
+
+/**
+ * Prints the answer. On a terminal it streams live and marks discarded partial output;
+ * when piped, only the final attempt's text reaches stdout (review F2).
+ */
+class AnswerSink {
+  private buffer = '';
+  private printed = 0;
+
+  constructor(private readonly io: Io) {}
+
+  start(): void {
+    this.buffer = '';
+    this.printed = 0;
+  }
+
+  text(delta: string): void {
+    this.buffer += delta;
+    if (this.io.stdoutIsTTY) {
+      this.io.out(sanitizeForTerminal(delta));
+      this.printed += delta.length;
+    }
+  }
+
+  failed(a: Attempt): void {
+    const discarded = this.printed > 0 ? ` — ${this.printed} chars above discarded` : '';
+    this.io.err(
+      `\n↷ ${refToString(a.ref)} failed (${a.errorKind ?? 'error'}): ${sanitizeForTerminal(a.message ?? '')}${discarded}\n`,
+    );
+  }
+
+  finish(r: ExecutionResult): void {
+    if (!this.io.stdoutIsTTY && r.servedBy) this.io.out(this.buffer);
+    this.io.out('\n');
+  }
+}
+
+export interface ExecContext {
+  io: Io;
+  journal: Journal;
+  sessionId: string;
+  p: Planned;
+  gate: BudgetGate;
+}
+
+export async function execute(c: ExecContext): Promise<number> {
+  const { io, journal, sessionId, p } = c;
+  const registry = buildRegistry(io.env);
+  const executor = new FallbackExecutor((ref) => registry.get(ref.provider), journal, {
+    expectedOutput: outputCalibration(journal),
+  });
+  const ctl = new AbortController();
+  const unregister = io.onInterrupt(() => {
+    journal.append({
+      sessionId,
+      type: 'intervention',
+      nodeId: p.node.id,
+      payload: { action: 'cancel' },
+    });
+    ctl.abort();
+  });
+  const sink = new AnswerSink(io);
+  const started = Date.now();
+  try {
+    const r = await executor.execute(p.node, p.decision, {
+      sessionId,
+      signal: ctl.signal,
+      hooks: {
+        onAttemptStart: () => sink.start(),
+        onText: (delta) => sink.text(delta),
+        onAttemptFailed: (a) => sink.failed(a),
+        beforeFallback: (next) => c.gate.allow(next, 'fallback'),
+      },
+    });
+    sink.finish(r);
+    io.err(footer(r, (Date.now() - started) / 1000, sessionId, p.m));
+    if (r.stopReason === 'cancelled') return 130;
+    return r.servedBy ? 0 : 1;
+  } finally {
+    unregister();
+  }
+}
+
+function footer(r: ExecutionResult, secs: number, sessionId: string, m: Money): string {
+  const by = r.servedBy ? refToString(r.servedBy) : 'nobody';
+  return `— ${by}${r.fellBack ? ' (fallback)' : ''} · ${secs.toFixed(1)}s · ${r.usage.inputTokens} in / ${r.usage.outputTokens} out · ${formatMoney(r.costUsd, m)} · ${r.stopReason} · ${r.attempts.length} attempt(s) · session ${sessionId.slice(0, 8)}\n`;
+}

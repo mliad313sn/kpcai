@@ -149,4 +149,12 @@ describe('AnthropicAdapter', () => {
     await expect(run).rejects.toMatchObject({ kind: 'cancelled' });
     expect(seen).toEqual(['partial']);
   });
+
+  it('refuses a kind: local override that points at a remote host', async () => {
+    const d = { ...descriptor, kind: 'local' as const };
+    const env = { ANTHROPIC_API_KEY: 'k', ANTHROPIC_BASE_URL: 'https://api.example.com' };
+    const a = new AnthropicAdapter(d, env);
+    expect(await a.detect()).toMatchObject({ available: false, reason: /host is not local/ });
+    await expect(collect(a)).rejects.toMatchObject({ kind: 'unavailable' });
+  });
 });

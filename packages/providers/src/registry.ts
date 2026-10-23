@@ -42,20 +42,45 @@ export function parseDescriptor(source: string, origin: string): ProviderDescrip
   return result.data;
 }
 
-/** Loads every *.yaml in the given directories; later directories override earlier ids. */
-export function loadDescriptors(dirs: readonly string[]): ProviderDescriptor[] {
-  const byId = new Map<string, ProviderDescriptor>();
+/** A loaded descriptor and the file it came from. */
+export interface DescriptorOrigin {
+  descriptor: ProviderDescriptor;
+  /** The YAML file that won (the last directory that defines this id). */
+  path: string;
+  /** The directory of that file, as passed in `dirs`. */
+  dir: string;
+  /** The file of an earlier directory this one replaced, if any (a user override). */
+  overrides?: string;
+}
+
+/**
+ * Loads every *.yaml in the given directories; later directories override earlier
+ * ids. Each entry says where it came from, so a CLI can show user overrides (F8).
+ */
+export function loadDescriptorsWithOrigin(dirs: readonly string[]): DescriptorOrigin[] {
+  const byId = new Map<string, DescriptorOrigin>();
   for (const dir of dirs) {
     if (!existsSync(dir)) continue;
     for (const file of readdirSync(dir)
       .filter((f) => /\.ya?ml$/.test(f))
       .sort()) {
       const path = join(dir, file);
-      const d = parseDescriptor(readFileSync(path, 'utf8'), path);
-      byId.set(d.id, d);
+      const descriptor = parseDescriptor(readFileSync(path, 'utf8'), path);
+      const previous = byId.get(descriptor.id);
+      byId.set(descriptor.id, {
+        descriptor,
+        path,
+        dir,
+        ...(previous ? { overrides: previous.path } : {}),
+      });
     }
   }
   return [...byId.values()];
+}
+
+/** Loads every *.yaml in the given directories; later directories override earlier ids. */
+export function loadDescriptors(dirs: readonly string[]): ProviderDescriptor[] {
+  return loadDescriptorsWithOrigin(dirs).map((o) => o.descriptor);
 }
 
 export class ProviderRegistry {

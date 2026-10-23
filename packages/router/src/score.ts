@@ -37,13 +37,13 @@ export function blendMeasured(
   return confidence * clamp(measured.score, 0, 1) + (1 - confidence) * prior;
 }
 
-/** expected cost / node budget, capped. With a zero budget any paid call gets the cap. */
+/** expected cost / reference (node budget, else the absolute cost reference), capped. A zero reference gives any paid call the cap. */
 export function costPenalty(expectedCostUsd: number, budgetUsd: number): number {
   if (!(budgetUsd > 0)) return expectedCostUsd > 0 ? PENALTY_CAP : 0;
   return clamp(expectedCostUsd / budgetUsd, 0, PENALTY_CAP);
 }
 
-/** typical latency / max latency, capped; unknown latency is neutral. */
+/** typical latency / reference (node cap, else the absolute latency reference), capped; unknown latency is neutral. */
 export function latencyPenalty(latencyMs: number | undefined, maxLatencyMs: number): number {
   if (latencyMs === undefined) return UNKNOWN_LATENCY_PENALTY;
   if (!(maxLatencyMs > 0)) return 0;

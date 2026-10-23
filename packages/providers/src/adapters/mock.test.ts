@@ -34,6 +34,17 @@ describe('MockAdapter', () => {
       stopReason: 'end',
     });
     await expect(collect(a, 'x [[fail:refusal@mock]]')).rejects.toMatchObject({ kind: 'refusal' });
+    const seen: string[] = [];
+    await expect(
+      (async () => {
+        for await (const ev of a.send({
+          model: 'echo',
+          messages: [{ role: 'user', content: 'a b c d [[midfail:malformed@mock]]' }],
+        }))
+          if (ev.type === 'text') seen.push(ev.delta);
+      })(),
+    ).rejects.toMatchObject({ kind: 'malformed' });
+    expect(seen.length).toBeGreaterThan(0);
     a.behaviour = { failWith: 'rate_limit' };
     await expect(collect(a, 'x')).rejects.toMatchObject({ kind: 'rate_limit' });
   });

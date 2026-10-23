@@ -1,22 +1,24 @@
+import { randomUUID } from 'node:crypto';
 import {
   ProviderError,
   refToString,
   type Classification,
   type Criticality,
+  type ModelRef,
   type RoutingConstraints,
   type RoutingDecision,
   type TaskNode,
   type TaskType,
 } from '@kernelpai/core';
-import { Governor, JournalLedger } from '@kernelpai/budget';
-import { FallbackExecutor, classify } from '@kernelpai/executor';
+import { classify, outputCalibration } from '@kernelpai/executor';
 import type { Journal } from '@kernelpai/journal';
 import { CompetenceRouter } from '@kernelpai/router';
-import { budgetLimits, formatMoney, money, routingProfile, type Money } from '../config.js';
+import { budgetLimits, money, routingProfile, type Money } from '../config.js';
 import { candidates as scanCandidates } from '@kernelpai/providers';
 import { buildRegistry, openJournal } from '../context.js';
 import type { Io } from '../io.js';
 import { renderPlan, renderRejections } from '../render.js';
+import { BudgetGate, execute } from './run-exec.js';
 
 export interface RunOptions {
   prompt: string;
@@ -28,11 +30,13 @@ export interface RunOptions {
   exclude?: string[];
   allowTest?: boolean;
   yes?: boolean;
+  overBudget?: boolean;
+  newSession?: boolean;
   verbose?: boolean;
   db?: string;
 }
 
-interface Planned {
+export interface Planned {
   node: TaskNode;
   cls: Classification;
   decision: RoutingDecision;
@@ -47,7 +51,8 @@ export async function plan(io: Io, o: RunOptions): Promise<Planned> {
     ? { type: o.type, confidence: 1, reason: 'set with --type' }
     : classify(o.prompt);
   const node: TaskNode = {
-    id: 'n1',
+    // Unique per run: sessions span runs (F5) and metrics key tasks by session + node.
+    id: `n-${randomUUID().slice(0, 8)}`,
     type: cls.type,
     messages: [{ role: 'user', content: o.prompt }],
     criticality: o.criticality ?? 'normal',
@@ -69,9 +74,26 @@ export async function plan(io: Io, o: RunOptions): Promise<Planned> {
     ...(o.exclude?.length ? { deniedProviders: o.exclude } : {}),
     ...(o.allowTest ? { excludeKinds: [] } : {}),
   };
-  const router = new CompetenceRouter({ profile: routingProfile(io.env, o.profile) });
+  const expectedOutput = calibrationFrom(io, o);
+  const router = new CompetenceRouter({
+    profile: routingProfile(io.env, o.profile),
+    ...(expectedOutput ? { expectedOutput } : {}),
+  });
   const decision = router.route(node, candidates, constraints);
   return { node, cls, decision, m };
+}
+
+/** Typical output per model and task type, learned from this journal (review F7). */
+function calibrationFrom(
+  io: Io,
+  o: RunOptions,
+): ((ref: ModelRef, t: TaskType) => number | undefined) | undefined {
+  const journal = openJournal(io.env, o.db);
+  try {
+    return outputCalibration(journal);
+  } finally {
+    journal.close();
+  }
 }
 
 /** `kpai route "request"`: show the plan and routing, run nothing, spend nothing. */
@@ -89,13 +111,34 @@ export async function runCommand(io: Io, o: RunOptions): Promise<number> {
   if (o.verbose) io.err(renderRejections(p.decision));
   const journal = openJournal(io.env, o.db);
   try {
-    const sessionId = journal.startSession(o.prompt.slice(0, 80), io.cwd);
+    const sessionId = sessionFor(io, journal, o);
     journalRouting(journal, sessionId, p);
-    if (!(await budgetGate(io, journal, sessionId, p, o.yes ?? false))) return 4;
-    return await execute(io, journal, sessionId, p);
+    const gate = new BudgetGate(io, journal, { sessionId, nodeId: p.node.id, m: p.m }, o);
+    if (!(await gate.allow(p.decision.chosen, 'first choice'))) return 4;
+    return await execute({ io, journal, sessionId, p, gate });
   } finally {
     journal.close();
   }
+}
+
+/**
+ * A session spans consecutive runs in the same directory until it has been idle for
+ * KPAI_SESSION_IDLE_MIN minutes (default 30), so the session budget adds up (review F5).
+ */
+function sessionFor(io: Io, journal: Journal, o: RunOptions): string {
+  const raw = io.env['KPAI_SESSION_IDLE_MIN']?.trim();
+  const minutes = raw ? Number(raw) : 30;
+  if (!Number.isFinite(minutes) || minutes < 0) {
+    throw new Error(`KPAI_SESSION_IDLE_MIN must be a non-negative number, got "${raw}"`);
+  }
+  const resumed = o.newSession
+    ? undefined
+    : journal.resumableSession(io.cwd, minutes * 60_000, new Date());
+  if (resumed) {
+    io.err(`session ${resumed.id.slice(0, 8)} (resumed; --new-session to start another)\n`);
+    return resumed.id;
+  }
+  return journal.startSession(o.prompt.slice(0, 80), io.cwd);
 }
 
 function journalRouting(journal: Journal, sessionId: string, p: Planned): void {
@@ -117,69 +160,4 @@ function journalRouting(journal: Journal, sessionId: string, p: Planned): void {
       rejected: d.rejected.length,
     },
   });
-}
-
-async function budgetGate(
-  io: Io,
-  journal: Journal,
-  sessionId: string,
-  p: Planned,
-  yes: boolean,
-): Promise<boolean> {
-  const governor = new Governor(budgetLimits(io.env), new JournalLedger(journal));
-  const estimate = p.decision.chosen.estimate.expectedCostUsd;
-  const v = governor.check(estimate, { sessionId, project: io.cwd, now: new Date() });
-  if (v.action === 'allow') return true;
-  if (v.action === 'confirm' && (yes || (await io.confirm(`${v.reason} Continue?`)))) return true;
-  const why =
-    v.action === 'block'
-      ? `blocked by ${v.scope} budget: ${formatMoney(v.projectedUsd, p.m)} > ${formatMoney(v.limitUsd, p.m)}. Options: ${v.options.join(', ')}`
-      : 'declined at confirmation';
-  journal.append({
-    sessionId,
-    type: 'intervention',
-    nodeId: p.node.id,
-    payload: { action: `budget: ${why}`, verdict: v },
-  });
-  io.err(`not run — ${why}\n`);
-  return false;
-}
-
-async function execute(io: Io, journal: Journal, sessionId: string, p: Planned): Promise<number> {
-  const registry = buildRegistry(io.env);
-  const executor = new FallbackExecutor((ref) => registry.get(ref.provider), journal);
-  const ctl = new AbortController();
-  const unregister = io.onInterrupt(() => {
-    journal.append({
-      sessionId,
-      type: 'intervention',
-      nodeId: p.node.id,
-      payload: { action: 'cancel' },
-    });
-    ctl.abort();
-  });
-  const started = Date.now();
-  try {
-    const r = await executor.execute(p.node, p.decision, {
-      sessionId,
-      signal: ctl.signal,
-      hooks: {
-        onText: (delta) => io.out(delta),
-        onAttemptFailed: (a) =>
-          io.err(
-            `\n↷ ${refToString(a.ref)} failed (${a.errorKind ?? 'error'}): ${a.message ?? ''}\n`,
-          ),
-      },
-    });
-    const by = r.servedBy ? refToString(r.servedBy) : 'nobody';
-    const secs = ((Date.now() - started) / 1000).toFixed(1);
-    io.out('\n');
-    io.err(
-      `— ${by}${r.fellBack ? ' (fallback)' : ''} · ${secs}s · ${r.usage.inputTokens} in / ${r.usage.outputTokens} out · ${formatMoney(r.costUsd, p.m)} · ${r.stopReason} · ${r.attempts.length} attempt(s) · session ${sessionId.slice(0, 8)}\n`,
-    );
-    if (r.stopReason === 'cancelled') return 130;
-    return r.servedBy ? 0 : 1;
-  } finally {
-    unregister();
-  }
 }

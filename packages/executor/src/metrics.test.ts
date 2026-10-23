@@ -3,7 +3,7 @@ import { Journal, type JournalEventInput } from '@kernelpai/journal';
 import { MockAdapter } from '@kernelpai/providers';
 import { FallbackExecutor } from './executor.js';
 import { metrics, percentile } from './metrics.js';
-import { decision, mockDescriptor, node } from './test-helpers/fakes.js';
+import { OK, ScriptedAdapter, decision, mockDescriptor, node } from './test-helpers/fakes.js';
 
 let journal: Journal;
 
@@ -57,6 +57,8 @@ describe('metrics', () => {
       fallbackSuccessRate: null,
       avgCostPerTaskUsd: null,
       estimateError: { samples: 0, meanAbsPct: null, meanSignedPct: null },
+      costError: { samples: 0, meanAbsPct: null, meanSignedPct: null },
+      outputTokenError: { samples: 0, meanAbsPct: null, meanSignedPct: null },
       routerLatencyMs: { samples: 0, p50: null, p95: null },
     });
   });
@@ -114,6 +116,59 @@ describe('metrics', () => {
     expect(m).toMatchObject({ tasks: 1, calls: 2, fallbacks: 1, fallbackSuccessRate: 1 });
     expect(m.avgCostPerTaskUsd).toBe(r.costUsd);
     expect(m.estimateError.samples).toBe(1);
+    expect(m.costError.samples).toBe(1);
+    expect(m.outputTokenError.samples).toBe(1);
+  });
+
+  it('measures cost and output-token estimate error from call estimates', () => {
+    const s = journal.startSession('est', '/');
+    const est = (cost: number, out: number): Ev => ({
+      type: 'call',
+      nodeId: 'n1',
+      payload: { estimatedInputTokens: 100, estimatedCostUsd: cost, estimatedOutputTokens: out },
+    });
+    write(s, [
+      // +50 % cost, −50 % output.
+      est(0.03, 5),
+      response(100, 0.02, { outputTokens: 10 }),
+      // −50 % cost, +100 % output.
+      est(0.01, 20),
+      response(100, 0.02, { outputTokens: 10 }),
+      // Skipped: estimated usage, zero cost, no call estimates.
+      est(0.01, 20),
+      response(100, 0.02, { usageBasis: 'estimated' }),
+      est(0.01, 20),
+      response(100, 0, { outputTokens: 0 }),
+      call(100),
+      response(100, 0.02),
+    ]);
+    const m = metrics(journal, { sessionId: s });
+    expect(m.costError).toEqual({ samples: 2, meanAbsPct: 50, meanSignedPct: 0 });
+    expect(m.outputTokenError).toEqual({ samples: 2, meanAbsPct: 75, meanSignedPct: 25 });
+    expect(m.estimateError.samples).toBe(4);
+  });
+
+  it('includes the cost of failed attempts in the average cost per task', async () => {
+    const s = journal.startSession('failed-cost', '/');
+    const a = new ScriptedAdapter('a', [
+      [
+        { text: 'part' },
+        { usage: { inputTokens: 1000, outputTokens: 500 } },
+        { fail: 'unavailable' },
+      ],
+    ]);
+    const b = new ScriptedAdapter('b', [OK]);
+    const adapters = new Map([
+      ['a', a],
+      ['b', b],
+    ]);
+    const ex = new FallbackExecutor(
+      (ref) => adapters.get(ref.provider) as ScriptedAdapter,
+      journal,
+    );
+    const r = await ex.execute(node(), decision('a/echo', 'b/echo'), { sessionId: s });
+    expect(r.costUsd).toBe(0.002018);
+    expect(metrics(journal, { sessionId: s }).avgCostPerTaskUsd).toBe(r.costUsd);
   });
 });
 

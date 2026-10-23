@@ -1,4 +1,9 @@
-export { CompetenceRouter, MAX_LISTED_REJECTIONS } from './router.js';
+export {
+  CompetenceRouter,
+  DEFAULT_COST_REFERENCE_USD,
+  DEFAULT_LATENCY_REFERENCE_MS,
+  MAX_LISTED_REJECTIONS,
+} from './router.js';
 export type { CompetenceRouterOptions } from './router.js';
 export { DEFAULT_PROFILE, PROFILE_WEIGHTS, weightsFor } from './weights.js';
 export {

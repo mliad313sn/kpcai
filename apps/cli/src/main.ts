@@ -14,7 +14,8 @@ Usage:
                                        run with automatic fallback, journal everything
   kpai route <request>                 Same plan and routing, dry run (nothing sent)
       [--type T] [--criticality low|normal|critical] [--profile economy|balanced|performance]
-      [--local-only] [--exclude p1,p2] [--max-tokens N] [--yes] [--verbose]
+      [--local-only] [--exclude p1,p2] [--max-tokens N] [--yes] [--over-budget]
+      [--new-session] [--allow-test] [--verbose]          --allow-test lets routing use offline mock providers
   kpai stats [--session <id>]          Fallback rate, cost per task, estimate error, router latency
   kpai providers                       Detect providers and list models
   kpai ask -m <provider/model> <text>  Send one request, stream, journal it
@@ -42,6 +43,8 @@ const OPTIONS = {
   'local-only': { type: 'boolean' },
   exclude: { type: 'string' },
   'allow-test': { type: 'boolean' },
+  'over-budget': { type: 'boolean' },
+  'new-session': { type: 'boolean' },
   verbose: { type: 'boolean', short: 'v' },
 } as const;
 
@@ -95,6 +98,8 @@ function runOptions(v: Values, rest: string[]): RunOptions {
       .filter(Boolean),
     allowTest: v['allow-test'],
     yes: v.yes,
+    overBudget: v['over-budget'],
+    newSession: v['new-session'],
     verbose: v.verbose,
     db: v.db,
   };

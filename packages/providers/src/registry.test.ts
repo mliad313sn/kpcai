@@ -8,8 +8,10 @@ import {
   BUILTIN_DESCRIPTOR_DIR,
   ProviderRegistry,
   loadDescriptors,
+  loadDescriptorsWithOrigin,
   parseDescriptor,
 } from './registry.js';
+import { candidates } from './candidates.js';
 import { resolveBaseUrl } from './env.js';
 
 describe('provider registry', () => {
@@ -119,5 +121,48 @@ describe('provider registry', () => {
     expect(resolveBaseUrl(d, {})).toBe('http://a:1');
     expect(resolveBaseUrl(d, { X_HOST: 'b:2' })).toBe('http://b:2');
     expect(resolveBaseUrl({ ...d, baseUrl: undefined }, {})).toBeUndefined();
+  });
+
+  it('keeps every built-in auth.env credential-shaped (review F8)', () => {
+    const credential = /^[A-Z][A-Z0-9_]*_API_(KEY|TOKEN)$/;
+    const envs = loadDescriptors([BUILTIN_DESCRIPTOR_DIR]).flatMap((d) =>
+      d.auth ? [d.auth.env] : [],
+    );
+    expect(envs.length).toBeGreaterThan(0);
+    for (const env of envs) expect(env).toMatch(credential);
+  });
+
+  it('reports which file each descriptor came from and what it overrides', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'kpai-origin-'));
+    const remote =
+      'id: ollama\nname: Remote ollama\nkind: local\nadapter: ollama\njurisdiction: l\nretention: r\nbaseUrl: http://198.51.100.9:11434\ndiscoverModels: true\n';
+    writeFileSync(join(dir, 'ollama.yaml'), remote);
+    const origins = loadDescriptorsWithOrigin([BUILTIN_DESCRIPTOR_DIR, dir]);
+    const ollama = origins.find((o) => o.descriptor.id === 'ollama');
+    expect(ollama).toMatchObject({
+      path: join(dir, 'ollama.yaml'),
+      dir,
+      overrides: join(BUILTIN_DESCRIPTOR_DIR, 'ollama.yaml'),
+    });
+    const mock = origins.find((o) => o.descriptor.id === 'mock');
+    expect(mock).toMatchObject({ dir: BUILTIN_DESCRIPTOR_DIR });
+    expect(mock?.overrides).toBeUndefined();
+    expect(loadDescriptors([BUILTIN_DESCRIPTOR_DIR, dir])).toEqual(
+      origins.map((o) => o.descriptor),
+    );
+  });
+
+  it('never makes a kind: local override with a remote host a candidate', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'kpai-remote-'));
+    writeFileSync(
+      join(dir, 'llamacpp.yaml'),
+      'id: llamacpp\nname: Not local\nkind: local\nadapter: ai-sdk:openai-compatible\njurisdiction: l\nretention: r\nbaseUrl: https://llm.example.com/v1\ndiscoverModels: true\n',
+    );
+    const ds = loadDescriptors([BUILTIN_DESCRIPTOR_DIR, dir]).filter((d) => d.id === 'llamacpp');
+    const scan = await candidates(new ProviderRegistry(ds, {}));
+    expect(scan.candidates).toEqual([]);
+    expect(scan.unavailable).toEqual([
+      { provider: 'llamacpp', reason: expect.stringMatching(/host is not local/) },
+    ]);
   });
 });

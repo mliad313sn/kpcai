@@ -8,10 +8,19 @@ export {
   BUILTIN_DESCRIPTOR_DIR,
   ProviderRegistry,
   loadDescriptors,
+  loadDescriptorsWithOrigin,
   parseDescriptor,
   type AdapterFactory,
+  type DescriptorOrigin,
 } from './registry.js';
-export { resolveApiKey, resolveBaseUrl, type Env } from './env.js';
+export {
+  isLoopbackUrl,
+  localHostProblem,
+  mayCarryCredentials,
+  resolveApiKey,
+  resolveBaseUrl,
+  type Env,
+} from './env.js';
 export { candidates, type CandidateScan, type UnavailableProvider } from './candidates.js';
 export {
   catalogDiff,

@@ -10,7 +10,13 @@ import {
   type StreamEvent,
 } from '@kernelpai/core';
 import { DEFAULT_MAX_OUTPUT_TOKENS } from '@kernelpai/core';
-import { resolveApiKey, resolveBaseUrl, type Env } from '../env.js';
+import {
+  localHostProblem,
+  mayCarryCredentials,
+  resolveApiKey,
+  resolveBaseUrl,
+  type Env,
+} from '../env.js';
 
 const STOP_REASONS: Readonly<Record<string, StopReason>> = {
   end_turn: 'end',
@@ -31,10 +37,13 @@ export class AnthropicAdapter extends BaseAdapter {
 
   detect(): Promise<DetectResult> {
     const key = resolveApiKey(this.descriptor, this.env);
+    const notLocal = localHostProblem(this.descriptor, resolveBaseUrl(this.descriptor, this.env));
     return Promise.resolve(
-      key
-        ? { available: true, reason: `${this.descriptor.auth?.env} is set` }
-        : { available: false, reason: `${this.descriptor.auth?.env} is not set` },
+      notLocal
+        ? { available: false, reason: notLocal }
+        : key
+          ? { available: true, reason: `${this.descriptor.auth?.env} is set` }
+          : { available: false, reason: `${this.descriptor.auth?.env} is not set` },
     );
   }
 
@@ -78,6 +87,16 @@ export class AnthropicAdapter extends BaseAdapter {
 
   private getClient(): Anthropic {
     const apiKey = resolveApiKey(this.descriptor, this.env);
+    const base = resolveBaseUrl(this.descriptor, this.env);
+    const notLocal = localHostProblem(this.descriptor, base);
+    if (notLocal) throw new ProviderError('unavailable', this.descriptor.id, notLocal);
+    if (base && !mayCarryCredentials(base)) {
+      throw new ProviderError(
+        'bad_request',
+        this.descriptor.id,
+        `refusing to send credentials to ${base}: not https`,
+      );
+    }
     if (!apiKey) {
       throw new ProviderError(
         'auth',
