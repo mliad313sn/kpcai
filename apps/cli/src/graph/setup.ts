@@ -18,6 +18,8 @@ export interface GraphOptions {
   allowTest?: boolean;
   allowSameProvider?: boolean;
   apply?: boolean;
+  /** Approve the git.apply write without asking (separate from --yes, review P2-F15). */
+  yesApply?: boolean;
   yes?: boolean;
   overBudget?: boolean;
   newSession?: boolean;

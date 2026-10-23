@@ -55,7 +55,8 @@ export function renderOutputs(graph: TaskGraph, r: GraphResult): string {
     const approval =
       res?.approved === undefined ? '' : res.approved ? ' · approved' : ' · NOT approved';
     parts.push(`\n## ${node.id} — ${node.title} [${state}${approval}]\n`);
-    parts.push(sanitizeForTerminal(res?.output || res?.error || '(no output)') + '\n');
+    if (res?.error) parts.push(`reason: ${sanitizeForTerminal(res.error)}\n`);
+    parts.push(sanitizeForTerminal(res?.output || (res?.error ? '' : '(no output)')) + '\n');
   }
   return parts.join('');
 }

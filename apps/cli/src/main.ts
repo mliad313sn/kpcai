@@ -16,7 +16,8 @@ Usage:
   kpai do <request>                    Plan a task graph, show who does what and the cost,
                                        run it with cross-provider review, show patches
   kpai plan <request>                  The same plan and estimate, dry run
-      [--planner template|model] [--apply] [--allow-same-provider] (+ run options below)
+      [--planner template|model] [--apply] [--yes-apply] [--allow-same-provider]
+      --yes accepts cost prompts only; writes need --yes-apply or a y at the prompt
   kpai tools                           Tools models can use, their risk and source
   kpai run <request>                   Classify, route by competence, budget-check,
                                        run with automatic fallback, journal everything
@@ -55,6 +56,7 @@ const OPTIONS = {
   'new-session': { type: 'boolean' },
   planner: { type: 'string' },
   apply: { type: 'boolean' },
+  'yes-apply': { type: 'boolean' },
   'allow-same-provider': { type: 'boolean' },
   verbose: { type: 'boolean', short: 'v' },
 } as const;
@@ -108,6 +110,7 @@ function graphOptions(v: Values, rest: string[]): GraphOptions {
     allowTest: v['allow-test'],
     allowSameProvider: v['allow-same-provider'],
     apply: v.apply,
+    yesApply: v['yes-apply'],
     yes: v.yes,
     overBudget: v['over-budget'],
     newSession: v['new-session'],

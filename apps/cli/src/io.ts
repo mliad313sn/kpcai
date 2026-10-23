@@ -35,6 +35,19 @@ function interruptBus(): Io['onInterrupt'] {
   };
 }
 
+/**
+ * Confirmations are asked one at a time: parallel steps must never share one keystroke
+ * (review P2-F7). Each question waits for the previous answer.
+ */
+export function serialized(ask: (q: string) => Promise<boolean>): (q: string) => Promise<boolean> {
+  let tail: Promise<unknown> = Promise.resolve();
+  return (q) => {
+    const next = tail.then(() => ask(q));
+    tail = next.catch(() => undefined);
+    return next;
+  };
+}
+
 export function processIo(): Io {
   const onInterrupt = interruptBus();
   return {
@@ -43,7 +56,7 @@ export function processIo(): Io {
     env: process.env,
     cwd: process.cwd(),
     stdoutIsTTY: process.stdout.isTTY === true,
-    confirm: async (question) => {
+    confirm: serialized(async (question) => {
       if (!process.stdin.isTTY) return false;
       const rl = createInterface({ input: process.stdin, output: process.stderr });
       try {
@@ -56,7 +69,7 @@ export function processIo(): Io {
       } finally {
         rl.close();
       }
-    },
+    }),
     onInterrupt,
   };
 }

@@ -57,7 +57,7 @@ describe('kpai tools / plan / do', () => {
 
   it('applies approved patches with --apply', async () => {
     const io = setup();
-    expect(await main(['do', '--allow-test', '--yes', '--apply', REQ], io)).toBe(0);
+    expect(await main(['do', '--allow-test', '--yes', '--apply', '--yes-apply', REQ], io)).toBe(0);
     expect(io.stderr).toMatch(/2\/2 patch\(es\) applied/);
     expect(existsSync(join(io.cwd, 'src/s.ts'))).toBe(true);
     expect(existsSync(join(io.cwd, 'test/s.test.ts'))).toBe(true);
@@ -91,5 +91,12 @@ describe('kpai tools / plan / do', () => {
     expect(io.questions[0]).toMatch(/confirmation threshold/);
     expect(await main(['plan', '--allow-test', '--planner', 'nope', REQ], io)).toBe(2);
     expect(await main(['do'], io)).toBe(2);
+  });
+
+  it('--yes alone never approves the write (review P2-F15)', async () => {
+    const io = setup();
+    expect(await main(['do', '--allow-test', '--yes', '--apply', REQ], io)).toBe(0);
+    expect(io.questions.some((q) => /git\.apply/.test(q))).toBe(true);
+    expect(existsSync(join(io.cwd, 'src/s.ts'))).toBe(false);
   });
 });

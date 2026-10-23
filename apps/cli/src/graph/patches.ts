@@ -29,3 +29,13 @@ function withNewline(s: string): string {
 export function patchFiles(patch: string): string[] {
   return [...patch.matchAll(/^\+\+\+ b\/(.+)$/gm)].map((m) => (m[1] ?? '').trim());
 }
+
+/**
+ * True when a patch contains control characters other than tab and newline (a CR is
+ * tolerated only as part of CRLF). Such bytes can make a terminal hide or rewrite what the
+ * human reviews, so these patches are refused rather than "cleaned" for display.
+ */
+export function hasHiddenBytes(patch: string): boolean {
+  // eslint-disable-next-line no-control-regex
+  return /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]|\r(?!\n)/.test(patch);
+}

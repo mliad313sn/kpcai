@@ -70,7 +70,11 @@ export async function doCommand(io: Io, o: GraphOptions): Promise<number> {
     if (!(await graphBudget(io, journal, sessionId, p, o))) return 4;
     const result = await runGraph(io, journal, sessionId, p, o);
     io.out(renderOutputs(p.graph, result));
-    const applied = await applyPatches(io, journal, sessionId, p.graph, result, o);
+    const cancelled = Object.values(result.states).some((st) => st === 'cancelled');
+    const applied = await applyPatches(io, journal, sessionId, p.graph, result, {
+      ...o,
+      cancelled,
+    });
     io.err(`session ${sessionId.slice(0, 8)} · ${formatMoney(result.costUsd, p.m)} · ${applied}\n`);
     return result.ok ? 0 : 1;
   } finally {
