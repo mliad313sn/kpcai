@@ -12,6 +12,8 @@ export default defineConfig({
       '@kernelpai/router': src('./packages/router/src/index.ts'),
       '@kernelpai/budget': src('./packages/budget/src/index.ts'),
       '@kernelpai/executor': src('./packages/executor/src/index.ts'),
+      '@kernelpai/tools': src('./packages/tools/src/index.ts'),
+      '@kernelpai/orchestrator': src('./packages/orchestrator/src/index.ts'),
     },
   },
   test: {

@@ -20,6 +20,12 @@
       "path": "packages/executor"
     },
     {
+      "path": "packages/tools"
+    },
+    {
+      "path": "packages/orchestrator"
+    },
+    {
       "path": "apps/cli"
     }
   ]

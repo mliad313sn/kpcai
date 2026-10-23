@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": { "rootDir": "src", "outDir": "dist" },
+  "include": ["src"],
+  "exclude": ["src/**/*.test.ts", "src/**/test-helpers/**"],
+  "references": [
+    { "path": "../core" },
+    { "path": "../journal" },
+    { "path": "../router" },
+    { "path": "../budget" },
+    { "path": "../executor" },
+    { "path": "../providers" },
+    { "path": "../tools" }
+  ]
+}

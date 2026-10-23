@@ -15,9 +15,23 @@ export type TaskType = z.infer<typeof TaskTypeSchema>;
 export const ModalitySchema = z.enum(['text', 'image', 'audio', 'video', 'code']);
 export type Modality = z.infer<typeof ModalitySchema>;
 
+export const ToolCallSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().regex(/^[a-zA-Z0-9_.-]{1,64}$/),
+  input: z.unknown(),
+});
+export type ToolCall = z.infer<typeof ToolCallSchema>;
+
+/**
+ * A conversation turn. `assistant` turns may carry the tool calls the model made; each
+ * `tool` turn answers one call (phase 2, ADR-0017).
+ */
 export const ChatMessageSchema = z.object({
-  role: z.enum(['system', 'user', 'assistant']),
+  role: z.enum(['system', 'user', 'assistant', 'tool']),
   content: z.string(),
+  toolCalls: z.array(ToolCallSchema).optional(),
+  toolCallId: z.string().optional(),
+  isError: z.boolean().optional(),
 });
 export type ChatMessage = z.infer<typeof ChatMessageSchema>;
 
@@ -25,6 +39,16 @@ export const ChatRequestSchema = z.object({
   model: z.string().min(1),
   messages: z.array(ChatMessageSchema).min(1),
   maxOutputTokens: z.number().int().positive().max(1_000_000).optional(),
+  /** Tools the model may call; JSON Schema inputs (MCP-compatible). */
+  tools: z
+    .array(
+      z.object({
+        name: z.string().regex(/^[a-zA-Z0-9_.-]{1,64}$/),
+        description: z.string(),
+        inputSchema: z.record(z.string(), z.unknown()),
+      }),
+    )
+    .optional(),
 });
 export type ChatRequest = z.infer<typeof ChatRequestSchema>;
 
@@ -81,7 +105,7 @@ export interface Usage {
   outputTokens: number;
 }
 
-export type StopReason = 'end' | 'max_tokens' | 'refusal' | 'cancelled' | 'other';
+export type StopReason = 'end' | 'max_tokens' | 'refusal' | 'cancelled' | 'tool_use' | 'other';
 
 /** Normalised streaming events every adapter emits. */
 export type StreamEvent =
@@ -90,4 +114,6 @@ export type StreamEvent =
   | { type: 'usage'; usage: Usage }
   /** The provider is working without visible text yet (reasoning, step start). Keeps stall timers alive. */
   | { type: 'progress'; kind: 'reasoning' | 'step' }
+  /** A complete tool call (input fully received and parsed). */
+  | { type: 'tool_call'; call: ToolCall }
   | { type: 'end'; stopReason: StopReason };

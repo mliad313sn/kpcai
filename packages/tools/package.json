@@ -1,0 +1,21 @@
+{
+  "name": "@kernelpai/tools",
+  "version": "0.0.1",
+  "private": true,
+  "license": "UNLICENSED",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "dependencies": {
+    "@kernelpai/core": "workspace:*",
+    "@kernelpai/journal": "workspace:*",
+    "@modelcontextprotocol/client": "^2.3.1",
+    "zod": "^4.1.0"
+  }
+}

@@ -21,6 +21,8 @@
     "@kernelpai/providers": "workspace:*",
     "@kernelpai/router": "workspace:*",
     "@kernelpai/budget": "workspace:*",
-    "@kernelpai/executor": "workspace:*"
+    "@kernelpai/executor": "workspace:*",
+    "@kernelpai/tools": "workspace:*",
+    "@kernelpai/orchestrator": "workspace:*"
   }
 }
