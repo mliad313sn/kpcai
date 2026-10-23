@@ -8,9 +8,14 @@
  * - document kinds (report, checklist, design) also from a node no critic reviewed (a solo
  *   node), marked `reviewed: false`: each save is then confirmed on its own and `yesApply`
  *   never covers it (PO ruling, D-020). A document a critic rejected is not kept.
+ * - an unreviewed document must also be a new Markdown file (P3-F3, see
+ *   {@link unreviewedPathProblem} and {@link unreviewedOverwrite}): the model's `kind` is a
+ *   claim, the path is what gets written.
  * The text is re-checked here (defence in depth): what the human reads is what is written.
  */
 import { createHash } from 'node:crypto';
+import { lstatSync } from 'node:fs';
+import { join } from 'node:path';
 import type { ModelRef, TaskGraph } from '@kernelpai/core';
 import {
   DELIVERABLES,
@@ -88,27 +93,69 @@ function lastRef(
   return [...(r?.contributions ?? [])].reverse().find((c) => roles.includes(c.role))?.ref;
 }
 
+/**
+ * Unreviewed documents are Markdown (report, checklist and design are all asked for as
+ * Markdown, S4's `deliverablePrompt`). `.txt` is left out on purpose: `requirements.txt`,
+ * `CMakeLists.txt` or `robots.txt` are configuration; `.csv` is spreadsheet formula input.
+ */
+export const UNREVIEWED_DOCUMENT = /\.(md|markdown)$/i;
+/** Markdown files that other coding agents read as instructions (prompt-injection plants). */
+const AGENT_INSTRUCTIONS =
+  /^(claude|claude\.local|agents?|gemini|skill|copilot-instructions|conventions)\.(md|markdown)$/i;
+
+/** Why an artifact no critic reviewed may not be kept at this path, whatever its kind claims. */
+export function unreviewedPathProblem(path: string, kind: ArtifactKind): string | undefined {
+  if (shapeOf(kind) !== 'document')
+    return 'not reviewed by a critic from another provider (only documents may be saved unreviewed)';
+  const segs = path.split('/');
+  const base = segs[segs.length - 1] ?? '';
+  if (!UNREVIEWED_DOCUMENT.test(base))
+    return `an unreviewed ${kind} must be a Markdown file (.md); ${path.slice(0, 120)} is not one`;
+  if (segs.some((s) => s.startsWith('.')))
+    return 'an unreviewed document may not go in a hidden file or folder';
+  if (AGENT_INSTRUCTIONS.test(base))
+    return 'an unreviewed document may not be an agent instruction file';
+  return undefined;
+}
+
+/**
+ * An unreviewed document never replaces anything: refused when the path exists (a file, a
+ * folder or a link, dangling or not). Checked when the run ends and again before saving.
+ */
+export function unreviewedOverwrite(root: string, path: string): string | undefined {
+  try {
+    lstatSync(join(root, path));
+  } catch {
+    return undefined;
+  }
+  return `${path.slice(0, 120)} already exists: an unreviewed document never replaces a file (rename or remove it, or ask for a reviewed run)`;
+}
+
 /** May a node's artifacts be kept, and are they reviewed? Undefined: refused, with why. */
 function admission(
   res: RunResult['results'][string] | undefined,
-  kind: ArtifactKind,
+  a: NodeArtifact,
+  root: string | undefined,
 ): { reviewed: boolean } | { refused: string } {
   if (res?.approved === true) return { reviewed: true };
-  if (shapeOf(kind) === 'document' && res?.approved === undefined) return { reviewed: false };
-  return {
-    refused:
-      res?.approved === false
-        ? 'the critic did not approve it'
-        : 'not reviewed by a critic from another provider (only documents may be saved unreviewed)',
-  };
+  if (res?.approved === false) return { refused: 'the critic did not approve it' };
+  const problem =
+    unreviewedPathProblem(a.path, a.kind) ??
+    (root === undefined ? undefined : unreviewedOverwrite(root, a.path));
+  return problem ? { refused: problem } : { reviewed: false };
 }
 
-/** Artifacts the run produced, kept or refused (see the module comment), without duplicates. */
+/**
+ * Artifacts the run produced, kept or refused (see the module comment), without duplicates.
+ * `root` is the folder they will be written to: an unreviewed one that would replace a file
+ * there is refused.
+ */
 export function collectArtifacts(
   graph: TaskGraph,
   r: RunResult,
-  ids: { runId: string; sessionId: string },
+  where: { runId: string; sessionId: string; root?: string },
 ): { artifacts: Artifact[]; refused: RefusedArtifact[] } {
+  const { root, ...ids } = where;
   const artifacts: Artifact[] = [];
   const refused: RefusedArtifact[] = [];
   for (const n of graph.nodes) {
@@ -119,9 +166,9 @@ export function collectArtifacts(
     const author = lastRef(res, ['revision', 'author', 'solo']);
     const reviewer = lastRef(res, ['critic']);
     for (const a of d.artifacts) {
-      const admit = admission(res, a.kind);
-      const problem =
-        'refused' in admit ? admit.refused : artifactProblem(a.path, a.kind, a.content);
+      const shape = artifactProblem(a.path, a.kind, a.content);
+      const admit = shape ? { refused: shape } : admission(res, a, root);
+      const problem = 'refused' in admit ? admit.refused : undefined;
       if (problem) {
         refused.push({ nodeId: n.id, path: a.path.slice(0, 200), reason: problem });
         continue;

@@ -14,7 +14,7 @@ import { helpText, parseInput } from './commands';
 import { costOf } from './cost';
 import { formatUsd } from './format';
 import { newRun } from './reducer';
-import { announce, log, patch, studio, updateRun } from './store';
+import { announce, log, patch, setDecliner, studio, updateRun } from './store';
 
 export interface Caller {
   call<M extends MethodName>(
@@ -167,6 +167,14 @@ export async function applyPatches(runId: string, nodeIds?: string[]): Promise<v
     fail('fail.apply', e);
   }
 }
+
+/**
+ * A confirmation the console dropped because its run was cancelled (P3-F2) is answered No.
+ * The kernel may have closed it already: a refusal or "not accepted" is expected, not shown.
+ */
+setDecliner((confirmId) => {
+  call('confirm.answer', { confirmId, ok: false }).catch(() => undefined);
+});
 
 /** Removes the confirmation from the queue first: a second answer is never sent. */
 export async function answerConfirm(confirmId: string, ok: boolean): Promise<void> {

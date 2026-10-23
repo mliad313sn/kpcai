@@ -32,6 +32,7 @@ import { summarizeRules } from './rules.js';
 import { summarizeRun } from './runs-view.js';
 import { askZoneRelaxations, gatherScope, guardWorkspace } from './authorise.js';
 import { checkScope } from './scope.js';
+import { CANCEL_ACTION, notWritable, recordedOutcome, runFlags } from './run-record.js';
 import { WT_SUFFIX, WorkspaceOps, type CheckpointInfo } from './workspace-ops.js';
 import type { PackZoneOptions } from '@kernelpai/tools';
 
@@ -54,7 +55,8 @@ export class Kernel extends Queries {
 
   constructor(host: KernelHost, journal?: Journal) {
     super(host, journal);
-    this.confirm = hostConfirm(host.confirm);
+    // A question of a run cancelled while it waited is declined unasked (review P3-F2).
+    this.confirm = hostConfirm(host.confirm, (req) => this.cancelling(req.runId));
     this.workspace = new WorkspaceOps({
       env: host.env,
       cwd: host.cwd,
@@ -160,7 +162,7 @@ export class Kernel extends Queries {
       ...(scope !== undefined ? { scope } : {}),
       runId: randomUUID(),
       plan: p,
-      flags: { ...p.options, ...options },
+      flags: runFlags(p.options, options),
       ctl: new AbortController(),
       state: 'starting',
       startedAt: new Date().toISOString(),
@@ -205,7 +207,10 @@ export class Kernel extends Queries {
     return run;
   }
 
-  /** Cancels a run: running steps stop and keep their partial output. False if finished. */
+  /**
+   * Cancels a run: running steps stop and keep their partial output. Its confirmations
+   * still open or queued are declined (review P3-F2). False if finished.
+   */
   cancel(runId: string): boolean {
     const run = this.runById(runId);
     if (FINISHED.has(run.state) || run.ctl.signal.aborted) return false;
@@ -214,12 +219,19 @@ export class Kernel extends Queries {
       this.journal.append({
         sessionId: run.plan.sessionId,
         type: 'intervention',
-        payload: { action: 'cancel graph' },
+        payload: { action: CANCEL_ACTION, runId },
       });
     } else run.runner.cancel();
     run.ctl.abort();
+    this.host.cancelConfirmations?.(runId);
     this.setState(run, 'cancelling');
     return true;
+  }
+
+  /** True while a cancelled run winds down: its questions are void. */
+  private cancelling(runId: string | undefined): boolean {
+    const run = runId === undefined ? undefined : this.runs.get(runId);
+    return run !== undefined && run.ctl.signal.aborted && !FINISHED.has(run.state);
   }
 
   /** Stops scheduling new nodes; nodes in flight finish (R-304). */
@@ -332,6 +344,17 @@ export class Kernel extends Queries {
       throw new KernelError('refused', `run ${runId} is still running: cannot ${action} now`);
   }
 
+  /** Refuses while any run writing in place (not in its own worktree) is live. */
+  private noLiveRunInPlace(action: string): void {
+    for (const r of this.runs.values()) {
+      if (!r.workRoot && !FINISHED.has(r.state))
+        throw new KernelError(
+          'refused',
+          `run ${r.runId} is running in place: cannot ${action} now`,
+        );
+    }
+  }
+
   /** The packs whose zones bind a workspace action: the run's plan, else the folder's now. */
   private async packZones(runId: string, sessionId: string): Promise<PackZoneOptions | undefined> {
     const run = this.runs.get(runId);
@@ -354,6 +377,8 @@ export class Kernel extends Queries {
         `${ref.slice(0, 200)} is not a checkpoint of run ${runId ?? '?'}`,
       );
     this.notLive(owner, 'restore');
+    // The workspace is also the tree of every in-place run (P3-F7).
+    if (!/-wt\/\d+$/.test(ref)) this.noLiveRunInPlace('restore');
     const sessionId = this.sessionFor(owner, 'restore');
     return this.workspace.restore(ref, sessionId, await this.packZones(owner, sessionId));
   }
@@ -361,9 +386,9 @@ export class Kernel extends Queries {
   /** Merges an isolated run's worktree into the workspace: a confirmed write (R-307). */
   async merge(runId: string): ReturnType<WorkspaceOps['merge']> {
     this.notLive(runId, 'merge');
-    const o = this.runs.get(runId)?.outcome;
-    if (o && (o.status !== 'finished' || o.cancelled))
-      throw new KernelError('refused', `run ${runId} was cancelled or not run: nothing is merged`);
+    // Known here or not, the outcome is read from the journal (review P3-F7).
+    const why = notWritable(runId, recordedOutcome(this.journal, runId));
+    if (why) throw new KernelError('refused', why);
     const sessionId = this.sessionFor(runId, 'merge');
     return this.workspace.merge(runId, sessionId, await this.packZones(runId, sessionId));
   }
@@ -385,7 +410,11 @@ export class Kernel extends Queries {
 
   /** Cancels what still runs, waits for it, closes the journal. */
   async close(): Promise<void> {
-    for (const run of this.runs.values()) if (!FINISHED.has(run.state)) run.ctl.abort();
+    for (const run of this.runs.values()) {
+      if (FINISHED.has(run.state)) continue;
+      run.ctl.abort();
+      this.host.cancelConfirmations?.(run.runId);
+    }
     await Promise.allSettled([...this.runs.values()].map((r) => r.done));
     this.closeJournal();
   }

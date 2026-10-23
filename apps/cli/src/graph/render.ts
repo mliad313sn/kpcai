@@ -2,6 +2,7 @@ import { refToString, type GraphEvent, type GraphResult, type TaskGraph } from '
 import type { GraphEstimate } from '@kernelpai/orchestrator';
 import type { PackContext, RulesSummary, ScopeCheck } from '@kernelpai/kernel';
 import { formatMoney, type Money } from '../config.js';
+import { t } from '../i18n/core.js';
 import { sanitizeForTerminal } from '../sanitize.js';
 
 /** An estimate with the kernel's likely and cap figures (D-021, ADR-0026). */
@@ -13,10 +14,18 @@ export type PlanEstimate = GraphEstimate & { expectedUsd: number; capUsd: number
  * without asking again.
  */
 export function renderGraphPlan(graph: TaskGraph, est: PlanEstimate, m: Money): string {
-  const lines = [`plan   ${graph.nodes.length} node(s) · ${graph.createdBy}: ${graph.reason}`];
+  const lines = [
+    t('plan.header', {
+      count: graph.nodes.length,
+      createdBy: graph.createdBy,
+      reason: graph.reason,
+    }),
+  ];
   for (const node of graph.nodes) {
     const e = est.nodes.find((n) => n.nodeId === node.id);
-    const who = e?.ref ? refToString(e.ref) : `unroutable (${e?.error ?? 'no candidate'})`;
+    const who = e?.ref
+      ? refToString(e.ref)
+      : t('plan.unroutable', { error: e?.error ?? t('plan.noCandidate') });
     const deps = node.dependsOn.length ? ` ← ${node.dependsOn.join(', ')}` : '';
     const cost = e ? `${formatMoney(e.minUsd, m)}–${formatMoney(e.expectedUsd, m)}` : '?';
     const tools = node.tools?.length ? ` · tools ${node.tools.join(' ')}` : '';
@@ -24,10 +33,11 @@ export function renderGraphPlan(graph: TaskGraph, est: PlanEstimate, m: Money): 
       `  ${node.id.padEnd(16)} ${node.title.slice(0, 28).padEnd(28)} ${node.type.padEnd(15)} ${(e?.protocol ?? node.protocol).padEnd(13)} ${who.padEnd(34)} ${cost}${deps}${tools}`,
     );
   }
-  const status = est.complete ? '' : ` (cannot run as planned: ${est.problems.join('; ')})`;
-  const likely = formatMoney(est.expectedUsd, m);
+  const figures = { likely: formatMoney(est.expectedUsd, m), cap: formatMoney(est.capUsd, m) };
   lines.push(
-    `total  likely ${likely} · at most ${formatMoney(est.capUsd, m)} (cap) before running${status}`,
+    est.complete
+      ? t('plan.total', figures)
+      : t('plan.totalBlocked', { ...figures, problems: est.problems.join('; ') }),
   );
   return lines.join('\n') + '\n';
 }

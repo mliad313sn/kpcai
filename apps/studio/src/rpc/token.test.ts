@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   authProtocols,
   forgetToken,
+  isAllowedWsUrl,
   isLocalWsUrl,
   isValidToken,
   readConnectionSettings,
@@ -18,10 +19,10 @@ describe('connection settings', () => {
   it('reads the token and ws url from the fragment, then removes the fragment', () => {
     const history = { replaceState: vi.fn() } as unknown as History;
     const s = readConnectionSettings(
-      loc('#token=abcdef123456&ws=ws://127.0.0.1:9999/rpc'),
+      loc('#token=abcdef123456&ws=ws://127.0.0.1:4100/kernel'),
       history,
     );
-    expect(s).toEqual({ token: 'abcdef123456', url: 'ws://127.0.0.1:9999/rpc' });
+    expect(s).toEqual({ token: 'abcdef123456', url: 'ws://127.0.0.1:4100/kernel' });
     expect(history.replaceState).toHaveBeenCalledWith(null, '', '/?x=1');
     expect(sessionStorage.getItem('kp-studio.token')).toBe('abcdef123456');
   });
@@ -48,6 +49,33 @@ describe('connection settings', () => {
     expect(isLocalWsUrl('ws://[::1]:1/x')).toBe(true);
     expect(isLocalWsUrl('http://127.0.0.1/')).toBe(false);
     expect(isLocalWsUrl('not a url')).toBe(false);
+  });
+
+  it("follows ws= only to the page's own origin (P3-F10)", () => {
+    const same = readConnectionSettings(loc('#token=abcdef123456&ws=ws://127.0.0.1:4100/rpc'));
+    expect(same).toEqual({ token: 'abcdef123456', url: 'ws://127.0.0.1:4100/rpc' });
+    // Another loopback port could be anything listening there: the token is not sent to it.
+    const other = readConnectionSettings(loc('#token=abcdef123456&ws=ws://127.0.0.1:9999/rpc'));
+    expect(other).toEqual({
+      token: 'abcdef123456',
+      url: 'ws://127.0.0.1:4100/rpc',
+      wsRefused: true,
+    });
+    const otherName = readConnectionSettings(loc('#ws=ws://localhost:4100/rpc'));
+    expect(otherName.url).toBe('ws://127.0.0.1:4100/rpc');
+    expect(otherName.wsRefused).toBe(true);
+    expect(isAllowedWsUrl('ws://127.0.0.1/rpc', loc('', '127.0.0.1'))).toBe(true);
+    expect(isAllowedWsUrl('wss://127.0.0.1:4100/rpc', loc(''))).toBe(true);
+  });
+
+  it('follows ws= to the loopback kernel inside the desktop shell only', () => {
+    const tauri = loc('#token=abcdef123456&ws=ws://127.0.0.1:43123/rpc', 'localhost', 'tauri:');
+    expect(readConnectionSettings(tauri).url).toBe('ws://127.0.0.1:43123/rpc');
+    const win = loc('#ws=ws://127.0.0.1:43123/rpc', 'tauri.localhost', 'http:');
+    expect(readConnectionSettings(win).url).toBe('ws://127.0.0.1:43123/rpc');
+    expect(isAllowedWsUrl('ws://evil.example:1/rpc', loc('', 'localhost', 'tauri:'))).toBe(false);
+    // A page served from some other localhost port is not the shell.
+    expect(isAllowedWsUrl('ws://127.0.0.1:43123/rpc', loc('', 'localhost:5173'))).toBe(false);
   });
 
   it('builds the subprotocol list', () => {

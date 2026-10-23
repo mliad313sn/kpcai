@@ -46,8 +46,11 @@ export const RunOptionsSchema = z.object({
   localOnly: z.boolean().optional(),
   exclude: z.array(z.string()).max(50).optional(),
   allowTest: z.boolean().optional(),
+  /** A waiver shown on the plan: on `run.start` with a `planId` the plan's own value is
+   * used, never the start request's (review P3-F6). */
   allowSameProvider: z.boolean().optional(),
-  overBudget: z.boolean().optional(),
+  // No `overBudget`: a console never skips budget questions (P3-F6, ADR-0019 addendum).
+  // An unknown key is stripped, so an older client that sends it gets the questions.
   /** One git worktree per run (R-307, ADR-0021). Omitted over the protocol: isolated
    * when the workspace is a git working tree, in place otherwise. */
   isolated: z.boolean().optional(),
@@ -345,6 +348,15 @@ export const Notifications = {
       })
       .optional(),
     timeoutMs: z.number().int().positive(),
+  }),
+  /**
+   * A `confirm.request` that no longer needs an answer: its run was cancelled and it was
+   * settled as "no" (review P3-F2). The client closes that dialog; a late answer is refused.
+   */
+  'confirm.closed': z.object({
+    confirmId: Id,
+    runId: Id.optional(),
+    reason: z.enum(['cancelled']),
   }),
   log: z.object({ level: z.enum(['info', 'warn', 'error']), message: z.string().max(10_000) }),
 } as const;

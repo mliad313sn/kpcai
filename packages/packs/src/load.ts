@@ -110,9 +110,10 @@ export function packDirs(opts: LoadOptions = {}): { layer: PackLayer; dir: strin
 }
 
 /**
- * Safety only tightens across layers: a later definition of the same id replaces the
- * pack, but keeps `requiresScope`, `preferLocal`, `physicalEffects`, `personalData`, scope kinds, limits and zone additions
- * of the earlier ones, so a repository file cannot switch a scope check off.
+ * Safety only tightens across layers: a user pack of a built-in id replaces the pack, but
+ * keeps `requiresScope`, `preferLocal`, `physicalEffects`, `personalData`, scope kinds,
+ * limits and zone additions of the built-in one. Repository packs never get here: they
+ * cannot reuse an id at all ({@link admitRepoPack}).
  */
 export function mergeOverride(base: Pack, next: Pack): Pack {
   const union = <T>(a: T[], b: T[]): T[] => [...new Set([...a, ...b])];
@@ -130,7 +131,39 @@ export function mergeOverride(base: Pack, next: Pack): Pack {
   };
 }
 
-/** Loads built-in → `$KPAI_HOME/packs` → `<repo>/.kpstudio/packs`, later overriding earlier. */
+const LAYER_NAME: Record<PackLayer, string> = {
+  builtin: 'built-in pack',
+  user: 'user pack ($KPAI_HOME/packs)',
+  repo: 'repository pack',
+};
+
+/**
+ * A repository pack is repository content (untrusted, ADR-0025 addendum, P3-F4): it may
+ * not reuse the id of a built-in or user pack, and its `zones.relax` is dropped, so it can
+ * add zones and tighten safety but never take over a trusted pack's plans, name or
+ * relaxations. Returns the pack to keep, or the problem that refuses it.
+ */
+export function admitRepoPack(
+  pack: Pack,
+  prev: LoadedPack | undefined,
+): { pack: Pack; problem?: string } | { refused: string } {
+  if (prev) {
+    return {
+      refused: `repository pack ${pack.id} reuses the id of a ${LAYER_NAME[prev.layer]}: ignored (a repository file cannot redefine a trusted pack; give it its own id)`,
+    };
+  }
+  if (pack.zones.relax.length === 0) return { pack };
+  return {
+    pack: { ...pack, zones: { add: pack.zones.add, relax: [] } },
+    problem: `zones.relax ignored for ${pack.id}: repository packs can only add zones (put relaxations in a $KPAI_HOME pack)`,
+  };
+}
+
+/**
+ * Loads built-in → `$KPAI_HOME/packs` → `<repo>/.kpstudio/packs`. A user pack overrides a
+ * built-in one of the same id (see {@link mergeOverride}); a repository pack never
+ * overrides anything (see {@link admitRepoPack}).
+ */
 export async function loadPacks(opts: LoadOptions = {}): Promise<LoadResult> {
   const byId = new Map<string, LoadedPack>();
   const problems: LoadResult['problems'] = [];
@@ -146,6 +179,16 @@ export async function loadPacks(opts: LoadOptions = {}): Promise<LoadResult> {
       const prev = byId.get(parsed.pack.id);
       if (prev?.layer === layer) {
         problems.push({ file, problem: `duplicate pack id ${parsed.pack.id} in ${layer} packs` });
+        continue;
+      }
+      if (layer === 'repo') {
+        const admitted = admitRepoPack(parsed.pack, prev);
+        if ('refused' in admitted) {
+          problems.push({ file, problem: admitted.refused });
+          continue;
+        }
+        if (admitted.problem) problems.push({ file, problem: admitted.problem });
+        byId.set(admitted.pack.id, { pack: admitted.pack, layer, file, overrides: [] });
         continue;
       }
       const pack = prev ? mergeOverride(prev.pack, parsed.pack) : parsed.pack;

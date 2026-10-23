@@ -19,6 +19,8 @@ export const enApp = {
   'conn.announce.unauthorized': 'The kernel refused the token',
   'conn.announce.closed': 'Disconnected',
   'conn.invalid': 'Ignored a message from the kernel: {reason}',
+  'conn.wsRefused':
+    'The link named another kernel address than this page’s server; it was ignored and your token was not sent there. Connecting to {url}.',
   'header.commands': 'Commands',
   'header.theme': 'Theme: {theme}',
   'header.compact': 'Compact',
@@ -89,6 +91,7 @@ export const enApp = {
   'notice.help': 'Help',
   'notice.stats': 'Stats',
   'notice.tools': 'Tools',
+  'notice.connection': 'Connection',
   'help.intro':
     'Type a request in plain language and press Enter: KP Studio plans it first and shows the graph and the cost range. Nothing runs until you press Run.',
   'help.commandBar': 'Command bar',

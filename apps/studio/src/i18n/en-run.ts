@@ -197,6 +197,11 @@ export const enRun = {
   'confirm.announce.artifact': 'Confirmation needed: artifact',
   'confirm.announce.yes': 'Confirmed',
   'confirm.announce.no': 'Declined',
+  'confirm.announce.voided': {
+    one: 'Run cancelled: its pending confirmation was answered No',
+    other: 'Run cancelled: its {count} pending confirmations were answered No',
+  },
+  'confirm.announce.closed': 'The kernel withdrew a confirmation; nothing was allowed',
   'confirm.title.budget': 'Budget confirmation',
   'confirm.title.tool': 'Tool permission',
   'confirm.title.patch': 'Apply patch?',

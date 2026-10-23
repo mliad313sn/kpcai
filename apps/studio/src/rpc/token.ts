@@ -1,5 +1,6 @@
 /**
- * Connection settings from the URL fragment: `#token=…&ws=ws://127.0.0.1:port/…`. The
+ * Connection settings from the URL fragment: `#token=…&ws=ws://127.0.0.1:port/…` (`ws=`
+ * only to the page's own origin or from the desktop shell, see `isAllowedWsUrl`). The
  * fragment never reaches a server or a Referer; it is removed from the address bar once
  * read, and the token is kept in sessionStorage (this tab only) so a reload reconnects.
  */
@@ -19,6 +20,8 @@ export function isValidToken(token: string): boolean {
 export interface ConnectionSettings {
   token: string | undefined;
   url: string;
+  /** The fragment named a kernel address that was ignored (P3-F10): tell the user. */
+  wsRefused?: true;
 }
 
 function storage(): Storage | undefined {
@@ -63,6 +66,21 @@ export function isLocalWsUrl(url: string): boolean {
   }
 }
 
+/** Origins of the desktop shell's webview (`WEBVIEW_ORIGINS` in apps/studio-desktop). */
+const SHELL_ORIGINS = ['tauri://localhost', 'http://tauri.localhost'];
+
+/**
+ * Review P3-F10: a link may only point the console at the kernel that served the page (same
+ * host and port), so the token never goes to whatever else listens on a loopback port. The
+ * desktop shell is the one exception: its page has its own origin and the shell itself
+ * names the loopback kernel it started.
+ */
+export function isAllowedWsUrl(url: string, loc: Location): boolean {
+  if (!isLocalWsUrl(url)) return false;
+  if (SHELL_ORIGINS.includes(`${loc.protocol}//${loc.host}`)) return true;
+  return new URL(url).host === loc.host;
+}
+
 export function readConnectionSettings(loc: Location, history?: History): ConnectionSettings {
   const params = new URLSearchParams(loc.hash.replace(/^#/, ''));
   const fromHash = params.get('token') ?? undefined;
@@ -76,6 +94,7 @@ export function readConnectionSettings(loc: Location, history?: History): Connec
     const stored = storage()?.getItem(KEY) ?? undefined;
     token = stored && isValidToken(stored) ? stored : undefined;
   }
-  const url = ws && isLocalWsUrl(ws) ? ws : defaultUrl(loc);
-  return { token, url };
+  if (ws !== undefined && !isAllowedWsUrl(ws, loc))
+    return { token, url: defaultUrl(loc), wsRefused: true };
+  return { token, url: ws ?? defaultUrl(loc) };
 }

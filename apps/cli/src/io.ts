@@ -1,5 +1,6 @@
 import { createInterface } from 'node:readline/promises';
 import { serialized, type Env } from '@kernelpai/kernel';
+import { isYes, t } from './i18n/core.js';
 
 /** Confirmations are asked one at a time (review P2-F7); see the kernel's `serialized`. */
 export { serialized };
@@ -50,8 +51,9 @@ export function processIo(): Io {
       if (!process.stdin.isTTY) return false;
       const rl = createInterface({ input: process.stdin, output: process.stderr });
       try {
-        const answer = await rl.question(`${question} [y/N] `);
-        return /^y(es)?$/i.test(answer.trim());
+        // The question is the kernel's text, shown as is; the prompt around it is localised.
+        const answer = await rl.question(t('confirm.prompt', { question }));
+        return isYes(answer);
       } catch (err) {
         // Ctrl+C at a prompt is an interrupt like any other: exit 130 (review N5).
         if (err instanceof Error && err.name === 'AbortError') process.exit(130);

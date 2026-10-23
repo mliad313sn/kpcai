@@ -124,6 +124,24 @@ describe('KP Studio in the terminal', () => {
     await until(() => expect(k.calls('confirm.answer')).toEqual([{ confirmId: 'c3', ok: false }]));
   });
 
+  it("closes a cancelled run's confirmation: y no longer allows it (P3-F2)", async () => {
+    const { k } = await boot();
+    k.notify('confirm.request', {
+      confirmId: 'c5',
+      runId: 'r1',
+      kind: 'tool',
+      question: 'shell.exec rm -rf build?',
+      risk: 'destructive',
+      timeoutMs: 60_000,
+    });
+    await until(() => expect(frame()).toMatch(/Confirmation: Tool permission/));
+    k.notify('run.state', { runId: 'r1', state: 'cancelling' });
+    await until(() => expect(frame()).not.toMatch(/Confirmation: Tool permission/));
+    expect(frame()).toMatch(/Run cancelled: its pending confirmation was answered No/);
+    await type('y');
+    await until(() => expect(k.calls('confirm.answer')).toEqual([{ confirmId: 'c5', ok: false }]));
+  });
+
   it('speaks French when asked', async () => {
     await boot();
     setLocale('fr');

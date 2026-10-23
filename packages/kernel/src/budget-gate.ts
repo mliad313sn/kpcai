@@ -4,6 +4,9 @@ import type { Journal } from '@kernelpai/journal';
 import type { Confirm } from './confirm.js';
 import { budgetLimits, formatMoney, type Env, type Money } from './env.js';
 
+/** The orchestrator's label when a node would exceed its `budgetUsd` (S4, P3-F5). */
+const NODE_CAP = /^node \S+ total: /;
+
 export interface GateContext {
   sessionId: string;
   nodeId: string;
@@ -46,7 +49,9 @@ export class BudgetGate {
   }
 
   async allow(c: ScoredCandidate, label: string): Promise<boolean> {
-    if (label.startsWith('graph total')) return this.graphCap(label);
+    if (label.startsWith('graph total')) return this.graphCap(label, 'the cap you accepted');
+    // A node's own budgetUsd (S4, P3-F5) is a cap too: never a silent governor pass.
+    if (NODE_CAP.test(label)) return this.graphCap(label, 'this node’s budget');
     const est = c.estimate.expectedCostUsd;
     const v = this.governor.check(est, {
       sessionId: this.ctx.sessionId,
@@ -74,13 +79,14 @@ export class BudgetGate {
   }
 
   /**
-   * The run would exceed the graph cap the user accepted before it started: always a
-   * human decision (or overBudget), never a silent governor pass (review P2-F9).
+   * The run would exceed the graph cap the user accepted before it started, or a node its
+   * `budgetUsd`: always a human decision (or the CLI's `--over-budget`, which the console
+   * protocol cannot send), never a silent governor pass (review P2-F9, P3-F5). No answer is no.
    */
-  private async graphCap(label: string): Promise<boolean> {
+  private async graphCap(label: string, cap: string): Promise<boolean> {
     const ok =
       this.flags.overBudget === true ||
-      (await this.ask(`${label}: the run would exceed the cap you accepted. Continue?`));
+      (await this.ask(`${label}: the run would exceed ${cap}. Continue?`));
     if (!ok) this.host.say(`not continued — ${label}\n`);
     return this.record(`${ok ? 'accepted' : 'refused'}: ${label}`, { label }, ok);
   }

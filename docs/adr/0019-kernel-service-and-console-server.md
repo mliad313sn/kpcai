@@ -73,3 +73,28 @@ safety rules. Until phase 2 those rules lived in `apps/cli/src/commands`.
 ## Revisit when
 
 Remote or multi-user access (R-801), background runs (R-507), or a second protocol version.
+
+## Addendum (2026-10-23, review P3-F2, P3-F6, D-022)
+
+- **No run-time waivers on an approved plan (P3-F6).** `run.start` with a `planId` takes
+  `overBudget` and `allowSameProvider` from the plan the user approved; the start request
+  cannot add them. `overBudget` is removed from the console's `RunOptions`: a console never
+  skips budget questions, and an older client that still sends it is stripped by the schema
+  and gets the questions. The CLI keeps `--over-budget`, passed to the plan it shows. The
+  same waiver alone covers a node's own `budgetUsd` cap (P3-F5): without it, a `node … total`
+  label always asks a person, like the graph cap; `--yes` never covers either.
+- **A cancel voids the run's confirmations (P3-F2).** `kernel.cancel(runId)` calls the
+  host's `cancelConfirmations(runId)`: the server settles the run's open `confirm.request`s
+  as "no" and sends the new notification `confirm.closed { confirmId, runId, reason:
+'cancelled' }` so the client closes the dialog; a late `confirm.answer` gets
+  `accepted: false`. Questions of that run still queued in the kernel are declined without
+  being asked. The tool bus also checks the run's signal after the answer: a yes that
+  arrives after the cancel writes nothing.
+- **Run outcomes are journaled (P3-F7).** Every run ends with an `intervention`
+  `{ action: 'run outcome', runId, status, cancelled }`; a kernel-side cancel is journaled
+  with its `runId`. `run.merge` and `kpai merge` read the outcome from the journal, so a
+  cancelled, unfinished or unknown run is refused in any process. A workspace `run.restore`
+  is refused while a run writing in place is live.
+
+Alternative rejected: keeping `overBudget` on `run.start` and showing it in the console. The
+plan is what the user approves; a second channel for waivers is what the review found.

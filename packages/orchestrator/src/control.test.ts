@@ -263,7 +263,7 @@ describe('GraphRunner redirect (principle 4)', () => {
     const { r, value } = await whileXRuns(h, () => h.runner.redirect('y', C));
     expect(value).toMatchObject({ ok: false });
     expect((value as { reason: string }).reason).toMatch(
-      /^budget: redirect y to c\/m: estimate \$[\d.e-]+ not allowed$/,
+      /^budget: redirect y to c\/m: estimate \$[\d.e-]+, at most \$[\d.e-]+ not allowed$/,
     );
     expect(r.results['y']?.contributions[0]?.ref).toEqual(A);
     expect(h.runner.status().models).toEqual({});
@@ -280,7 +280,7 @@ describe('GraphRunner redirect (principle 4)', () => {
     capped.options.candidates = [...capped.options.candidates, dear.candidate];
     const refused = await whileXRuns(capped, () => capped.runner.redirect('y', dear.ref));
     expect((refused.value as { reason: string }).reason).toMatch(
-      /^budget: graph total: \$[\d.]+ would exceed maxGraphUsd \$0\.01 \(redirect y to e\/m\)$/,
+      /^budget: graph total: up to \$[\d.]+ \(likely \$[\d.]+\) would exceed maxGraphUsd \$0\.01 \(redirect y to e\/m\)$/,
     );
     const labels: string[] = [];
     const asked = harness({ maxGraphUsd: 0.01, budget: (_c, l) => (labels.push(l), true) });

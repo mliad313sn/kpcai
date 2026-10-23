@@ -140,7 +140,13 @@ export interface NodeRun {
   /** Providers that contributed to the dependencies (a review avoids them when it can). */
   upstream?: string[];
   contributions: Contribution[];
+  /** Spend of this attempt so far (each model call adds to it as it returns). */
   costUsd: number;
+  /**
+   * Spend of the node's earlier attempts (cancelled by a redirect): counted against the
+   * node's `budgetUsd`, reported in the result through the run's carried cost.
+   */
+  priorUsd?: number;
   /** The user's model for the node's first step; taken (cleared) by that step. */
   pin?: ModelRef | undefined;
 }

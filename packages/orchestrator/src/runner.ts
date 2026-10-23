@@ -112,6 +112,7 @@ export class GraphRunner implements RunControl {
     stampScope(r.graph.nodes, scope.boundary);
     this.control.run = r;
     this.steps.graph.reset();
+    this.steps.nodes.reset();
     if (options.edits?.length) {
       this.steps.intervention(undefined, { action: 'plan edited', changes: options.edits });
     }
@@ -255,6 +256,7 @@ export class GraphRunner implements RunControl {
       upstream: this.upstream(r, node),
       contributions: [],
       costUsd: 0,
+      priorUsd: r.carried.get(node.id)?.costUsd ?? 0,
       pin: node.model,
     };
     let result: ProtocolResult;

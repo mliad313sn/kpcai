@@ -16,6 +16,7 @@ import { collectArtifacts } from './artifacts.js';
 import { busPacks } from './packs.js';
 import { collect } from './patches.js';
 import { runnable } from './planning.js';
+import { recordOutcome } from './run-record.js';
 import { RouterTap, UsageTap, annotate } from './routing-info.js';
 import type { GraphOptions } from './setup.js';
 import type { KernelHost, Plan, RunOutcome, RunState } from './types.js';
@@ -51,8 +52,21 @@ export interface RunContext {
   setState(run: ActiveRun, state: RunState): void;
 }
 
-/** Plan → (budget) → run → patches. Rejects only on an unexpected error. */
+/**
+ * Plan → (budget) → run → patches. Rejects only on an unexpected error. How it ended is
+ * journaled with the run id, so another process can refuse to merge a cancelled run (P3-F7).
+ */
 export async function executeRun(c: RunContext, run: ActiveRun): Promise<RunOutcome> {
+  let o: RunOutcome | undefined;
+  try {
+    o = await runToEnd(c, run);
+    return o;
+  } finally {
+    recordOutcome(c.journal, run.plan.sessionId, run.runId, o);
+  }
+}
+
+async function runToEnd(c: RunContext, run: ActiveRun): Promise<RunOutcome> {
   const refusal = await graphBudget(c, run);
   if (refusal) {
     c.setState(run, 'cancelled');
@@ -73,11 +87,20 @@ export async function executeRun(c: RunContext, run: ActiveRun): Promise<RunOutc
     c.setState(run, 'failed');
     return { status: 'not_run', reason: err.message };
   }
+  return finish(c, run, result);
+}
+
+/** Patches and artifacts of a run that ran; refusals journaled. */
+function finish(c: RunContext, run: ActiveRun, result: RunResult): RunOutcome {
   const cancelled = Object.values(result.states).some((st) => st === 'cancelled');
   const { patches, refused } = collect(run.plan.graph, result);
   const sessionId = run.plan.sessionId;
   const ids = { runId: run.runId, sessionId };
-  const arts = collectArtifacts(run.plan.graph, result, ids);
+  // An unreviewed document that would replace a file of the run's tree is refused (P3-F3).
+  const arts = collectArtifacts(run.plan.graph, result, {
+    ...ids,
+    root: run.workRoot ?? c.host.cwd,
+  });
   for (const r of refused) {
     c.journal.append({
       sessionId,

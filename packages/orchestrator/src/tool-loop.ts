@@ -14,6 +14,7 @@ import {
   type ToolDefinition,
 } from '@kernelpai/core';
 import type { ToolAwareResult } from '@kernelpai/executor';
+import type { NodeHold } from './node-budget.js';
 import { preferRef, sameRef, servedCandidate } from './routing.js';
 import type { StepRunner } from './step.js';
 import { DEFAULT_MAX_TOOL_ROUNDS, type NodeRun, type StepSpec } from './types.js';
@@ -45,7 +46,12 @@ export function nodeTools(
   return { defs: [...defs.values()], unknown };
 }
 
-function hooksFor(s: StepRunner, run: NodeRun, role: ContributionRole): ExecutionHooks {
+function hooksFor(
+  s: StepRunner,
+  run: NodeRun,
+  role: ContributionRole,
+  hold?: NodeHold,
+): ExecutionHooks {
   const nodeId = run.node.id;
   return {
     onAttemptStart: (ref) =>
@@ -58,7 +64,7 @@ function hooksFor(s: StepRunner, run: NodeRun, role: ContributionRole): Executio
       }),
     onText: (delta, ref) => s.emit({ type: 'text', nodeId, role, ref, delta }),
     beforeFallback: (next) =>
-      s.allow(next, `${role} fallback on ${nodeId}: ${refToString(next.ref)}`, nodeId),
+      s.allow(next, `${role} fallback on ${nodeId}: ${refToString(next.ref)}`, run, hold),
   };
 }
 
@@ -80,6 +86,7 @@ export async function executeWithTools(
   spec: StepSpec,
   stepNode: GraphNode,
   first: RoutingDecision,
+  hold?: NodeHold,
 ): Promise<LoopResult> {
   const defs = spec.tools === false ? [] : nodeTools(s.o.tools, run.node).defs;
   const tools: ChatRequest['tools'] = defs.map(({ name, description, inputSchema }) => ({
@@ -95,12 +102,14 @@ export async function executeWithTools(
     const r = await s.executor.execute({ ...stepNode, messages }, decision, {
       sessionId: s.o.sessionId,
       ...(run.signal ? { signal: run.signal } : {}),
-      hooks: hooksFor(s, run, spec.role),
+      hooks: hooksFor(s, run, spec.role, hold),
       tools,
       tags: { role: spec.role },
     });
     cost += r.costUsd;
     s.graph.add(r.costUsd);
+    run.costUsd += r.costUsd;
+    hold?.spend(r.costUsd);
     const done = settle(r, cost, defs.length > 0, decision);
     if (done) return done;
     const ref = r.servedBy as ModelRef;
@@ -112,16 +121,28 @@ export async function executeWithTools(
       ...results,
     ];
     decision = reestimated(s, preferRef(decision, ref), stepNode, messages, tools);
-    const label = `${spec.role} tool round ${round + 1} on ${run.node.id}`;
-    if (!(await s.allow(decision.chosen, label, run.node.id))) {
-      s.intervention(run.node.id, {
-        action: 'tool round blocked by budget',
-        role: spec.role,
-        label,
-      });
-      return stop(`budget: ${label} not allowed`, cost, r.text, ref);
-    }
+    const refused = await gateRound(s, run, spec, round + 1, decision, hold);
+    if (refused) return stop(refused, cost, r.text, ref);
   }
+}
+
+/** Budget gate of a tool round (graph cap, node cap, hook); why it must not run, if so. */
+async function gateRound(
+  s: StepRunner,
+  run: NodeRun,
+  spec: StepSpec,
+  round: number,
+  decision: RoutingDecision,
+  hold: NodeHold | undefined,
+): Promise<string | undefined> {
+  const label = `${spec.role} tool round ${round} on ${run.node.id}`;
+  const refused = await s.refusal(decision.chosen, label, run, hold);
+  if (refused) {
+    s.intervention(run.node.id, { action: 'tool round blocked by budget', role: spec.role, label });
+    return refused;
+  }
+  hold?.claim(s.topUsd(decision.chosen));
+  return undefined;
 }
 
 /**

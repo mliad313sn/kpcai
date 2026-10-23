@@ -125,6 +125,9 @@ export class LocalToolBus implements ToolBus {
         : `permission ${trace.decision}: ${trace.reason ?? ''}`.trim();
       return { content, isError: true };
     }
+    // A cancel that arrived while the human was answering wins over the yes (review P3-F2).
+    if (ctx.signal?.aborted)
+      return this.refuse(trace, 'cancelled', 'cancelled while the confirmation was pending');
     try {
       return await tool.run(input, ctx);
     } catch (err) {

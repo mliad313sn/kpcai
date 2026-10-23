@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import WebSocket from 'ws';
-import { connect, disconnect } from '../connection';
+import { connect, disconnect, reportRefusedWs } from '../connection';
 import { FakeKernel, RpcFailure, TOKEN, until } from '../test-helpers/fake-kernel';
 import { PATCH, PLAN, kernelHandlers } from '../test-helpers/fixtures';
 import {
@@ -147,6 +147,77 @@ describe('actions against a fake kernel', () => {
     await answerConfirm('c1', false);
     expect(kernel.calls('confirm.answer')).toEqual([{ confirmId: 'c1', ok: true }]);
     expect(s().confirms).toEqual([]);
+  });
+
+  it("drops a cancelled run's confirmations and answers them No (P3-F2)", async () => {
+    await boot();
+    const ask = (confirmId: string, runId: string) =>
+      kernel.notify('confirm.request', {
+        confirmId,
+        runId,
+        kind: 'tool',
+        question: 'rm -rf?',
+        timeoutMs: 60_000,
+      });
+    ask('c1', 'r1');
+    ask('c2', 'r2');
+    ask('c3', 'r1');
+    await until(() => expect(s().confirms).toHaveLength(3));
+    kernel.notify('run.state', { runId: 'r1', state: 'cancelling' });
+    await until(() => expect(s().confirms.map((c) => c.confirmId)).toEqual(['c2']));
+    expect(s().announcement.text).toBe(
+      'Run cancelled: its 2 pending confirmations were answered No',
+    );
+    await until(() =>
+      expect(kernel.calls('confirm.answer')).toEqual([
+        { confirmId: 'c1', ok: false },
+        { confirmId: 'c3', ok: false },
+      ]),
+    );
+    // A late click on Yes in a dialog that was open does nothing.
+    await answerConfirm('c1', true);
+    // A request that arrives after the cancel is declined, never queued.
+    ask('c4', 'r1');
+    await until(() => expect(kernel.calls('confirm.answer')).toHaveLength(3));
+    expect(kernel.calls('confirm.answer').at(-1)).toEqual({ confirmId: 'c4', ok: false });
+    expect(s().confirms.map((c) => c.confirmId)).toEqual(['c2']);
+  });
+
+  it('accepts a kernel notice that withdraws a confirmation, known or not (P3-F2)', async () => {
+    await boot();
+    kernel.notify('confirm.request', {
+      confirmId: 'c9',
+      runId: 'r1',
+      kind: 'patch',
+      question: 'apply?',
+      timeoutMs: 60_000,
+    });
+    await until(() => expect(s().confirms).toHaveLength(1));
+    kernel.notify('confirm.cancelled', { confirmId: 'c9', runId: 'r1' });
+    await until(() => expect(s().confirms).toEqual([]));
+    expect(s().announcement.text).toBe('The kernel withdrew a confirmation; nothing was allowed');
+    // The name S1's kernel sends (`confirm.closed`), whether or not this protocol knows it.
+    kernel.notify('confirm.request', {
+      confirmId: 'c10',
+      runId: 'r1',
+      kind: 'tool',
+      question: 'rm?',
+      timeoutMs: 60_000,
+    });
+    await until(() => expect(s().confirms).toHaveLength(1));
+    kernel.notify('confirm.closed', { confirmId: 'c10', runId: 'r1', reason: 'cancelled' });
+    await until(() => expect(s().confirms).toEqual([]));
+    kernel.notify('confirm.closed', { confirmId: 'c10', runId: 'r1', reason: 'cancelled' });
+    expect(kernel.calls('confirm.answer')).toEqual([]);
+    expect(s().logs.filter((l) => l.level !== 'info')).toEqual([]);
+  });
+
+  it("tells the user when a link's kernel address was ignored (P3-F10)", () => {
+    reportRefusedWs('ws://127.0.0.1:4100/rpc');
+    expect(s().notice?.title).toBe('Connection');
+    expect(s().notice?.body).toMatch(/was ignored and your token was not sent there/);
+    expect(s().announcement.text).toBe(s().notice?.body);
+    expect(s().logs.at(-1)?.level).toBe('warn');
   });
 
   it('runs / commands', async () => {

@@ -9,10 +9,12 @@ import {
   type TaskNode,
 } from '@kernelpai/core';
 import { FallbackExecutor } from '@kernelpai/executor';
+import { stepBand } from './band.js';
 import { GraphBudget } from './graph-budget.js';
+import { NodeBudgets, type NodeHold } from './node-budget.js';
 import { stepMessages } from './prompts.js';
-import { preferRef, routeDiverse, type Routed } from './routing.js';
-import { executeWithTools } from './tool-loop.js';
+import { preferRef, routeDiverse, sameRef, type Routed } from './routing.js';
+import { executeWithTools, type LoopResult } from './tool-loop.js';
 import {
   OrchestrationError,
   type NodeRun,
@@ -33,15 +35,14 @@ export class StepRunner {
   readonly executor: FallbackExecutor;
   /** Cumulative spend of the current graph run against `maxGraphUsd`. */
   readonly graph: GraphBudget;
+  /** Per-node spend of the current graph run against each node's `budgetUsd`. */
+  readonly nodes: NodeBudgets;
 
   constructor(readonly o: OrchestratorOptions) {
     this.executor = new FallbackExecutor(o.resolve, o.journal, o.executor);
-    this.graph = new GraphBudget(
-      o.maxGraphUsd,
-      o.budget && ((c, l) => this.hook(c, l)),
-      o.journal,
-      o.sessionId,
-    );
+    const ask = o.budget && ((c: ScoredCandidate, l: string) => this.hook(c, l));
+    this.graph = new GraphBudget(o.maxGraphUsd, ask, o.journal, o.sessionId);
+    this.nodes = new NodeBudgets(ask, o.journal, o.sessionId);
   }
 
   emit(event: GraphEvent): void {
@@ -53,12 +54,34 @@ export class StepRunner {
   }
 
   /**
-   * Spend gate of every model call: the graph cap first (`maxGraphUsd`), then the budget
-   * hook. A throw counts as a refusal (as in the executor).
+   * Spend gate of every model call: the graph cap first (`maxGraphUsd`), then the node's
+   * cap (`budgetUsd`, against this call's band top), then the budget hook. A throw counts
+   * as a refusal (as in the executor). Returns why the call must not run, else undefined.
    */
-  async allow(c: ScoredCandidate, label: string, nodeId?: string): Promise<boolean> {
-    if (!(await this.graph.check(c, label, nodeId))) return false;
-    return this.hook(c, label);
+  async refusal(
+    c: ScoredCandidate,
+    label: string,
+    run: NodeRun,
+    own?: NodeHold,
+  ): Promise<string | undefined> {
+    if (!(await this.graph.check(c, label, run.node.id))) return `budget: ${label} not allowed`;
+    const node = await this.nodes.check(run, c, this.topUsd(c), label, own);
+    if (node) return node;
+    return (await this.hook(c, label)) ? undefined : `budget: ${label} not allowed`;
+  }
+
+  async allow(c: ScoredCandidate, label: string, run: NodeRun, own?: NodeHold): Promise<boolean> {
+    return (await this.refusal(c, label, run, own)) === undefined;
+  }
+
+  /**
+   * Band top of one call of `c` (D-021: the worst plausible cost, not the average), without
+   * tool rounds (each round is gated on its own). Unknown card: the full output cap's cost.
+   */
+  topUsd(c: ScoredCandidate): number {
+    const card = this.o.candidates.find((k) => sameRef(k.ref, c.ref))?.card;
+    if (!card) return Math.max(c.estimate.expectedCostUsd, c.estimate.maxCostUsd);
+    return stepBand(card, c.estimate, { min: 1, max: 1 }, undefined).perCallHighUsd;
   }
 
   /** The budget hook alone (no graph cap); no hook allows, a throw refuses. */
@@ -108,13 +131,12 @@ export class StepRunner {
       return err instanceof OrchestrationError ? { ...f, diversity: true } : f;
     }
     const label = `${spec.role} on ${run.node.id}: ${refToString(decision.chosen.ref)}`;
-    if (!(await this.allow(decision.chosen, label, run.node.id))) {
+    const refused = await this.refusal(decision.chosen, label, run);
+    if (refused) {
       this.intervention(run.node.id, { action: 'step blocked by budget', role: spec.role, label });
-      return failed(`budget: ${label} not allowed`, 0, false);
+      return failed(refused, 0, false);
     }
-    const release = this.graph.reserve(decision.chosen.estimate.expectedCostUsd);
-    const loop = await executeWithTools(this, run, spec, stepNode, decision).finally(release);
-    run.costUsd += loop.costUsd;
+    const loop = await this.execute(run, spec, stepNode, decision);
     if (!loop.ok) {
       if (loop.text && loop.ref) {
         this.record(run, {
@@ -134,6 +156,24 @@ export class StepRunner {
     };
     if (!spec.deferRecord) this.record(run, contribution);
     return { ...loop, decision, contribution };
+  }
+
+  /**
+   * Runs the step with its claims on the graph and node budgets held; the loop adds each
+   * call's cost to `run.costUsd` as it returns (node cap, P3-F5).
+   */
+  private execute(
+    run: NodeRun,
+    spec: StepSpec,
+    stepNode: GraphNode,
+    decision: RoutingDecision,
+  ): Promise<LoopResult> {
+    const release = this.graph.reserve(decision.chosen.estimate.expectedCostUsd);
+    const hold = this.nodes.hold(run.node.id, this.topUsd(decision.chosen));
+    return executeWithTools(this, run, spec, stepNode, decision, hold).finally(() => {
+      release();
+      hold.release();
+    });
   }
 
   private decide(node: TaskNode, spec: StepSpec, pin: ModelRef | undefined): RoutingDecision {

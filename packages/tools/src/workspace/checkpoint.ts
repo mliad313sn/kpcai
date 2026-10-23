@@ -136,6 +136,14 @@ function describePlan(ref: string, info: RepoInfo, visible: TreeChange[], skippe
   ].join('\n');
 }
 
+/** Identity of a restore plan: every path with the mode and blob it would get. */
+function planKey(changes: readonly TreeChange[]): string {
+  return changes
+    .map((c) => `${c.path}\0${c.mode ?? ''}\0${c.sha ?? ''}`)
+    .sort()
+    .join('\n');
+}
+
 /**
  * Puts the working tree under root back to the checkpoint: changed files are
  * rewritten with their exact bytes and modes, files created since are removed
@@ -159,8 +167,15 @@ export async function restore(
   // Safety net first: a restore that stops halfway (or is regretted) can be undone.
   const run = (REF_RE.exec(ref) as RegExpExecArray)[1] as string;
   const undo = await checkpoint(root, `before restore of ${ref}`, { ...opts, run });
-  // Re-planned: the tree may have changed while the human was reading.
+  // The human approved exactly `visible`. If the tree changed while they were reading,
+  // the fresh plan differs: write nothing and ask again (review P3-F7).
   const fresh = await restorePlan(opts, root, commit);
+  const freshVisible = fresh.changes.filter((c) => !inZone(relToRoot(fresh.info, c.path), zones));
+  if (planKey(freshVisible) !== planKey(visible)) {
+    throw new ToolError(
+      'the tree changed while you were answering: nothing was restored, ask again',
+    );
+  }
   const res = await writeChanges(opts, fresh.info.top, fresh.changes, (p) =>
     inZone(relToRoot(fresh.info, p), zones),
   );

@@ -29,6 +29,11 @@ export interface KernelHost {
   /** Steering of a run (pause, resume, cancel, redirect, instruction, refusal). */
   onControl?(runId: string, event: RunControlEvent): void;
   onRunState?(runId: string, state: RunState): void;
+  /**
+   * The run was cancelled: settle its confirmations still on screen as "no" and tell the
+   * client to close them (review P3-F2). Questions still queued are declined by the kernel.
+   */
+  cancelConfirmations?(runId: string): void;
 }
 
 /** A plan the user can see before anything runs (spec §4.5 "zéro surprise"). */

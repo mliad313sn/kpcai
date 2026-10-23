@@ -131,6 +131,23 @@ describe('checkpoints and rollback (R-305)', () => {
     expect(await readFile(path.join(root, 'src', 'app.ts'), 'utf8')).toBe('edited\n');
   });
 
+  it('writes nothing when the tree changes while the human is answering (P3-F7)', async () => {
+    const cp = await checkpoint(root, 'c', { run: 'r11' });
+    await put(root, { 'src/app.ts': 'edited\n' });
+    const ctx = makeCtx(root, { answers: [true] });
+    const answer = ctx.confirm;
+    // A file appears between the question and the write: the approved list no longer holds.
+    ctx.confirm = async (q) => {
+      await put(root, { 'src/late.ts': 'late\n' });
+      return answer(q);
+    };
+    await expect(
+      restore(root, cp.ref, { policy: new GradedPermissionPolicy(), ctx }),
+    ).rejects.toThrow(/tree changed while you were answering/);
+    expect(await readFile(path.join(root, 'src', 'app.ts'), 'utf8')).toBe('edited\n');
+    expect(existsSync(path.join(root, 'src', 'late.ts'))).toBe(true);
+  });
+
   it('never writes, deletes or names forbidden-zone files on restore', async () => {
     await put(root, { '.env': 'TOKEN=old\n' });
     const cp = await checkpoint(root, 'c', { run: 'r5' });

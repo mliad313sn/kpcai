@@ -1,6 +1,6 @@
 import type { Journal } from '@kernelpai/journal';
 import { createToolBus, type LocalToolBus, type PackZoneOptions } from '@kernelpai/tools';
-import type { Artifact } from './artifacts.js';
+import { unreviewedOverwrite, type Artifact } from './artifacts.js';
 import type { Confirm } from './confirm.js';
 import { kpaiHome } from './env.js';
 import type { Patch } from './patches.js';
@@ -49,25 +49,28 @@ async function snapshot(c: ApplyContext, label: string): Promise<string | undefi
 /**
  * Applies patches through the tool bus (`git.apply`: jailed, checked, forbidden zones of
  * `$KPAI_HOME/policy.json` included), each after a checkpoint of the target tree. Each
- * write is confirmed with the exact patch unless `yesApply`; the caller has already checked
+ * write is confirmed with the exact patch unless `yesApply`, one question per patch even
+ * when a node produced several (P3-F1); the caller has already checked
  * that the patches are critic-approved, hidden-byte-free and that the run was not cancelled.
  */
 export function applyAll(c: ApplyContext, patches: Patch[]): Promise<ApplyResult[]> {
   return withBus(c, async (bus) => {
     const results: ApplyResult[] = [];
-    for (const p of patches) {
+    for (const [i, p] of patches.entries()) {
       const stop = await snapshot(c, `before patch from ${p.nodeId}`);
       if (stop) {
         results.push({ nodeId: p.nodeId, ok: false, message: stop.slice(0, 300) });
         continue;
       }
       const r = await bus.call(
-        { id: `apply-${p.nodeId}`, name: 'git.apply', input: { patch: p.patch } },
+        { id: `apply-${p.nodeId}-${i}`, name: 'git.apply', input: { patch: p.patch } },
         {
           model: { provider: 'kernel', model: 'apply' },
           root: c.root,
           sessionId: c.sessionId,
-          nodeId: p.nodeId,
+          // Each patch is its own write batch: a node with two diffs is asked twice, each
+          // time with the diff that will be written (review P3-F1).
+          nodeId: `${p.nodeId}#patch-${i}`,
           confirm: (question) =>
             c.yesApply
               ? Promise.resolve(true)
@@ -99,6 +102,12 @@ export function applyArtifacts(c: ApplyContext, list: Artifact[]): Promise<Artif
       const done = (ok: boolean, message: string): number =>
         results.push({ path: a.path, nodeId: a.nodeId, ok, message: message.slice(0, 300) });
       const ask = artifactAsk(c, a);
+      // Checked again at save time: the file may have appeared since the run ended (P3-F3).
+      const taken = a.reviewed ? undefined : unreviewedOverwrite(c.root, a.path);
+      if (taken) {
+        done(false, taken);
+        continue;
+      }
       if (!a.reviewed && !(await ask(`save ${a.path} (${a.kind}, NOT REVIEWED by a critic)?`))) {
         done(false, 'not saved: declined by the user (not reviewed)');
         continue;

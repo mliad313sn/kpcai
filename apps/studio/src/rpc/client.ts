@@ -46,6 +46,11 @@ export interface RpcClientOptions {
   onState?: (state: ConnState, detail?: string) => void;
   /** A message from the server that failed validation (dropped). */
   onInvalid?: (reason: string) => void;
+  /**
+   * A `confirm.*` notice this client does not know, carrying a `confirmId` (a newer kernel
+   * withdrawing a confirmation, P3-F2): passed on instead of being reported as invalid.
+   */
+  onConfirmNotice?: (method: string, params: unknown) => void;
   WebSocketImpl?: typeof WebSocket;
   requestTimeoutMs?: number;
   backoff?: { initialMs: number; maxMs: number };
@@ -56,6 +61,11 @@ interface Pending {
   resolve: (v: unknown) => void;
   reject: (e: Error) => void;
   timer: ReturnType<typeof setTimeout>;
+}
+
+function isConfirmNotice(method: string, params: unknown): boolean {
+  const id = (params as { confirmId?: unknown } | null)?.confirmId;
+  return method.startsWith('confirm.') && typeof id === 'string' && id.length <= 200;
 }
 
 /** Close codes the server uses for a bad token (4401) or a policy violation (1008). */
@@ -226,6 +236,8 @@ export class RpcClient {
           };
       this.ws?.send(JSON.stringify(reply));
     }
+    if (!parsed && this.opts.onConfirmNotice && isConfirmNotice(method, params))
+      return this.opts.onConfirmNotice(method, params);
     if (!parsed) return this.opts.onInvalid?.(`unknown notification ${method.slice(0, 100)}`);
     if (!parsed.success) return this.opts.onInvalid?.(`invalid ${method}`);
     this.opts.onNotification(method as NotificationName, parsed.data as never);

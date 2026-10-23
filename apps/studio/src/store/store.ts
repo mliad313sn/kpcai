@@ -120,10 +120,61 @@ function onControl(p: NotificationParams<'run.control'>): void {
   announce(controlText(p.event));
 }
 
+/** Sends a No for a confirmation the console dropped; set by the actions module. */
+let decline: (confirmId: string) => void = () => undefined;
+
+export function setDecliner(fn: (confirmId: string) => void): void {
+  decline = fn;
+}
+
+function stopping(runId: string | undefined): boolean {
+  const state = runId ? studio.getState().runs[runId]?.state : undefined;
+  return state === 'cancelling' || state === 'cancelled';
+}
+
+/**
+ * Review P3-F2: once a run is cancelling, none of its confirmations can be answered Yes.
+ * Its open dialog and queued confirmations are removed (a late click finds nothing to
+ * answer), each is answered No, and the live region says so.
+ */
+export function voidRunConfirms(runId: string): boolean {
+  const s = studio.getState();
+  const gone = s.confirms.filter((c) => c.runId === runId);
+  if (!gone.length) return false;
+  studio.setState({ confirms: s.confirms.filter((c) => c.runId !== runId) });
+  for (const c of gone) decline(c.confirmId);
+  announce(t('confirm.announce.voided', { count: gone.length }));
+  return true;
+}
+
+/**
+ * The kernel closed a confirmation itself (for example when its run is cancelled). Any
+ * notice of this shape is accepted, whatever its name: the confirmation leaves the queue
+ * without an answer, since the kernel no longer waits for one.
+ */
+export function confirmWithdrawn(params: unknown): void {
+  const id = (params as { confirmId?: unknown } | null)?.confirmId;
+  if (typeof id !== 'string') return;
+  const s = studio.getState();
+  if (!s.confirms.some((c) => c.confirmId === id)) return;
+  studio.setState({ confirms: s.confirms.filter((c) => c.confirmId !== id) });
+  announce(t('confirm.announce.closed'));
+}
+
 function onConfirm(p: NotificationParams<'confirm.request'>): void {
+  if (stopping(p.runId)) {
+    decline(p.confirmId);
+    return announce(t('confirm.announce.voided', { count: 1 }));
+  }
   const confirms = [...studio.getState().confirms, { ...p, receivedAt: Date.now() }];
   studio.setState({ confirms });
   announce(t(`confirm.announce.${p.kind}`));
+}
+
+function onState(p: NotificationParams<'run.state'>): void {
+  updateRun(p.runId, (r) => ({ ...r, state: p.state }));
+  const voided = (p.state === 'cancelling' || p.state === 'cancelled') && voidRunConfirms(p.runId);
+  if (!voided) announce(t(STATE_TEXT[p.state]!));
 }
 
 /** Entry point for every validated server notification. */
@@ -136,11 +187,8 @@ export function handleNotification<N extends NotificationName>(
       return onRunEvent(params as NotificationParams<'run.event'>);
     case 'run.planned':
       return onPlanned(params as NotificationParams<'run.planned'>);
-    case 'run.state': {
-      const p = params as NotificationParams<'run.state'>;
-      updateRun(p.runId, (r) => ({ ...r, state: p.state }));
-      return announce(t(STATE_TEXT[p.state]!));
-    }
+    case 'run.state':
+      return onState(params as NotificationParams<'run.state'>);
     case 'run.done':
       return onDone(params as NotificationParams<'run.done'>);
     case 'run.control':
@@ -151,5 +199,8 @@ export function handleNotification<N extends NotificationName>(
       const p = params as NotificationParams<'log'>;
       return log(p.level, p.message);
     }
+    default:
+      // A newer kernel's notice about a confirmation (P3-F2): taken leniently.
+      if (String(name).startsWith('confirm.')) return confirmWithdrawn(params);
   }
 }

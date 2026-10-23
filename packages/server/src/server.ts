@@ -146,6 +146,8 @@ function kernelHost(o: ServerOptions, broker: ConfirmBroker, broadcast: Broadcas
     onEvent: (runId, event) => void broadcast('run.event', { runId, event }),
     onRunState: (runId, state) => void broadcast('run.state', { runId, state }),
     onControl: (runId, event) => void broadcast('run.control', { runId, event }),
+    // A cancelled run's open questions become "no" and the dialogs close (P3-F2).
+    cancelConfirmations: (runId) => void broker.declineRun(runId),
     onRunPlanned: (runId, plan) =>
       void broadcast('run.planned', {
         runId,

@@ -92,6 +92,21 @@ describe('LocalToolBus', () => {
     expect(res.content).toMatch(/cancelled/);
   });
 
+  it('refuses a call cancelled while its confirmation was pending (review P3-F2)', async () => {
+    const run = vi.fn(async () => ok('written'));
+    const { b, journal } = bus([tool({ run, def: { ...tool().def, risk: 'write' } })]);
+    const ac = new AbortController();
+    // The user cancels the run while the question is on screen, then clicks yes.
+    const confirm = async (): Promise<boolean> => (ac.abort(), true);
+    const res = await b.call(
+      call('demo.echo', { text: 'x' }),
+      makeCtx('/ws', { signal: ac.signal, confirm }),
+    );
+    expect(res).toMatchObject({ isError: true, content: expect.stringMatching(/cancelled/) });
+    expect(run).not.toHaveBeenCalled();
+    expect(journal.last().payload.decision).toBe('cancelled');
+  });
+
   it('turns tool failures into isError results', async () => {
     const thrower = (err: unknown) => tool({ run: async () => Promise.reject(err) });
     for (const [err, re] of [

@@ -208,6 +208,11 @@ export const frRun: Record<keyof typeof enRun, Message> = {
   'confirm.announce.artifact': 'Confirmation requise : livrable',
   'confirm.announce.yes': 'Confirmé',
   'confirm.announce.no': 'Refusé',
+  'confirm.announce.voided': {
+    one: 'Exécution annulée : sa confirmation en attente a reçu la réponse Non',
+    other: 'Exécution annulée : ses {count} confirmations en attente ont reçu la réponse Non',
+  },
+  'confirm.announce.closed': 'Le noyau a retiré une confirmation ; rien n’a été autorisé',
   'confirm.title.budget': 'Confirmation de budget',
   'confirm.title.tool': 'Autorisation d’outil',
   'confirm.title.patch': 'Appliquer le correctif ?',

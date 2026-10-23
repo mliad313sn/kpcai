@@ -21,6 +21,8 @@ export const frApp: Record<keyof typeof enApp, Message> = {
   'conn.announce.unauthorized': 'Le noyau a refusé le jeton',
   'conn.announce.closed': 'Déconnecté',
   'conn.invalid': 'Message du noyau ignoré : {reason}',
+  'conn.wsRefused':
+    'Le lien indiquait une autre adresse de noyau que le serveur de cette page ; elle a été ignorée et votre jeton n’y a pas été envoyé. Connexion à {url}.',
   'header.commands': 'Commandes',
   'header.theme': 'Thème : {theme}',
   'header.compact': 'Compact',
@@ -95,6 +97,7 @@ export const frApp: Record<keyof typeof enApp, Message> = {
   'notice.help': 'Aide',
   'notice.stats': 'Statistiques',
   'notice.tools': 'Outils',
+  'notice.connection': 'Connexion',
   'help.intro':
     'Tapez une demande en langage courant puis Entrée : KP Studio la planifie d’abord et montre le graphe et la fourchette de coût. Rien ne s’exécute avant que vous appuyiez sur Lancer.',
   'help.commandBar': 'Barre de commande',

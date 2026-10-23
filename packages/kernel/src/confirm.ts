@@ -41,9 +41,18 @@ export function serialized<Q>(ask: (q: Q) => Promise<boolean>): (q: Q) => Promis
   };
 }
 
-/** A host's confirm, serialized; without one every confirmation is declined. */
-export function hostConfirm(confirm: Confirm | undefined): Confirm {
+/**
+ * A host's confirm, serialized; without one every confirmation is declined. A question
+ * `voided` says is void when its turn comes (its run was cancelled while it waited in the
+ * queue) is declined without being asked (review P3-F2).
+ */
+export function hostConfirm(
+  confirm: Confirm | undefined,
+  voided: (req: ConfirmRequest) => boolean = () => false,
+): Confirm {
   if (!confirm) return () => Promise.resolve(false);
-  const one = serialized(confirm);
+  const one = serialized((req: ConfirmRequest) =>
+    voided(req) ? Promise.resolve(false) : confirm(req),
+  );
   return async (req) => (await one(req)) === true;
 }

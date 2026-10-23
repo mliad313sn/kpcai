@@ -11,6 +11,7 @@ import {
 } from '@kernelpai/core';
 import type { Journal } from '@kernelpai/journal';
 import { buildRegistry, confirmThreshold, openJournal } from '../context.js';
+import { t } from '../i18n/core.js';
 import type { Io } from '../io.js';
 import { sanitizeForTerminal } from '../sanitize.js';
 
@@ -83,7 +84,10 @@ async function budgetGate(c: Call, yes: boolean): Promise<boolean> {
   );
   if (est.expectedCostUsd <= threshold || yes) return true;
   const ok = await c.io.confirm(
-    `Expected cost ${formatUsd(est.expectedCostUsd)} is above your threshold ${formatUsd(threshold)}. Continue?`,
+    t('confirm.budget', {
+      expected: formatUsd(est.expectedCostUsd),
+      threshold: formatUsd(threshold),
+    }),
   );
   if (!ok) {
     c.journal.append({

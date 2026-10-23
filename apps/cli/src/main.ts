@@ -17,41 +17,15 @@ import {
 } from './commands/workspace.js';
 import type { GraphCliOptions as GraphOptions } from './commands/graph.js';
 import type { Io } from './io.js';
+import { cliLocale, setLocale, t } from './i18n/core.js';
+import { en } from './i18n/en.js';
 
-export const USAGE = `KernelPAI (phase 2)
+/** The English usage text; `kpai help` prints it in the user's language (`usage()`). */
+export const USAGE: string = en.usage;
 
-Usage:
-  kpai do <request>                    Plan a task graph, show who does what and the cost,
-                                       run it with cross-provider review, show patches
-  kpai plan <request>                  The same plan and estimate, dry run
-      [--planner template|model] [--apply] [--yes-apply] [--allow-same-provider]
-      [--isolated]  run in its own git worktree, merged back on confirmation
-      [--scope <file>]  authorised scope (YAML/JSON) for packs that require one
-      --yes accepts cost prompts only; writes need --yes-apply or a y at the prompt
-  kpai checkpoints [--session <id>]   Checkpoints taken before writes, by run
-  kpai restore <ref>                   Restore a checkpoint (always asks; undo printed)
-  kpai merge <run-id>                  Merge an isolated run's worktree (asks with the diff)
-  kpai discard <run-id>                Remove an isolated run's worktree
-  kpai pack list|show|detect|check|init  Domain packs (see kpai pack help)
-  kpai tools                           Tools models can use, their risk and source
-  kpai studio [--port N] [--allow-test] Start KP Studio's local kernel server, print its URL
-                                       (--allow-test: offline mock providers by default)
-  kpai run <request>                   Classify, route by competence, budget-check,
-                                       run with automatic fallback, journal everything
-  kpai route <request>                 Same plan and routing, dry run (nothing sent)
-      [--type T] [--criticality low|normal|critical] [--profile economy|balanced|performance]
-      [--local-only] [--exclude p1,p2] [--max-tokens N] [--yes] [--over-budget]
-      [--new-session] [--allow-test] [--verbose]          --allow-test lets routing use offline mock providers
-  kpai stats [--session <id>]          Fallback rate, cost per task, estimate error, router latency
-  kpai providers                       Detect providers and list models
-  kpai ask -m <provider/model> <text>  Send one request, stream, journal it
-      [--system <text>] [--max-tokens N] [--yes]
-  kpai log [--session <id>] [--limit N] List sessions, or one session's events
-  kpai export <session> [--out file]   Export a session as Markdown
-  kpai verify                          Check the journal hash chain
-
-Global: --db <path> (default $KPAI_HOME/journal.db, KPAI_HOME=~/.kernelpai)
-`;
+export function usage(): string {
+  return t('usage');
+}
 
 const OPTIONS = {
   model: { type: 'string', short: 'm' },
@@ -79,12 +53,13 @@ const OPTIONS = {
   port: { type: 'string' },
   isolated: { type: 'boolean' },
   scope: { type: 'string' },
+  lang: { type: 'string' },
 } as const;
 
 function positiveInt(name: string, raw: string | undefined): number | undefined {
   if (raw === undefined) return undefined;
   const n = Number(raw);
-  if (!Number.isInteger(n) || n <= 0) throw new UsageError(`--${name} must be a positive integer`);
+  if (!Number.isInteger(n) || n <= 0) throw new UsageError(t('error.positiveInt', { name }));
   return n;
 }
 
@@ -93,8 +68,7 @@ class UsageError extends Error {}
 function portNumber(raw: string | undefined): number | undefined {
   if (raw === undefined) return undefined;
   const n = Number(raw);
-  if (!Number.isInteger(n) || n < 0 || n > 65535)
-    throw new UsageError('--port must be a port number (0 picks a free one)');
+  if (!Number.isInteger(n) || n < 0 || n > 65535) throw new UsageError(t('error.port'));
   return n;
 }
 
@@ -109,7 +83,7 @@ function oneOf<T extends string>(
 ): T | undefined {
   if (raw === undefined) return undefined;
   if (!allowed.includes(raw))
-    throw new UsageError(`--${name} must be one of ${allowed.join(', ')}`);
+    throw new UsageError(t('error.oneOf', { name, allowed: allowed.join(', ') }));
   return raw as T;
 }
 
@@ -118,7 +92,7 @@ type Values = ReturnType<
 >['values'];
 
 function graphOptions(v: Values, rest: string[]): GraphOptions {
-  if (rest.length === 0) throw new UsageError('plan/do need a request');
+  if (rest.length === 0) throw new UsageError(t('error.graphNeedsRequest'));
   return {
     request: rest.join(' '),
     planner: oneOf('planner', v.planner, ['template', 'model']),
@@ -143,7 +117,7 @@ function graphOptions(v: Values, rest: string[]): GraphOptions {
 }
 
 function runOptions(v: Values, rest: string[]): RunOptions {
-  if (rest.length === 0) throw new UsageError('run/route need a request');
+  if (rest.length === 0) throw new UsageError(t('error.runNeedsRequest'));
   return {
     prompt: rest.join(' '),
     type: oneOf('type', v.type, TASK_TYPES),
@@ -167,7 +141,7 @@ function runOptions(v: Values, rest: string[]): RunOptions {
 type Handler = (io: Io, v: Values, rest: string[]) => number | Promise<number>;
 
 function askOptions(v: Values, rest: string[]): Parameters<typeof askCommand>[1] {
-  if (rest.length === 0) throw new UsageError('ask needs a prompt');
+  if (rest.length === 0) throw new UsageError(t('error.askNeedsPrompt'));
   return {
     model: v.model,
     prompt: rest.join(' '),
@@ -192,25 +166,40 @@ const COMMANDS: Readonly<Record<string, Handler>> = {
   log: (io, v) =>
     logCommand(io, { db: v.db, session: v.session, limit: positiveInt('limit', v.limit) }),
   export: (io, v, rest) => {
-    if (!rest[0]) throw new UsageError('export needs a session id');
+    if (!rest[0]) throw new UsageError(t('error.exportNeedsSession'));
     return exportCommand(io, { db: v.db, session: rest[0], out: v.out });
   },
   verify: (io, v) => verifyCommand(io, { db: v.db }),
   pack: (io, v, rest) => packCommand(io, rest, { out: v.out }),
   checkpoints: (io, v) => checkpointsCommand(io, { db: v.db, session: v.session }),
-  restore: (io, v, rest) => restoreCommand(io, { db: v.db, ref: one('restore', 'a ref', rest) }),
-  merge: (io, v, rest) => mergeCommand(io, { db: v.db, runId: one('merge', 'a run id', rest) }),
+  restore: (io, v, rest) =>
+    restoreCommand(io, { db: v.db, ref: one('error.restoreNeedsRef', rest) }),
+  merge: (io, v, rest) => mergeCommand(io, { db: v.db, runId: one('error.mergeNeedsRunId', rest) }),
   discard: (io, v, rest) =>
-    discardCommand(io, { db: v.db, runId: one('discard', 'a run id', rest) }),
+    discardCommand(io, { db: v.db, runId: one('error.discardNeedsRunId', rest) }),
 };
 
-function one(command: string, what: string, rest: string[]): string {
-  if (rest.length !== 1 || !rest[0]) throw new UsageError(`${command} needs ${what}`);
+type NeedsKey = 'error.restoreNeedsRef' | 'error.mergeNeedsRunId' | 'error.discardNeedsRunId';
+
+function one(missing: NeedsKey, rest: string[]): string {
+  if (rest.length !== 1 || !rest[0]) throw new UsageError(t(missing));
   return rest[0];
 }
 
+/** `--lang` is read before parsing so that even a parse error speaks the user's language. */
+function langFlag(argv: readonly string[]): string | undefined {
+  const i = argv.findIndex((a) => a === '--lang' || a.startsWith('--lang='));
+  if (i < 0) return undefined;
+  const arg = argv[i]!;
+  return arg.startsWith('--lang=') ? arg.slice('--lang='.length) : argv[i + 1];
+}
+
 export async function main(argv: readonly string[], io: Io): Promise<number> {
+  const lang = langFlag(argv);
+  setLocale(cliLocale(io.env, lang));
   try {
+    if (lang !== undefined && !/^(en|fr)(?:[-_].*)?$/i.test(lang))
+      throw new UsageError(t('error.lang', { value: lang }));
     const { values: v, positionals } = parseArgs({
       args: [...argv],
       options: OPTIONS,
@@ -218,26 +207,36 @@ export async function main(argv: readonly string[], io: Io): Promise<number> {
     });
     const [command, ...rest] = positionals;
     if (v.help || command === undefined || command === 'help') {
-      io.out(USAGE);
+      io.out(usage());
       return 0;
     }
     const handler = Object.hasOwn(COMMANDS, command) ? COMMANDS[command] : undefined;
-    if (!handler) throw new UsageError(`Unknown command "${command}"`);
+    if (!handler) throw new UsageError(t('error.unknownCommand', { command }));
     return await handler(io, v, rest);
   } catch (err) {
     return reportError(io, err);
   }
 }
 
+/** Node's argument parser reports in English: its errors are reworded, the detail kept. */
+function argsMessage(err: TypeError & { code?: unknown }): string {
+  const option = /'(-[^']*)'/.exec(err.message)?.[1];
+  if (err.code === 'ERR_PARSE_ARGS_UNKNOWN_OPTION' && option)
+    return t('error.unknownOption', { option });
+  return t('error.badArguments', { detail: err.message });
+}
+
+/** Error frames are translated; the error's own text (kernel, provider) is passed as is. */
 function reportError(io: Io, err: unknown): number {
   if (err instanceof UsageError || (err instanceof TypeError && 'code' in err)) {
-    io.err(`${err.message}\n\n${USAGE}`);
+    const message = err instanceof UsageError ? err.message : argsMessage(err);
+    io.err(t('error.usage', { message, usage: usage() }));
     return 2;
   }
   if (err instanceof ProviderError) {
-    io.err(`error (${err.kind}): ${err.message}\n`);
+    io.err(t('error.provider', { kind: err.kind, message: err.message }));
     return 1;
   }
-  io.err(`error: ${err instanceof Error ? err.message : String(err)}\n`);
+  io.err(t('error.generic', { message: err instanceof Error ? err.message : String(err) }));
   return 1;
 }

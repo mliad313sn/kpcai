@@ -1,7 +1,16 @@
+import { mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { TaskGraph } from '@kernelpai/core';
 import type { NodeDeliverable, RunResult } from '@kernelpai/orchestrator';
-import { describe, expect, it } from 'vitest';
-import { ARTIFACT_KINDS, artifactProblem, collectArtifacts } from './artifacts.js';
+import { afterAll, describe, expect, it } from 'vitest';
+import {
+  ARTIFACT_KINDS,
+  artifactProblem,
+  collectArtifacts,
+  unreviewedOverwrite,
+  unreviewedPathProblem,
+} from './artifacts.js';
 
 const ref = (provider: string) => ({ provider, model: 'm' });
 const node = (id: string) => ({
@@ -122,5 +131,70 @@ describe('artifactProblem', () => {
     expect(check('a.md', 'report', 'a'.repeat(1024 * 1024 + 1))).toBe('larger');
     expect(check('a.md', 'report', 'evil\u202e')).toBe('contains');
     expect(check('ok.md', 'report')).toBeUndefined();
+  });
+});
+
+describe('unreviewed artifacts are new Markdown documents only (P3-F3)', () => {
+  const root = mkdtempSync(join(tmpdir(), 'kpai-f3-'));
+  writeFileSync(join(root, 'solo.md'), 'old\n');
+  writeFileSync(join(root, 'package.json'), '{}\n');
+  mkdirSync(join(root, 'docs'));
+  symlinkSync(join(root, 'nowhere'), join(root, 'docs', 'dangling.md'));
+  afterAll(() => rmSync(root, { recursive: true, force: true }));
+  const soloRun = (artifacts: unknown[], approved?: boolean) =>
+    ({
+      ...result,
+      results: { solo: res('solo', approved) },
+      deliverables: { solo: deliv('solo', artifacts) },
+    }) as unknown as RunResult;
+  const collect = (artifacts: unknown[], approved?: boolean) =>
+    collectArtifacts(graph, soloRun(artifacts, approved), { runId: 'r', sessionId: 's', root });
+
+  it('refuses code, manifests and non-Markdown files declared as a document', () => {
+    const r = collect([
+      art('src/x.ts', 'report'),
+      art('package.json', 'report'),
+      art('requirements.txt', 'checklist'),
+      art('run.sh', 'design'),
+    ]);
+    expect(r.artifacts).toEqual([]);
+    expect(r.refused.map((x) => x.path)).toEqual([
+      'src/x.ts',
+      'package.json',
+      'requirements.txt',
+      'run.sh',
+    ]);
+    for (const x of r.refused) expect(x.reason).toMatch(/Markdown/);
+  });
+
+  it('refuses agent instruction files and hidden folders even in Markdown', () => {
+    const paths = ['CLAUDE.md', 'sub/AGENTS.md', '.github/copilot-instructions.md', '.claude/a.md'];
+    const r = collect(paths.map((p) => art(p, 'report')));
+    expect(r.artifacts).toEqual([]);
+    expect(r.refused.map((x) => x.path)).toEqual(paths);
+  });
+
+  it('never replaces an existing file, a dangling link included', () => {
+    const r = collect([art('solo.md', 'report'), art('docs/dangling.md', 'report')]);
+    expect(r.artifacts).toEqual([]);
+    for (const x of r.refused) expect(x.reason).toMatch(/already exists/);
+    expect(unreviewedOverwrite(root, 'solo.md')).toMatch(/already exists/);
+    expect(unreviewedOverwrite(root, 'docs/new.md')).toBeUndefined();
+  });
+
+  it('admits a new Markdown document, unreviewed', () => {
+    const r = collect([art('docs/notes.md', 'report'), art('PLAN.markdown', 'design')]);
+    expect(r.refused).toEqual([]);
+    expect(r.artifacts.map((a) => [a.path, a.reviewed])).toEqual([
+      ['docs/notes.md', false],
+      ['PLAN.markdown', false],
+    ]);
+  });
+
+  it('keeps the current rules for reviewed artifacts', () => {
+    const r = collect([art('package.json', 'config'), art('solo.md', 'report')], true);
+    expect(r.refused).toEqual([]);
+    expect(r.artifacts.map((a) => a.reviewed)).toEqual([true, true]);
+    expect(unreviewedPathProblem('a.md', 'config')).toMatch(/only documents/);
   });
 });

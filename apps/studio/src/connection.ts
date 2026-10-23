@@ -3,7 +3,7 @@ import { t, type Key } from './i18n/core';
 import { RpcClient, type RpcClientOptions } from './rpc/client';
 import { forgetToken, rememberToken } from './rpc/token';
 import { loadModels, loadSessions, setClient } from './store/actions';
-import { announce, handleNotification, log, patch, studio } from './store/store';
+import { announce, confirmWithdrawn, handleNotification, log, patch, studio } from './store/store';
 
 let current: RpcClient | undefined;
 
@@ -25,6 +25,7 @@ export function connect(
     token,
     onNotification: handleNotification,
     onInvalid: (reason) => log('warn', t('conn.invalid', { reason })),
+    onConfirmNotice: (_method, params) => confirmWithdrawn(params),
     onState: (state, detail) => {
       patch({ conn: state, connDetail: detail });
       if (CONN_TEXT[state]) announce(t(CONN_TEXT[state]!));
@@ -43,6 +44,14 @@ export function connect(
   setClient(client);
   client.connect();
   return client;
+}
+
+/** Review P3-F10: a `ws=` that was not followed is reported, not silently dropped. */
+export function reportRefusedWs(url: string): void {
+  const body = t('conn.wsRefused', { url });
+  log('warn', body);
+  patch({ notice: { title: t('notice.connection'), body } });
+  announce(body);
 }
 
 export function disconnect(): void {

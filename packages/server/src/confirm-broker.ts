@@ -17,7 +17,7 @@ const MAX_QUESTION = 10_000;
 const MAX_PATCH = 2_000_000;
 
 export class ConfirmBroker {
-  private readonly pending = new Map<string, (ok: boolean) => void>();
+  private readonly pending = new Map<string, { runId?: string; settle: (ok: boolean) => void }>();
 
   constructor(
     private readonly broadcast: Broadcast,
@@ -50,22 +50,36 @@ export class ConfirmBroker {
         this.pending.delete(confirmId);
         resolve(ok);
       };
-      this.pending.set(confirmId, settle);
+      this.pending.set(confirmId, { ...(req.runId ? { runId: req.runId } : {}), settle });
       if (this.broadcast('confirm.request', params) === 0) settle(false);
     });
   }
 
   /** True when the answer settled a pending confirmation. */
   answer(confirmId: string, ok: boolean): boolean {
-    const settle = this.pending.get(confirmId);
-    if (!settle) return false;
-    settle(ok === true);
+    const p = this.pending.get(confirmId);
+    if (!p) return false;
+    p.settle(ok === true);
     return true;
+  }
+
+  /**
+   * The run was cancelled: its confirmations still on screen become "no", and every client
+   * is told with `confirm.closed` so it can close the dialog (review P3-F2). A late answer
+   * to one of them is not accepted.
+   */
+  declineRun(runId: string): number {
+    const mine = [...this.pending].filter(([, p]) => p.runId === runId);
+    for (const [confirmId, p] of mine) {
+      p.settle(false);
+      this.broadcast('confirm.closed', { confirmId, runId, reason: 'cancelled' });
+    }
+    return mine.length;
   }
 
   /** Declines everything still waiting (server shutting down). */
   declineAll(): void {
-    for (const settle of [...this.pending.values()]) settle(false);
+    for (const p of [...this.pending.values()]) p.settle(false);
   }
 
   get waiting(): number {

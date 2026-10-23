@@ -47,7 +47,9 @@ const suggestions = await detectPacks(
 ```
 
 - `loadPacks(opts)` — merge order **built-in → `$KPAI_HOME/packs` → `<repo>/.kpstudio/packs`**;
-  a later layer overrides an earlier one by id, but safety and zone additions only tighten.
+  a user pack overrides a built-in one by id, but safety and zone additions only tighten. A
+  repository pack is untrusted: it may not reuse a built-in or user id (refused, see
+  `admitRepoPack`) and its `zones.relax` is ignored (ADR-0025 addendum).
 - `detectPacks(root, packs)` — suggests packs from the files present, inside a jail: bounded
   depth and entry count, never follows a symlink out of `root`, opens no file.
 - `acceptsWorkspace(root, packs, optedIn)` — proposed replacement for the workspace guard.

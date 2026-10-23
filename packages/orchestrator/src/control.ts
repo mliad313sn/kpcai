@@ -49,8 +49,13 @@ interface Replan {
   before: NodeEstimate | undefined;
   after: NodeEstimate;
   reroutes: Reroute[];
-  /** Spent so far plus the estimate of every node still to finish. */
+  /** Spent so far plus the expected cost of every node still to finish (the likely figure). */
   projectedUsd: number;
+  /**
+   * Spent so far plus the band top of every node still to finish (the worst plausible
+   * figure): the one compared with `maxGraphUsd`, itself a band top (D-021, review P3-F8).
+   */
+  projectedHighUsd: number;
 }
 
 export class RunController implements RunControl {
@@ -163,14 +168,14 @@ export class RunController implements RunControl {
     const trial = estimateGraph({ ...r.graph, nodes }, deps);
     const after = trial.nodes.find((n) => n.nodeId === nodeId) as NodeEstimate;
     if (after.error) return { error: `cannot run on ${refToString(to)}: ${after.error}` };
-    const remaining = trial.nodes
-      .filter((n) => LIVE.has(r.states[n.nodeId]))
-      .reduce((a, n) => a + n.expectedUsd, 0);
+    const live = trial.nodes.filter((n) => LIVE.has(r.states[n.nodeId]));
+    const spent = this.s.graph.spentUsd;
     return {
       before,
       after,
       reroutes: reroutes(before, after),
-      projectedUsd: r6(this.s.graph.spentUsd + remaining),
+      projectedUsd: r6(spent + live.reduce((a, n) => a + n.expectedUsd, 0)),
+      projectedHighUsd: r6(spent + live.reduce((a, n) => a + n.band.highUsd, 0)),
     };
   }
 
@@ -195,11 +200,11 @@ export class RunController implements RunControl {
       return err instanceof Error ? err.message : String(err);
     }
     const cap = this.s.o.maxGraphUsd;
-    const over = cap !== undefined && plan.projectedUsd > cap;
+    const over = cap !== undefined && plan.projectedHighUsd > cap;
     const target = `redirect ${nodeId} to ${refToString(to)}`;
     const label = over
-      ? `graph total: ${usd(plan.projectedUsd)} would exceed maxGraphUsd ${usd(cap)} (${target})`
-      : `${target}: estimate ${usd(plan.after.expectedUsd)}`;
+      ? `graph total: up to ${usd(plan.projectedHighUsd)} (likely ${usd(plan.projectedUsd)}) would exceed maxGraphUsd ${usd(cap)} (${target})`
+      : `${target}: estimate ${usd(plan.after.expectedUsd)}, at most ${usd(plan.after.band.highUsd)}`;
     if (over && !this.s.o.budget) return `budget: ${label}`;
     return (await this.s.hook(c, label)) ? undefined : `budget: ${label} not allowed`;
   }
@@ -222,7 +227,9 @@ export class RunController implements RunControl {
         (x) => `${x.role}: ${refToString(x.from)} → ${refToString(x.to)}`,
       ),
       estimateUsd: plan.after.expectedUsd,
+      estimateHighUsd: plan.after.band.highUsd,
       projectedUsd: plan.projectedUsd,
+      projectedHighUsd: plan.projectedHighUsd,
     });
     this.emit({ type: 'node_redirected', nodeId, from, to, restarted, reroutes: plan.reroutes });
     wake(r);

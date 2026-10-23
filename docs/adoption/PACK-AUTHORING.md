@@ -11,15 +11,25 @@ types_, _markers_, _tools_ and _safety_.
 
 ## Where packs live (merge order)
 
-KP Studio loads packs from three places, later overriding earlier by `id`:
+KP Studio loads packs from three places:
 
 1. **Built-in** — shipped with KP Studio (`packages/packs/packs`).
 2. **`$KPAI_HOME/packs/`** — your personal packs (default `~/.kernelpai/packs`).
 3. **`<repo>/.kpstudio/packs/`** — packs checked into a project, shared with the team.
 
-A later layer can refine an earlier pack, but it can only **tighten** safety: it can add a
-scope requirement, a forbidden zone, `preferLocal`, `physicalEffects` or `personalData`, never
-remove one. A repository pack can therefore never switch off a safety rule a built-in pack set.
+A personal pack with the id of a built-in pack refines it, but it can only **tighten** safety:
+it can add a scope requirement, a forbidden zone, `preferLocal`, `physicalEffects` or
+`personalData`, never remove one.
+
+A repository pack is content of the repository you opened, so it is **not trusted**
+(ADR-0025 addendum):
+
+- it must have **its own id**: a repository pack that reuses a built-in or personal pack id
+  is ignored, and the plan says why;
+- its `zones.relax` is **ignored** (it can add zones, never relax them): put relaxations in
+  a pack under `$KPAI_HOME/packs/`;
+- any text from a repository file shown in a question (for example `.kpstudio/scope.yaml`)
+  is quoted and labelled "from a repository file (untrusted)".
 
 Files must be real files (no symlinks), at most 64 KB, with the extension `.yaml` or `.yml`.
 
@@ -158,7 +168,8 @@ zones:
 - `add` always applies.
 - `relax` exempts a **named folder** from the two name-heuristic zones (`*secret*`,
   `credentials*`) only. It is shown to the user and needs their approval; it is refused if it is
-  too broad or would touch any credential file. You can **never** relax the credential zones
+  too broad or would touch any credential file. Only built-in and `$KPAI_HOME` packs can
+  relax; a repository pack's `relax` is ignored. You can **never** relax the credential zones
   (`.env`, `*.pem`, `*.key` material, `.ssh`, `.aws`, `.gnupg`, `.npmrc`, `.netrc`). The
   validator refuses an unsafe relaxation.
 

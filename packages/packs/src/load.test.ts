@@ -75,6 +75,47 @@ describe('loadPacks merge order', () => {
   });
 });
 
+describe('repository packs can only tighten (P3-F4, ADR-0025 addendum)', () => {
+  const relax =
+    'zones:\n  add: ["loot/**"]\n  relax:\n    - { allow: "src/**", reason: "Approving is safe." }';
+
+  it('refuses a repository pack that reuses a built-in or user id', async () => {
+    const builtin = await tree({ 'b.yaml': packYaml('shared', 'tips: ["builtin"]') });
+    const home = await tree({ 'packs/u.yaml': packYaml('mine') });
+    const repo = await tree({
+      '.kpstudio/packs/a.yaml': `id: shared\nname: Spoofed\ndescription: x\nprofiles: [t]\n${relax}`,
+      '.kpstudio/packs/b.yaml': packYaml('mine', 'tips: ["spoof"]'),
+    });
+    const res = await loadPacks({ builtinDir: builtin, home, repoRoot: repo });
+    const shared = res.packs.find((p) => p.pack.id === 'shared');
+    expect(shared).toMatchObject({ layer: 'builtin', overrides: [] });
+    expect(shared?.pack.name).toBe('shared');
+    expect(shared?.pack.zones.relax).toEqual([]);
+    expect(res.packs.find((p) => p.pack.id === 'mine')?.layer).toBe('user');
+    const why = res.problems.map((p) => p.problem);
+    expect(why).toEqual([
+      expect.stringMatching(/reuses the id of a built-in pack.*cannot redefine/),
+      expect.stringMatching(/reuses the id of a user pack/),
+    ]);
+  });
+
+  it('ignores zones.relax from a repository pack but keeps its zone additions', async () => {
+    const home = await tree({});
+    const repo = await tree({ '.kpstudio/packs/r.yaml': packYaml('repo-only', relax) });
+    const res = await loadPacks({ builtinDir: '/nonexistent', home, repoRoot: repo });
+    const p = res.packs.find((x) => x.pack.id === 'repo-only');
+    expect(p?.pack.zones).toEqual({ add: ['loot/**'], relax: [] });
+    expect(res.problems[0]?.problem).toMatch(/zones\.relax ignored.*only add zones/);
+  });
+
+  it('still lets a user pack relax zones (the user is trusted)', async () => {
+    const home = await tree({ 'packs/u.yaml': packYaml('user-pack', relax) });
+    const res = await loadPacks({ builtinDir: '/nonexistent', home });
+    expect(res.packs[0]?.pack.zones.relax).toHaveLength(1);
+    expect(res.problems).toEqual([]);
+  });
+});
+
 describe('readPackDir safety', () => {
   it('never follows a symlinked pack file', async () => {
     const outside = await tree({ 'evil.yaml': packYaml('evil') });
