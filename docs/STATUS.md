@@ -9,5 +9,9 @@
 | 4 Memory & learning  | Not started                                                                      | —                                                                        |
 | 5 Tools & extensions | Not started                                                                      | —                                                                        |
 | 6 Hardening          | Not started                                                                      | —                                                                        |
+| 7 Conception         | Not started — added by D-016                                                     | —                                                                        |
+| 8 Team & enterprise  | Not started — added by D-016 (after v1.0, Q-5)                                   | —                                                                        |
 
 Governance: [CHARTER](governance/CHARTER.md) · [DECISIONS](governance/DECISIONS.md) · [OPEN-QUESTIONS](governance/OPEN-QUESTIONS.md) · [BACKLOG](BACKLOG.md)
+
+Product direction: [benchmark (Oct 2026)](benchmark/BENCHMARK-2026-10.md) · [KP Studio requirements](REQUIREMENTS-KP-STUDIO.md)

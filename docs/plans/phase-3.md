@@ -28,3 +28,13 @@ apps/studio-tui (Ink 8)  ──────┘   127.0.0.1 + token              
 - **WP7 (PO):** onboarding, demo `scripts/demo-phase3.mjs`, independent review, report.
 
 **Naming (Sponsor, D-015):** the user-facing apps are **KP Studio** (web, desktop, terminal). The engine and command line stay **KernelPAI** / `kpai`.
+
+## Benchmark requirements (D-016)
+
+The phase 3 gate also needs the Must items R-301 to R-307 of
+[REQUIREMENTS-KP-STUDIO.md](../REQUIREMENTS-KP-STUDIO.md); R-308 is Should.
+
+- **WP2 (S4)** also covers R-304 (instruction added to a pending node) and R-301 (an edited plan is the one that runs).
+- **WP8 (S5):** checkpoints and rollback on shadow refs (R-305), rules-file ingestion inside the jail (R-306), one git worktree per run under `$KPAI_HOME` with explicit merge-back (R-307).
+- **WP4 (S6)** adds the editable plan view (R-301), the cost band, cap and live meter (R-302), the routing reason panel (R-303) and the runs manager view (R-307).
+- **WP9 (S3):** an estimate band from the calibration spread, exposed in the `plan` result (R-302).

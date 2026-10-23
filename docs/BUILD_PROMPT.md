@@ -1,7 +1,7 @@
 # KernelPAI — prompt de construction v0.2 (affiné par l'état de l'art)
 
 > Version exécutable du prompt maître de `KERNELPAI_MASTER_PROMPT.md` §2, enrichie par
-> l'étude `LANDSCAPE.md` (23 octobre 2026). Le prompt maître et ses sections 3 à 9 restent
+> l'étude `LANDSCAPE.md` et le benchmark `benchmark/BENCHMARK-2026-10.md` (23 octobre 2026). Le prompt maître et ses sections 3 à 9 restent
 > la référence ; ce texte précise **comment** les appliquer dans ce dépôt. À donner tel quel
 > à l'agent constructeur, avec les deux documents cités.
 
@@ -75,6 +75,16 @@ Phase 5  Navigateur piloté, exécuteur de tests, tickets, skills au format Clau
          agents nommés, crochets.
 Phase 6  Zones interdites, coffre de clés, audit, chiffrement au repos, accessibilité
          WCAG 2.2 AA, performance, paquets macOS et Linux.
+Phase 7  Conception : chaîne traçable exigence → parcours UX → écran → composant →
+         commit → test, spécification proportionnée à la tâche, génération conforme au
+         design system (Figma MCP, composants du dépôt) vérifiée par un critique d'un
+         autre fournisseur, critique sécurité des applications générées.
+Phase 8  Équipe et entreprise (après la v1.0) : serveur d'équipe auto-hébergé, SSO,
+         budgets partagés, export d'audit.
+
+Chaque phase 3 à 8 doit aussi satisfaire les exigences « Must » de
+docs/REQUIREMENTS-KP-STUDIO.md (R-3xx pour la phase 3, R-4xx pour la phase 4, etc.),
+issues du benchmark docs/benchmark/BENCHMARK-2026-10.md.
 
 ## Fin de chaque phase
 1. Code + tests, CI verte sur les trois OS.
