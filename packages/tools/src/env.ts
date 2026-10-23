@@ -22,11 +22,24 @@ export function isSecretName(name: string): boolean {
   return SECRET_NAME_PATTERNS.some((re) => re.test(name));
 }
 
+/** Needed to start processes on Windows; never secrets, so always kept. */
+const ALWAYS_KEPT = new Set([
+  'PATH',
+  'PATHEXT',
+  'SYSTEMROOT',
+  'WINDIR',
+  'COMSPEC',
+  'TEMP',
+  'TMP',
+  'SYSTEMDRIVE',
+]);
+
 /** Copy of `env` without credential-looking variables (for child processes). */
 export function scrubEnv(env: Env): Record<string, string> {
   const out: Record<string, string> = {};
   for (const [k, v] of Object.entries(env)) {
-    if (v === undefined || isSecretName(k)) continue;
+    if (v === undefined) continue;
+    if (isSecretName(k) && !ALWAYS_KEPT.has(k.toUpperCase())) continue;
     out[k] = v;
   }
   return out;

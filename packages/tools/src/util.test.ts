@@ -31,6 +31,23 @@ describe('env scrubbing', () => {
     },
   );
 
+  it('scrubEnv always keeps what Windows needs to start a process', () => {
+    const win = {
+      Path: 'C:\\Windows',
+      PATHEXT: '.COM;.EXE',
+      SystemRoot: 'C:\\Windows',
+      windir: 'C:\\Windows',
+      ComSpec: 'cmd.exe',
+      TEMP: 't',
+      TMP: 't',
+      SystemDrive: 'C:',
+      GITHUB_TOKEN: 'x',
+    };
+    expect(Object.keys(scrubEnv(win)).sort()).toEqual(
+      ['ComSpec', 'PATHEXT', 'Path', 'SystemDrive', 'SystemRoot', 'TEMP', 'TMP', 'windir'].sort(),
+    );
+  });
+
   it('scrubEnv drops secrets and undefined values', () => {
     const out = scrubEnv({ PATH: '/bin', OPENAI_API_KEY: 'x', AWS_REGION: 'eu', EMPTY: undefined });
     expect(out).toEqual({ PATH: '/bin' });

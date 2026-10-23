@@ -3,7 +3,12 @@ import { builtinTools, type BuiltinOptions } from './builtins/index.js';
 import { LocalToolBus, type ToolJournal } from './bus.js';
 import type { Env } from './env.js';
 import { connectMcpServers, loadMcpConfig, type McpConnectResult } from './mcp.js';
-import type { ActivePolicy, GradedPolicyOptions } from './policy.js';
+import {
+  DEFAULT_FORBIDDEN_PATHS,
+  type ActivePolicy,
+  type GradedPermissionPolicy,
+  type GradedPolicyOptions,
+} from './policy.js';
 import { buildPolicy, loadPolicyConfig } from './policy-config.js';
 
 export interface CreateToolBusOptions extends BuiltinOptions {
@@ -33,7 +38,7 @@ export async function createToolBus(options: CreateToolBusOptions = {}): Promise
   const env: Env = options.env ?? process.env;
   const { policy, ...status } = await resolvePolicy(options);
   const bus = new LocalToolBus({
-    tools: builtinTools({ env, git: options.git, shell: options.shell }),
+    tools: builtinTools({ env, git: gitOptions(options, policy), shell: options.shell }),
     policy,
     journal: options.journal,
     maxResultBytes: options.maxResultBytes,
@@ -41,6 +46,18 @@ export async function createToolBus(options: CreateToolBusOptions = {}): Promise
   });
   const mcpErrors = await attachMcp(bus, options);
   return { bus, mcpErrors, ...status };
+}
+
+/**
+ * The git read tools hide the same forbidden zones the policy refuses (review N2):
+ * the active graded policy's list, or the defaults for a custom policy that cannot
+ * describe itself. An explicit `git.forbiddenPaths` wins.
+ */
+function gitOptions(options: CreateToolBusOptions, policy: PermissionPolicy) {
+  const described = (policy as Partial<GradedPermissionPolicy>).describe?.();
+  const forbiddenPaths =
+    options.git?.forbiddenPaths ?? described?.forbiddenPaths ?? DEFAULT_FORBIDDEN_PATHS;
+  return { ...options.git, forbiddenPaths };
 }
 
 /** Defaults (principle 5) + `$KPAI_HOME/policy.json` + `policyOptions`, unless a policy is given. */

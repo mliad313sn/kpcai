@@ -18,13 +18,20 @@ export interface GitToolOptions {
   timeoutMs?: number;
   gitBinary?: string;
   apply?: GitApplyRules;
+  /**
+   * Forbidden globs hidden from git.status/diff/log output (default:
+   * DEFAULT_FORBIDDEN_PATHS; createToolBus passes the active policy's list).
+   */
+  forbiddenPaths?: readonly string[];
+  /** Case-insensitive zone matching (default: on Windows only). */
+  caseInsensitive?: boolean;
 }
 
 const GIT_TIMEOUT_MS = 30_000;
 const GIT_MAX_OUTPUT = 1024 * 1024;
 
 /**
- * Repository config must not run programs on our behalf (review P2-F13):
+ * Repository config must not run programs on our behalf (review P2-F13, N4):
  * no fsmonitor, pager, external diff, signature verification (gpg.program),
  * and every configured filter driver is blanked per call (see filterArgs).
  * diff/log also pass --no-ext-diff/--no-textconv. status, diff, log and apply
@@ -40,8 +47,14 @@ const HARDENING = [
   'diff.external=',
   '-c',
   'log.showSignature=false',
+  // Submodules carry their own config and filters (review N4): never descend.
+  '-c',
+  'diff.ignoreSubmodules=all',
+  '-c',
+  'submodule.recurse=false',
+  '-c',
+  'status.submoduleSummary=false',
   '--no-pager',
-  '--literal-pathspecs',
 ];
 
 /** Child env: scrubbed of secrets and of every GIT_* variable (GIT_DIR, GIT_EXTERNAL_DIFF…). */

@@ -20,6 +20,8 @@ export interface GradedPolicyOptions {
   forbiddenPaths?: readonly string[];
   /** Prepend {@link DEFAULT_FORBIDDEN_PATHS} (default true; principle 5). */
   defaultForbiddenPaths?: boolean;
+  /** Case-insensitive path matching (default: on Windows only). */
+  caseInsensitive?: boolean;
 }
 
 /**
@@ -78,7 +80,20 @@ export function diffPaths(diff: string): string[] {
   return out;
 }
 
-/** Paths a call names: path-like fields, diff headers, and every shell argument. */
+/**
+ * A shell argument that could name one file: no whitespace, quotes or shell
+ * punctuation, not a bare flag. `--opt=value` yields its value. Free text such as
+ * a `node -e` script is not a path (matching it against globs denied innocent
+ * scripts on Windows, where matching is case-insensitive: `*secret*` vs
+ * `AWS_SECRET_ACCESS_KEY`); unsandboxed shell calls are confirmed by a human anyway.
+ */
+export function shellPathArg(arg: string): string | undefined {
+  const value = /^--?[A-Za-z0-9][\w-]*=(.*)$/s.exec(arg)?.[1] ?? arg;
+  if (value === '' || (value === arg && arg.startsWith('-'))) return undefined;
+  return /^[^\s'"`$;|&<>(){}[\]*?!^%=,]+$/.test(value) ? value : undefined;
+}
+
+/** Paths a call names: path-like fields, diff headers, and path-like shell arguments. */
 export function pathsInCall(call: ToolCall): string[] {
   const input = call.input as Record<string, unknown> | null;
   if (!input || typeof input !== 'object') return [];
@@ -91,7 +106,12 @@ export function pathsInCall(call: ToolCall): string[] {
     if (PATH_KEYS.has(k)) add(v);
     if (DIFF_KEYS.has(k) && typeof v === 'string') out.push(...diffPaths(v));
   }
-  if (call.name === 'shell.run') add(input.args);
+  if (call.name === 'shell.run' && Array.isArray(input.args)) {
+    for (const a of input.args) {
+      const p = typeof a === 'string' ? shellPathArg(a) : undefined;
+      if (p !== undefined) out.push(p);
+    }
+  }
   return out;
 }
 
@@ -133,6 +153,7 @@ export class GradedPermissionPolicy implements ConfirmAwarePolicy {
   private readonly batches = new Set<string>();
   private readonly deny: { model: string; globs: string[]; tools: RegExp[] }[];
   private readonly forbidden: readonly string[];
+  private readonly icase: boolean;
 
   constructor(options: GradedPolicyOptions = {}) {
     this.deny = Object.entries(options.denyByModel ?? {}).map(([model, tools]) => ({
@@ -142,6 +163,7 @@ export class GradedPermissionPolicy implements ConfirmAwarePolicy {
     }));
     const defaults = options.defaultForbiddenPaths === false ? [] : DEFAULT_FORBIDDEN_PATHS;
     this.forbidden = [...new Set([...defaults, ...(options.forbiddenPaths ?? [])])];
+    this.icase = options.caseInsensitive ?? process.platform === 'win32';
   }
 
   describe(): ActivePolicy {
@@ -165,7 +187,7 @@ export class GradedPermissionPolicy implements ConfirmAwarePolicy {
       return `tool ${def.name} is denied for model ${refToString(ctx.model)}`;
     }
     const hit = pathsInCall(call).find((p) =>
-      relForms(ctx.root, p).some((rel) => matchesForbidden(rel, this.forbidden)),
+      relForms(ctx.root, p).some((rel) => matchesForbidden(rel, this.forbidden, this.icase)),
     );
     return hit === undefined ? undefined : `path is in a forbidden zone: ${hit}`;
   }

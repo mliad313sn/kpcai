@@ -35,7 +35,7 @@ describe('shell.run', () => {
     const script =
       "console.log(process.cwd()); for (const k of ['OPENAI_API_KEY','GITHUB_TOKEN','AWS_SECRET_ACCESS_KEY','KPAI_VISIBLE']) console.log(k + '=' + (process.env[k] ?? 'unset'))";
     const r = await make().call(call('shell.run', node(script)), yes());
-    expect(r.isError).toBe(false);
+    expect(r.isError, r.content).toBe(false);
     expect(r.content).toMatch(/^exit code 0/);
     expect(r.content).toContain('OPENAI_API_KEY=unset');
     expect(r.content).toContain('GITHUB_TOKEN=unset');
@@ -46,6 +46,18 @@ describe('shell.run', () => {
       sandbox: isWin ? 'confirm-only' : 'scrubbed',
       exitCode: 0,
     });
+  });
+
+  it('runs a script naming secrets with Windows-style case-insensitive zones', async () => {
+    const policy = new GradedPermissionPolicy({ caseInsensitive: true });
+    const bus = new LocalToolBus({ tools: [shellTool({ env })], policy, env });
+    const script =
+      "for (const k of ['AWS_SECRET_ACCESS_KEY']) console.log(k + '=' + (process.env[k] ?? 'unset'))";
+    const r = await bus.call(call('shell.run', node(script)), yes());
+    expect(r.isError, r.content).toBe(false);
+    expect(r.content).toContain('AWS_SECRET_ACCESS_KEY=unset');
+    const denied = await bus.call(call('shell.run', { command: 'node', args: ['.ENV'] }), yes());
+    expect(denied.content).toMatch(/forbidden zone/);
   });
 
   it('never interprets shell syntax', async () => {

@@ -3,7 +3,13 @@ import path from 'node:path';
 import type { ToolDefinition, ToolRisk } from '@kernelpai/core';
 import { describe, expect, it } from 'vitest';
 import { LocalToolBus } from './bus.js';
-import { diffPaths, GradedPermissionPolicy, isConfirmAware, pathsInCall } from './policy.js';
+import {
+  diffPaths,
+  GradedPermissionPolicy,
+  isConfirmAware,
+  pathsInCall,
+  shellPathArg,
+} from './policy.js';
 import { call, makeCtx, RecordingJournal, tempDir } from './test-helpers/ctx.js';
 import { ok, type LocalTool } from './types.js';
 
@@ -177,6 +183,29 @@ describe('per-model deny and forbidden paths', () => {
     } finally {
       await cleanup();
     }
+  });
+
+  it('checks only path-like shell arguments (Windows matching is case-insensitive)', () => {
+    const policy = new GradedPermissionPolicy({ caseInsensitive: true });
+    const def: ToolDefinition = {
+      name: 'shell.run',
+      description: '',
+      inputSchema: {},
+      risk: 'destructive',
+      source: 'builtin',
+    };
+    const ctx = makeCtx('/ws');
+    const run = (...args: string[]) =>
+      policy.decide(def, call('shell.run', { command: 'x', args }), ctx);
+    expect(run('-e', "console.log(process.env['AWS_SECRET_ACCESS_KEY'])")).toBe('confirm');
+    expect(run('-la', '--verbose')).toBe('confirm');
+    expect(run('.ENV')).toBe('deny');
+    expect(run('--file=config/.env')).toBe('deny');
+    expect(run('keys/Server.PEM')).toBe('deny');
+    expect(shellPathArg('a b')).toBeUndefined();
+    expect(shellPathArg('-x')).toBeUndefined();
+    expect(shellPathArg('--out=')).toBeUndefined();
+    expect(shellPathArg('src/a.ts')).toBe('src/a.ts');
   });
 
   it('checks shell arguments against forbidden zones', () => {
