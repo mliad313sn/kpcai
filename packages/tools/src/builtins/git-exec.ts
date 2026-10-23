@@ -81,22 +81,37 @@ function gitEnv(opts: GitToolOptions): Record<string, string> {
   return { ...env, GIT_TERMINAL_PROMPT: '0' };
 }
 
+/** What git needs from a tool context: the root (default cwd) and the abort signal. */
+export type GitCtx = Pick<ToolContext, 'root' | 'signal'>;
+
+/** Per-call extras for internal callers (checkpoints, worktrees). */
+export interface GitRunExtra {
+  stdin?: string;
+  cwd?: string;
+  /** Added after scrubbing (e.g. GIT_INDEX_FILE for a temporary index, a fixed identity). */
+  env?: Record<string, string>;
+  maxOutputBytes?: number;
+  /** Raw stdout bytes in `stdoutBytes` (blob contents). */
+  binary?: boolean;
+}
+
 function spawnGit(
   opts: GitToolOptions,
-  ctx: ToolContext,
+  ctx: GitCtx,
   cwd: string,
   args: string[],
-  stdin?: string,
+  extra: GitRunExtra = {},
 ): Promise<RunResult> {
   return runProcess({
     command: opts.gitBinary ?? 'git',
     args: [...HARDENING, ...args],
     cwd,
-    env: gitEnv(opts),
+    env: { ...gitEnv(opts), ...extra.env },
     timeoutMs: opts.timeoutMs ?? GIT_TIMEOUT_MS,
-    maxOutputBytes: GIT_MAX_OUTPUT,
-    stdin,
+    maxOutputBytes: extra.maxOutputBytes ?? GIT_MAX_OUTPUT,
+    stdin: extra.stdin,
     signal: ctx.signal,
+    binary: extra.binary,
   });
 }
 
@@ -107,7 +122,7 @@ function spawnGit(
  */
 export async function filterArgs(
   opts: GitToolOptions,
-  ctx: ToolContext,
+  ctx: GitCtx,
   cwd: string,
 ): Promise<string[]> {
   const r = await spawnGit(opts, ctx, cwd, ['config', '-z', '--get-regexp', '^filter\\.']);
@@ -129,14 +144,24 @@ export async function filterArgs(
 /** Runs git in the root (or `cwd`) with hardening and blanked filters. */
 export async function git(
   opts: GitToolOptions,
-  ctx: ToolContext,
+  ctx: GitCtx,
   args: string[],
   stdin?: string,
   cwd?: string,
 ): Promise<RunResult> {
-  const dir = cwd ?? (await realpath(ctx.root));
+  return gitRun(opts, ctx, args, { stdin, cwd });
+}
+
+/** {@link git} with per-call extras (extra env, larger output cap, binary stdout). */
+export async function gitRun(
+  opts: GitToolOptions,
+  ctx: GitCtx,
+  args: string[],
+  extra: GitRunExtra = {},
+): Promise<RunResult> {
+  const dir = extra.cwd ?? (await realpath(ctx.root));
   const filters = await filterArgs(opts, ctx, dir);
-  return spawnGit(opts, ctx, dir, [...filters, ...args], stdin);
+  return spawnGit(opts, ctx, dir, [...filters, ...args], extra);
 }
 
 export function outcome(r: RunResult, meta: Record<string, unknown> = {}): ToolOutcome {

@@ -81,3 +81,37 @@ export { validateInput } from './schema.js';
 export { runProcess, type RunSpec, type RunResult } from './process.js';
 export { truncateBytes, stripControls, previewLines, DEFAULT_MAX_RESULT_BYTES } from './text.js';
 export { ToolError, type LocalTool, type ToolOutcome, type PreparedCall } from './types.js';
+export {
+  checkpoint,
+  listCheckpoints,
+  resolveCheckpoint,
+  restore,
+  CHECKPOINT_NS,
+  type Checkpoint,
+  type CheckpointOptions,
+  type RestoreResult,
+} from './workspace/checkpoint.js';
+export {
+  createRunWorktree,
+  locateRunWorktree,
+  diffRunWorktree,
+  mergeBack,
+  removeRunWorktree,
+  RUN_NS,
+  type RunWorktree,
+  type RunDiff,
+  type MergeResult,
+} from './workspace/worktree.js';
+export {
+  readRepoRules,
+  formatRepoRules,
+  RULES_MAX_FILE_BYTES,
+  RULES_MAX_TOTAL_BYTES,
+  type RepoRule,
+  type RepoRules,
+  type RuleKind,
+  type RulesOptions,
+} from './workspace/rules.js';
+export { authorize, RESTORE_DEF, MERGE_DEF, type Gate } from './workspace/gate.js';
+export type { WorkspaceOptions } from './workspace/common.js';
+export type { WriteResult } from './workspace/writer.js';

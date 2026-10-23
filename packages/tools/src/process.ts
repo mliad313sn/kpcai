@@ -10,6 +10,8 @@ export interface RunSpec {
   maxOutputBytes: number;
   stdin?: string;
   signal?: AbortSignal;
+  /** Keep stdout as raw bytes in `stdoutBytes` (blob contents); `stdout` stays empty. */
+  binary?: boolean;
 }
 
 export interface RunResult {
@@ -17,6 +19,8 @@ export interface RunResult {
   code: number | null;
   stdout: string;
   stderr: string;
+  /** Raw stdout when the spec asked for `binary`. */
+  stdoutBytes?: Buffer;
   timedOut: boolean;
   truncated: boolean;
   aborted: boolean;
@@ -53,20 +57,30 @@ function emptyResult(): RunResult {
 }
 
 /** Keeps output up to the cap; past it, marks the result truncated and kills the process. */
-function capture(child: ChildProcessWithoutNullStreams, res: RunResult, max: number): void {
+function capture(
+  child: ChildProcessWithoutNullStreams,
+  res: RunResult,
+  max: number,
+  binary = false,
+): void {
   let kept = 0;
+  const bytes: Buffer[] = [];
   const collect = (key: 'stdout' | 'stderr') => (chunk: Buffer) => {
     const room = max - kept;
     if (room <= 0) return;
     const part = chunk.length > room ? chunk.subarray(0, room) : chunk;
     kept += part.length;
-    res[key] += part.toString('utf8');
+    if (binary && key === 'stdout') {
+      bytes.push(part);
+    } else res[key] += part.toString('utf8');
     if (chunk.length > room) {
       res.truncated = true;
       killTree(child);
     }
   };
   child.stdout.on('data', collect('stdout'));
+  // 'close' (which resolves the run) fires only after stdout has ended.
+  if (binary) child.stdout.on('end', () => (res.stdoutBytes = Buffer.concat(bytes)));
   child.stderr.on('data', collect('stderr'));
 }
 
@@ -87,7 +101,8 @@ export function runProcess(spec: RunSpec): Promise<RunResult> {
       detached: !isWindows,
       stdio: ['pipe', 'pipe', 'pipe'],
     });
-    capture(child, res, spec.maxOutputBytes);
+    capture(child, res, spec.maxOutputBytes, spec.binary);
+    if (spec.binary) res.stdoutBytes = Buffer.alloc(0);
     const timer = setTimeout(() => {
       res.timedOut = true;
       killTree(child);
