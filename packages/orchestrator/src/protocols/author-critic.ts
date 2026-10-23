@@ -4,7 +4,7 @@ import {
   type RoutingDecision,
   type Verdict,
 } from '@kernelpai/core';
-import { parseVerdict } from '../parse.js';
+import { accepted, parseVerdict } from '../parse.js';
 import { authorPrompt, criticPrompt, criticRetryPrompt, revisionPrompt } from '../prompts.js';
 import { decisionAfter, onlyDecision } from '../routing.js';
 import type { StepRunner } from '../step.js';
@@ -13,9 +13,7 @@ import { failure, finish } from './result.js';
 
 type Review = { ok: true; verdict: Verdict } | StepFailed;
 
-/** An approval needs `approve: true` and no major issue (a contradictory verdict is a rejection). */
-export const accepted = (v: Verdict): boolean =>
-  v.approve && !v.issues.some((i) => i.severity === 'major');
+export { accepted };
 
 /**
  * Author + critic (spec §3.1): the author drafts; a critic from another provider

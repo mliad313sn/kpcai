@@ -60,6 +60,7 @@ export class RoleAdapter extends BaseAdapter {
     private readonly script: Script,
     competence: Partial<Record<TaskType, number>> = {},
     price = { inputPerMTok: 1, outputPerMTok: 2 },
+    card: { contextWindow?: number; maxOutput?: number } = {},
   ) {
     super(
       ProviderDescriptorSchema.parse({
@@ -78,6 +79,7 @@ export class RoleAdapter extends BaseAdapter {
             price,
             latencyMsTypical: 1000,
             competence,
+            ...card,
           },
         ],
       }),

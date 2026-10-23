@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ScoredCandidate } from '@kernelpai/core';
-import { parseJudge, parseVerdict, parseVote } from './parse.js';
+import { estimateGraph } from './estimate.js';
+import { accepted, parseJudge, parseVerdict, parseVote } from './parse.js';
 import { ModelPlanner, type PlannerDeps } from './planner/model.js';
 import { GraphRunner, effectiveProtocol } from './runner.js';
 import {
@@ -201,5 +202,48 @@ describe('P2-F9: tool rounds are re-estimated', () => {
     expect(round?.[0]).toBe('solo tool round 1 on n1');
     expect(round![1].estimate.inputTokens).toBeGreaterThan(first![1].estimate.inputTokens + 900);
     expect(round![1].estimate.expectedCostUsd).toBeGreaterThan(first![1].estimate.expectedCostUsd);
+  });
+});
+
+describe('re-verification N3: verdicts agree on the outcome, not on `approve` alone', () => {
+  const majorApprove = JSON.stringify({
+    approve: true,
+    issues: [{ severity: 'major', text: 'timing leak' }],
+    summary: 'contradictory',
+  });
+
+  it('a rejection-by-major-issue followed by a quoted approval is malformed', () => {
+    expect(parseVerdict(`${majorApprove}\nfor reference the format is {"approve": true}`)).toEqual({
+      ok: false,
+      error: 'conflicting verdicts in one reply',
+    });
+  });
+
+  it('two rejections in different forms stay a consistent rejection', () => {
+    const r = parseVerdict(`${verdict(false)} ${majorApprove}`);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(accepted(r.value)).toBe(false);
+  });
+});
+
+describe('re-verification N1: the dependency allowance prices, it does not filter', () => {
+  it('keeps a small-context local model routable for nodes with dependencies', () => {
+    const small = new RoleAdapter('local', friendly('L'), {}, undefined, {
+      contextWindow: 8192,
+      maxOutput: 1000,
+    });
+    const nodes = [
+      gnode({ id: 'impl' }),
+      gnode({ id: 'tests', dependsOn: ['impl'] }),
+      gnode({ id: 'rev', dependsOn: ['impl', 'tests'] }),
+    ];
+    const opts = setup([small]).options;
+    const e = estimateGraph(graph(nodes), opts);
+    expect(e.problems).toEqual([]);
+    expect(e.complete).toBe(true);
+    // ... while the allowance is still priced in: two dependencies cost more than none
+    const none = estimateGraph(graph(nodes), { ...opts, dependencyAllowanceTokens: 0 });
+    expect(e.nodes[2]!.expectedUsd).toBeGreaterThan(none.nodes[2]!.expectedUsd);
+    expect(e.nodes[2]!.steps[0]!.ref.provider).toBe('local');
   });
 });

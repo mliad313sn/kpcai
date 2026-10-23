@@ -1,12 +1,14 @@
-import type {
-  Candidate,
-  ContributionRole,
-  GraphNode,
-  ModelRef,
-  Router,
-  RoutingConstraints,
-  ScoredCandidate,
-  TaskType,
+import {
+  costUsd,
+  estimateRequest,
+  type Candidate,
+  type ContributionRole,
+  type GraphNode,
+  type ModelRef,
+  type Router,
+  type RoutingConstraints,
+  type ScoredCandidate,
+  type TaskType,
 } from '@kernelpai/core';
 import {
   authorPrompt,
@@ -19,7 +21,7 @@ import {
   stepMessages,
   voterPrompt,
 } from './prompts.js';
-import { servedCandidate } from './routing.js';
+import { sameRef, servedCandidate } from './routing.js';
 
 export interface StepEstimate {
   role: ContributionRole;
@@ -86,18 +88,63 @@ function step(
 
 class Diversity extends Error {}
 
-/** Routes one role as the runner would (same prompt, type and exclusions). */
+/** A step prompt built from the dependencies' context and the work it reads. */
+type Prompt = (context: string, work: string) => string;
+
+/**
+ * Adds the allowance (dependency context, work read) to a candidate's cost estimate. The
+ * allowance is a pricing assumption only (review N1): routing, and so the context-window
+ * fit, uses the prompt without it, as the real outputs are unknown before running; at run
+ * time the real prompt decides and fallback handles an overflow.
+ */
+function withAllowance(x: StepContext, c: ScoredCandidate, prompt: Prompt): ScoredCandidate {
+  const card = x.candidates.find((k) => sameRef(k.ref, c.ref))?.card;
+  if (!card) return c;
+  const tokens = (context: string, work: string): number =>
+    estimateRequest(
+      { model: c.ref.model, messages: stepMessages(x.node, prompt(context, work)) },
+      card,
+    ).inputTokens;
+  const extra = Math.max(0, tokens(x.context, x.work) - tokens('', ''));
+  const add = costUsd(card.price, { inputTokens: extra, outputTokens: 0 });
+  const e = c.estimate;
+  return {
+    ...c,
+    estimate: {
+      ...e,
+      inputTokens: e.inputTokens + extra,
+      expectedCostUsd: r6(e.expectedCostUsd + add),
+      maxCostUsd: r6(e.maxCostUsd + add),
+    },
+  };
+}
+
+/** Routes one role as the runner would (same prompt, type and exclusions), then prices it. */
 function price(
   x: StepContext,
   a: {
     role: ContributionRole;
     type: TaskType;
-    prompt: string;
+    prompt: Prompt;
     exclude?: string[];
     strict?: boolean;
   },
 ): { c: ScoredCandidate; waived: boolean } {
-  const node = { ...x.node, type: a.type, messages: stepMessages(x.node, a.prompt) };
+  const r = route(x, a);
+  return { c: withAllowance(x, r.c, a.prompt), waived: r.waived };
+}
+
+function route(
+  x: StepContext,
+  a: {
+    role: ContributionRole;
+    type: TaskType;
+    prompt: Prompt;
+    exclude?: string[];
+    strict?: boolean;
+  },
+): { c: ScoredCandidate; waived: boolean } {
+  const node = { ...x.node, type: a.type, messages: stepMessages(x.node, a.prompt('', '')) };
   const excluded = [...new Set(a.exclude ?? [])];
   const merged = {
     ...x.constraints,
@@ -117,9 +164,10 @@ function price(
 }
 
 /** Prices a prompt on a given model (revisions and rebuttals stay with their author). */
-function on(x: StepContext, ref: ModelRef, type: TaskType, prompt: string): ScoredCandidate {
-  const node = { ...x.node, type, messages: stepMessages(x.node, prompt) };
-  return servedCandidate(x.router.route(node, x.candidates, x.constraints), ref);
+function on(x: StepContext, ref: ModelRef, type: TaskType, prompt: Prompt): ScoredCandidate {
+  const node = { ...x.node, type, messages: stepMessages(x.node, prompt('', '')) };
+  const c = servedCandidate(x.router.route(node, x.candidates, x.constraints), ref);
+  return withAllowance(x, c, prompt);
 }
 
 function solo(x: StepContext, steps: StepEstimate[]): void {
@@ -127,59 +175,66 @@ function solo(x: StepContext, steps: StepEstimate[]): void {
   const p = price(x, {
     role: 'solo',
     type: x.node.type,
-    prompt: authorPrompt(x.node, x.context),
+    prompt: (ctx) => authorPrompt(x.node, ctx),
     ...(review ? { exclude: x.upstream } : {}),
   });
   steps.push(step('solo', p.c, 1, 1, p.waived));
 }
 
-const FAKE_VERDICT = (x: StepContext) => ({
+const FAKE_VERDICT = (work: string) => ({
   approve: false,
-  issues: [{ severity: 'major' as const, text: x.work.slice(0, 1024) }],
+  issues: [{ severity: 'major' as const, text: work.slice(0, 1024) || 'issue' }],
   summary: '',
 });
 
 /** Author, critic (author excluded; up to maxRevisions + 1 reviews + 1 retry), revisions. */
 function authorCritic(x: StepContext, steps: StepEstimate[]): void {
-  const { node, context, work } = x;
-  const a = price(x, { role: 'author', type: node.type, prompt: authorPrompt(node, context) });
+  const { node } = x;
+  const a = price(x, { role: 'author', type: node.type, prompt: (ctx) => authorPrompt(node, ctx) });
   steps.push(step('author', a.c, 1, 1));
   const c = price(x, {
     role: 'critic',
     type: 'critique',
-    prompt: criticPrompt(node, context, work),
+    prompt: (ctx, work) => criticPrompt(node, ctx, work),
     exclude: [a.c.ref.provider],
   });
   steps.push(step('critic', c.c, 1, x.maxRevisions + 2, c.waived));
-  const rev = on(x, a.c.ref, node.type, revisionPrompt(node, context, work, FAKE_VERDICT(x)));
+  const rev = on(x, a.c.ref, node.type, (ctx, work) =>
+    revisionPrompt(node, ctx, work, FAKE_VERDICT(work)),
+  );
   steps.push(step('revision', rev, 0, x.maxRevisions));
 }
 
 /** Two debaters (distinct providers), one rebuttal each, a judge (debaters excluded, +1 retry). */
 function debate(x: StepContext, steps: StepEstimate[]): void {
-  const { node, context, work } = x;
+  const { node } = x;
   const d1 = price(x, {
     role: 'debater',
     type: node.type,
-    prompt: debaterPrompt(node, context, 1),
+    prompt: (ctx) => debaterPrompt(node, ctx, 1),
   });
   steps.push(step('debater', d1.c, 1, 1));
   const d2 = price(x, {
     role: 'debater',
     type: node.type,
-    prompt: debaterPrompt(node, context, 2),
+    prompt: (ctx) => debaterPrompt(node, ctx, 2),
     exclude: [d1.c.ref.provider],
   });
   steps.push(step('debater', d2.c, 1, 1, d2.waived));
   for (const d of [d1, d2]) {
     steps.push(
-      step('debater', on(x, d.c.ref, node.type, rebuttalPrompt(node, context, work, work)), 1, 1),
+      step(
+        'debater',
+        on(x, d.c.ref, node.type, (ctx, work) => rebuttalPrompt(node, ctx, work, work)),
+        1,
+        1,
+      ),
     );
   }
   const j = price(x, {
     role: 'judge',
     type: 'decision',
-    prompt: judgePrompt(node, context, work, work),
+    prompt: (ctx, work) => judgePrompt(node, ctx, work, work),
     exclude: [d1.c.ref.provider, d2.c.ref.provider],
   });
   steps.push(step('judge', j.c, 1, 2, j.waived));
@@ -188,7 +243,7 @@ function debate(x: StepContext, steps: StepEstimate[]): void {
 /** Voters from distinct providers (never waived), +1 retry each; fewer than two is incomplete. */
 function vote(x: StepContext, steps: StepEstimate[]): void {
   const used: string[] = [];
-  const prompt = voterPrompt(x.node, x.context);
+  const prompt: Prompt = (ctx) => voterPrompt(x.node, ctx);
   for (let i = 0; i < x.voters; i++) {
     try {
       const v = price(x, {

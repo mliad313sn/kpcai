@@ -86,6 +86,10 @@ function agreed<T>(values: T[], key: (v: T) => unknown, what: string): ParseResu
   return { ok: true, value: last };
 }
 
+/** An approval needs `approve: true` and no major issue (a contradictory verdict is a rejection). */
+export const accepted = (v: Verdict): boolean =>
+  v.approve && !v.issues.some((i) => i.severity === 'major');
+
 /** Critic output → `Verdict`, or why it is not one (none valid, or valid ones disagree). */
 export function parseVerdict(text: string): ParseResult<Verdict> {
   const objects = extractAllJson(text);
@@ -102,7 +106,8 @@ export function parseVerdict(text: string): ParseResult<Verdict> {
     }
   }
   if (valid.length === 0) return { ok: false, error: firstError };
-  return agreed(valid, (v) => v.approve, 'verdict');
+  // Compared on the outcome the protocol acts on (review N3), not on `approve` alone.
+  return agreed(valid, accepted, 'verdict');
 }
 
 const JudgeSchema = z.object({
