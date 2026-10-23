@@ -13,6 +13,13 @@ import {
 import { readLines } from '../lines.js';
 import { localHostProblem, resolveBaseUrl, type Env } from '../env.js';
 import { localCard } from '../local-card.js';
+import { toolNameCodec, type ToolNameCodec } from '../tool-calls.js';
+import {
+  OllamaToolCallSchema,
+  fromOllamaToolCall,
+  toOllamaMessages,
+  toOllamaTools,
+} from './ollama-messages.js';
 
 const TagsSchema = z.object({
   models: z.array(z.object({ name: z.string().min(1) }).loose()),
@@ -20,7 +27,13 @@ const TagsSchema = z.object({
 
 const ChunkSchema = z
   .object({
-    message: z.object({ content: z.string() }).loose().optional(),
+    message: z
+      .object({
+        content: z.string().optional(),
+        tool_calls: z.array(OllamaToolCallSchema).optional(),
+      })
+      .loose()
+      .optional(),
     done: z.boolean(),
     done_reason: z.string().optional(),
     prompt_eval_count: z.number().optional(),
@@ -30,6 +43,9 @@ const ChunkSchema = z
   .loose();
 
 const DETECT_TIMEOUT_MS = 1500;
+
+/** Tool calling goes through `/api/chat`; a model without tool support is refused per request. */
+const TOOLS_NOTE = 'tools via /api/chat (models without tool support fail with bad_request)';
 
 /** Local Ollama server via its native REST API (/api/chat, /api/tags). */
 export class OllamaAdapter extends BaseAdapter {
@@ -54,7 +70,7 @@ export class OllamaAdapter extends BaseAdapter {
       this.discovered = tags.models.map((m) => this.localCard(m.name));
       return {
         available: true,
-        reason: `${tags.models.length} model(s) at ${this.baseUrl}`,
+        reason: `${tags.models.length} model(s) at ${this.baseUrl}; ${TOOLS_NOTE}`,
         models: this.discovered,
       };
     } catch (err) {
@@ -70,11 +86,17 @@ export class OllamaAdapter extends BaseAdapter {
   }
 
   protected async *stream(req: ChatRequest, signal: AbortSignal): AsyncIterable<StreamEvent> {
-    const res = await this.post(req, signal);
+    const codec = toolNameCodec(req);
+    const res = await this.post(req, codec, signal);
     let sawDone = false;
+    let calls = 0;
     for await (const line of readLines(res.body as ReadableStream<Uint8Array>)) {
       const chunk = this.parseChunk(line);
       if (chunk.message?.content) yield { type: 'text', delta: chunk.message.content };
+      for (const raw of chunk.message?.tool_calls ?? []) {
+        const call = fromOllamaToolCall(this.descriptor.id, raw, codec, ++calls);
+        yield { type: 'tool_call', call };
+      }
       if (chunk.done) {
         sawDone = true;
         const usage = {
@@ -82,14 +104,20 @@ export class OllamaAdapter extends BaseAdapter {
           outputTokens: chunk.eval_count ?? 0,
         };
         yield { type: 'usage', usage };
-        yield { type: 'end', stopReason: stopReasonOf(chunk.done_reason) };
+        // Ollama reports `stop` after tool calls; the kernel needs to know it must act.
+        yield { type: 'end', stopReason: calls > 0 ? 'tool_use' : stopReasonOf(chunk.done_reason) };
       }
     }
     if (!sawDone)
       throw new ProviderError('malformed', this.descriptor.id, 'Stream ended without done');
   }
 
-  private async post(req: ChatRequest, signal: AbortSignal): Promise<Response> {
+  private async post(
+    req: ChatRequest,
+    codec: ToolNameCodec,
+    signal: AbortSignal,
+  ): Promise<Response> {
+    const tools = toOllamaTools(req, codec);
     const notLocal = localHostProblem(this.descriptor, this.baseUrl);
     if (notLocal) throw new ProviderError('unavailable', this.descriptor.id, notLocal);
     let res: Response;
@@ -99,7 +127,8 @@ export class OllamaAdapter extends BaseAdapter {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           model: req.model,
-          messages: req.messages,
+          messages: toOllamaMessages(this.descriptor.id, req.messages, codec),
+          ...(tools ? { tools } : {}),
           stream: true,
           ...(req.maxOutputTokens ? { options: { num_predict: req.maxOutputTokens } } : {}),
         }),
@@ -118,10 +147,13 @@ export class OllamaAdapter extends BaseAdapter {
     }
     if (!res.ok || !res.body) {
       const text = await res.text().catch(() => '');
+      const noTools = tools && /does not support tools/i.test(text);
       throw new ProviderError(
-        kindFromStatus(res.status),
+        noTools ? 'bad_request' : kindFromStatus(res.status),
         this.descriptor.id,
-        `HTTP ${res.status}: ${text.slice(0, 200)}`,
+        noTools
+          ? `Model ${req.model} does not support tool calling on Ollama; route this node to a tool-capable model`
+          : `HTTP ${res.status}: ${text.slice(0, 200)}`,
         {
           status: res.status,
         },

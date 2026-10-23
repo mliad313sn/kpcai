@@ -12,7 +12,8 @@ import {
   TypeValidationError,
   streamText,
   type FinishReason,
-  type ModelMessage,
+  type TextStreamPart,
+  type ToolSet,
 } from 'ai';
 import {
   BaseAdapter,
@@ -34,6 +35,8 @@ import {
   type Env,
 } from '../env.js';
 import { localCard } from '../local-card.js';
+import { parseToolInput, toolNameCodec, type ToolNameCodec } from '../tool-calls.js';
+import { toModelMessages, toToolSet } from './ai-sdk-messages.js';
 import { modelFactory, type AiSdkName, type ModelFactory } from './ai-sdk-models.js';
 
 const DETECT_TIMEOUT_MS = 1500;
@@ -43,11 +46,19 @@ const ModelListSchema = z.object({
   data: z.array(z.object({ id: z.string().min(1) }).loose()),
 });
 
+type StreamPart = TextStreamPart<ToolSet>;
+
+interface PartState {
+  finished: boolean;
+  /** Streamed tool argument text by tool call id. */
+  rawInputs: Map<string, string>;
+}
+
 const STOP_REASONS: Readonly<Record<FinishReason, StopReason>> = {
   stop: 'end',
   length: 'max_tokens',
   'content-filter': 'refusal',
-  'tool-calls': 'other',
+  'tool-calls': 'tool_use',
   error: 'other',
   interrupted: 'other',
   other: 'other',
@@ -111,14 +122,15 @@ export class AiSdkAdapter extends BaseAdapter {
   }
 
   protected async *stream(req: ChatRequest, signal: AbortSignal): AsyncIterable<StreamEvent> {
+    const codec = toolNameCodec(req);
     const system = req.messages.filter((m) => m.role === 'system').map((m) => m.content);
-    const messages: ModelMessage[] = req.messages
-      .filter((m) => m.role !== 'system')
-      .map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content }));
+    const tools = toToolSet(req, codec);
     const result = streamText({
       model: this.getFactory()(req.model),
       ...(system.length > 0 ? { instructions: system.join('\n\n') } : {}),
-      messages,
+      messages: toModelMessages(this.descriptor.id, req.messages, codec),
+      // Tool choice stays `auto`; without `execute` the SDK stops after one step.
+      ...(tools ? { tools } : {}),
       ...(req.maxOutputTokens ? { maxOutputTokens: req.maxOutputTokens } : {}),
       // Retry and fallback belong to the kernel (ADR-0002), never to the SDK.
       maxRetries: 0,
@@ -126,31 +138,66 @@ export class AiSdkAdapter extends BaseAdapter {
       // Errors surface as `error` parts below; the default handler would log them.
       onError: () => undefined,
     });
-    let finished = false;
+    const seen: PartState = { finished: false, rawInputs: new Map() };
     try {
-      for await (const part of result.fullStream) {
-        if (part.type === 'text-delta') {
-          if (part.text) yield { type: 'text', delta: part.text };
-        } else if (part.type === 'reasoning-delta' || part.type === 'reasoning-start') {
-          // Reasoning models can think for minutes before any text (review R1).
-          yield { type: 'progress', kind: 'reasoning' };
-        } else if (part.type === 'start-step') {
-          yield { type: 'progress', kind: 'step' };
-        } else if (part.type === 'error') {
-          throw part.error;
-        } else if (part.type === 'abort') {
-          throw Object.assign(new Error('aborted'), { name: 'AbortError' });
-        } else if (part.type === 'finish') {
-          finished = true;
-          yield* this.finish(part.finishReason, part.totalUsage);
-        }
-      }
+      for await (const part of result.fullStream) yield* this.onPart(part, seen, codec);
     } catch (err) {
       throw this.mapError(err);
     }
-    if (!finished) {
+    if (!seen.finished) {
       throw new ProviderError('malformed', this.descriptor.id, 'Stream ended without finish');
     }
+  }
+
+  private *onPart(part: StreamPart, seen: PartState, codec: ToolNameCodec): Iterable<StreamEvent> {
+    if (part.type === 'text-delta') {
+      if (part.text) yield { type: 'text', delta: part.text };
+    } else if (part.type === 'reasoning-delta' || part.type === 'reasoning-start') {
+      // Reasoning models can think for minutes before any text (review R1).
+      yield { type: 'progress', kind: 'reasoning' };
+    } else if (part.type === 'start-step') {
+      yield { type: 'progress', kind: 'step' };
+    } else if (part.type === 'tool-input-delta') {
+      seen.rawInputs.set(part.id, (seen.rawInputs.get(part.id) ?? '') + part.delta);
+      yield { type: 'progress', kind: 'step' };
+    } else if (part.type === 'tool-call') {
+      yield { type: 'tool_call', call: this.toolCall(part, codec, seen.rawInputs) };
+    } else if (part.type === 'tool-error') {
+      // Only raised for calls the SDK could not parse (no tool has `execute`).
+      throw new ProviderError(
+        'malformed',
+        this.descriptor.id,
+        `Tool ${part.toolName}: ${String(part.error)}`,
+      );
+    } else if (part.type === 'error') {
+      throw part.error;
+    } else if (part.type === 'abort') {
+      throw Object.assign(new Error('aborted'), { name: 'AbortError' });
+    } else if (part.type === 'finish') {
+      seen.finished = true;
+      yield* this.finish(part.finishReason, part.totalUsage);
+    }
+  }
+
+  /** A complete call from the SDK; unparsable or unknown-tool calls are `malformed`. */
+  private toolCall(
+    part: Extract<StreamPart, { type: 'tool-call' }>,
+    codec: ToolNameCodec,
+    rawInputs: ReadonlyMap<string, string>,
+  ) {
+    const name = codec.decode(part.toolName);
+    // Some SDK packages (OpenRouter) silently turn unparsable arguments into `{}`;
+    // the streamed text is checked too, so a broken call never runs with empty input.
+    const raw = rawInputs.get(part.toolCallId);
+    if (raw !== undefined) parseToolInput(this.descriptor.id, name, raw);
+    if (part.invalid) {
+      const why = part.error instanceof Error ? part.error.message : 'invalid tool call';
+      throw new ProviderError('malformed', this.descriptor.id, `Tool ${name}: ${why}`, {
+        cause: part.error,
+      });
+    }
+    const input = parseToolInput(this.descriptor.id, name, part.input);
+    return { id: part.toolCallId, name, input };
   }
 
   private *finish(
