@@ -12,6 +12,7 @@ import {
   type ScoredCandidate,
   type TaskNode,
   type TaskType,
+  type ToolCall,
 } from '@kernelpai/core';
 import type { Journal } from '@kernelpai/journal';
 import { runAttempt, type AttemptOutcome } from './attempt.js';
@@ -40,10 +41,19 @@ export interface FallbackExecutorOptions {
 export const DEFAULT_FIRST_CHUNK_TIMEOUT_MS = 30_000;
 export const DEFAULT_IDLE_TIMEOUT_MS = 60_000;
 
-interface ExecuteOptions {
+export interface ExecuteOptions {
   sessionId: string;
   signal?: AbortSignal;
   hooks?: ExecutionHooks;
+  /** Tools offered to the model (phase 2, ADR-0017); sent as `ChatRequest.tools`. */
+  tools?: ChatRequest['tools'];
+  /** Extra fields merged into the payload of every `call`/`response`/`error`/fallback event. */
+  tags?: Record<string, unknown>;
+}
+
+/** An `ExecutionResult` plus the tool calls of the serving attempt (empty when none). */
+export interface ToolAwareResult extends ExecutionResult {
+  toolCalls: ToolCall[];
 }
 
 const NO_USAGE = { inputTokens: 0, outputTokens: 0 };
@@ -92,7 +102,7 @@ export class FallbackExecutor implements Executor {
     node: TaskNode,
     decision: RoutingDecision,
     options: ExecuteOptions,
-  ): Promise<ExecutionResult> {
+  ): Promise<ToolAwareResult> {
     const candidates = [decision.chosen, ...decision.fallbacks];
     const attempts: Attempt[] = [];
     let cost = 0;
@@ -119,7 +129,7 @@ export class FallbackExecutor implements Executor {
         break;
       }
       const step = { from: ref, to: (candidates[next] as ScoredCandidate).ref, index: next };
-      this.journalFallback(node, options.sessionId, step, lastError);
+      this.journalFallback(node, options, step, lastError);
       index = next;
     }
     const aborted = options.signal?.aborted === true;
@@ -165,6 +175,7 @@ export class FallbackExecutor implements Executor {
       provider: next.ref.provider,
       model: next.ref.model,
       payload: {
+        ...options.tags,
         action: 'fallback skipped by policy',
         next: refToString(next.ref),
         after: refToString(failed.ref),
@@ -184,6 +195,7 @@ export class FallbackExecutor implements Executor {
       model: ref.model,
       messages: node.messages,
       ...(node.maxOutputTokens ? { maxOutputTokens: node.maxOutputTokens } : {}),
+      ...(options.tools && options.tools.length > 0 ? { tools: options.tools } : {}),
     };
     return runAttempt({
       journal: this.journal,
@@ -194,6 +206,7 @@ export class FallbackExecutor implements Executor {
       index,
       expectedOutputTokens: this.expectedOutput?.(ref, node.type),
       timeouts: this.timeouts,
+      tags: options.tags,
       resolve: () => this.resolve(ref),
       req,
       signal: options.signal,
@@ -204,18 +217,19 @@ export class FallbackExecutor implements Executor {
 
   private journalFallback(
     node: TaskNode,
-    sessionId: string,
+    options: ExecuteOptions,
     step: { from: ModelRef; to: ModelRef; index: number },
     err: ProviderError,
   ): void {
     const from = refToString(step.from);
     this.journal.append({
-      sessionId,
+      sessionId: options.sessionId,
       type: 'routing',
       nodeId: node.id,
       provider: step.to.provider,
       model: step.to.model,
       payload: {
+        ...options.tags,
         reason: `fallback to ${refToString(step.to)} after ${from}: ${err.kind}`,
         fallbackFrom: from,
         attempt: step.index,
@@ -251,7 +265,7 @@ function succeeded(
     attempts: Attempt[];
     costUsd: number;
   },
-): ExecutionResult {
+): ToolAwareResult {
   return {
     nodeId: node.id,
     servedBy: r.ref,
@@ -261,6 +275,7 @@ function succeeded(
     stopReason: r.outcome.stopReason,
     attempts: r.attempts,
     fellBack: r.index > 0,
+    toolCalls: r.outcome.toolCalls,
   };
 }
 
@@ -272,7 +287,7 @@ function failedResult(
   node: TaskNode,
   attempts: Attempt[],
   end: { lastError: ProviderError | undefined; aborted: boolean; cause: EndCause; costUsd: number },
-): ExecutionResult {
+): ToolAwareResult {
   const refused = end.cause === 'exhausted' && end.lastError?.kind === 'refusal';
   return {
     nodeId: node.id,
@@ -283,5 +298,6 @@ function failedResult(
     stopReason: end.aborted ? 'cancelled' : refused ? 'refusal' : 'other',
     attempts,
     fellBack: false,
+    toolCalls: [],
   };
 }

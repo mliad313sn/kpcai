@@ -3,7 +3,9 @@ export {
   DEFAULT_FIRST_CHUNK_TIMEOUT_MS,
   DEFAULT_IDLE_TIMEOUT_MS,
   type AdapterResolver,
+  type ExecuteOptions,
   type FallbackExecutorOptions,
+  type ToolAwareResult,
 } from './executor.js';
 export {
   runAttempt,

@@ -1,0 +1,130 @@
+import type {
+  Candidate,
+  Contribution,
+  ContributionRole,
+  GraphEvent,
+  GraphNode,
+  ModelRef,
+  Router,
+  RoutingConstraints,
+  RoutingDecision,
+  ScoredCandidate,
+  ToolBus,
+} from '@kernelpai/core';
+import type { AdapterResolver, FallbackExecutorOptions } from '@kernelpai/executor';
+import type { Journal } from '@kernelpai/journal';
+
+/**
+ * Spend gate called before every model step and every fallback (principle 6), with the
+ * same semantics as the CLI's `BudgetGate.allow`: resolve false to block (the step does not
+ * run), ask the human inside the hook for a confirmation verdict.
+ */
+export type BudgetHook = (candidate: ScoredCandidate, label: string) => boolean | Promise<boolean>;
+
+/** Everything the orchestrator needs, injected (no CLI imports). */
+export interface OrchestratorOptions {
+  router: Router;
+  /** Available models (e.g. from `candidates(registry)`). */
+  candidates: readonly Candidate[];
+  /** Base constraints for every step; diversity exclusions are added on top. */
+  constraints?: RoutingConstraints;
+  resolve: AdapterResolver;
+  journal: Journal;
+  sessionId: string;
+  /** Default: allow everything. */
+  budget?: BudgetHook;
+  /** Tool bus for nodes that list tools; without one, nodes run without tools. */
+  tools?: ToolBus;
+  /** Human confirmation for tool permissions; default declines (non-interactive). */
+  confirm?: (question: string) => Promise<boolean>;
+  /** Workspace root handed to tools; default `process.cwd()`. */
+  root?: string;
+  /**
+   * Principle 2 override: when no other provider can act as critic/debater, run with the
+   * same provider anyway (journaled as an intervention). Default false: the node fails.
+   */
+  allowSameProvider?: boolean;
+  /** Passed to the internal `FallbackExecutor`. */
+  executor?: FallbackExecutorOptions;
+  /** Ready nodes run in parallel up to this many. Default 3. */
+  concurrency?: number;
+  /** Max tool rounds per model step. Default 8. */
+  maxToolRounds?: number;
+  /** Author+critic: max revisions after the first draft. Default 2. */
+  maxRevisions?: number;
+  /** Vote: number of voters wanted. Default 3. */
+  voters?: number;
+  /** Live progress feed (node states, text deltas, contributions, graph done). */
+  onEvent?: (event: GraphEvent) => void;
+}
+
+export const DEFAULT_CONCURRENCY = 3;
+export const DEFAULT_MAX_TOOL_ROUNDS = 8;
+export const DEFAULT_MAX_REVISIONS = 2;
+export const DEFAULT_VOTERS = 3;
+
+/** Mutable state of one node while its protocol runs. */
+export interface NodeRun {
+  node: GraphNode;
+  /** Dependency outputs, already formatted as untrusted context. */
+  context: string;
+  signal?: AbortSignal | undefined;
+  /** Providers that contributed to the dependencies (a review avoids them when it can). */
+  upstream?: string[];
+  contributions: Contribution[];
+  costUsd: number;
+}
+
+/** A finished model step. */
+export interface StepOk {
+  ok: true;
+  ref: ModelRef;
+  text: string;
+  costUsd: number;
+  /** The candidate that served (for competence weighting). */
+  served: ScoredCandidate;
+  /** The decision the step started from (before any tool-round reordering). */
+  decision: RoutingDecision;
+  contribution: Contribution;
+}
+
+export interface StepFailed {
+  ok: false;
+  error: string;
+  cancelled: boolean;
+  costUsd: number;
+  /** True when principle 2 could not be met (no other provider). */
+  diversity?: boolean;
+}
+
+export type StepOutcome = StepOk | StepFailed;
+
+export interface StepSpec {
+  role: ContributionRole;
+  /** Full text of the final user message; must start with the `Role: <role>` line. */
+  prompt: string;
+  /** Task type to route on; default the node's. */
+  type?: GraphNode['type'];
+  /** Providers that must not serve this step (principle 2). */
+  exclude?: string[];
+  /**
+   * `hard` (default): fail when exclusion leaves no candidate, unless `allowSameProvider`.
+   * `soft`: route without the exclusion and journal that diversity was reduced.
+   * `strict`: like `hard` but never waived (a second vote from the same provider is useless).
+   */
+  diversity?: 'hard' | 'soft' | 'strict';
+  /** Try this model first when it survives routing (author revising its own draft). */
+  prefer?: ModelRef;
+  /** Only this model, no routing (retry after invalid output). */
+  only?: ModelRef;
+  /** Offer the node's tools. Default true. */
+  tools?: boolean;
+}
+
+/** Thrown when a step cannot even be routed; the protocol turns it into a node failure. */
+export class OrchestrationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'OrchestrationError';
+  }
+}

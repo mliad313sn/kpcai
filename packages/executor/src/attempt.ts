@@ -13,6 +13,7 @@ import {
   type ProviderAdapter,
   type StopReason,
   type TaskType,
+  type ToolCall,
   type Usage,
 } from '@kernelpai/core';
 import type { Journal } from '@kernelpai/journal';
@@ -37,6 +38,8 @@ export interface AttemptContext {
   expectedOutputTokens?: number | undefined;
   /** Stall timeouts; omitted = none (the executor always passes its defaults). */
   timeouts?: StallTimeouts;
+  /** Extra fields merged into every journal payload of this attempt (e.g. `{ role }`). */
+  tags?: Record<string, unknown> | undefined;
 }
 
 export type UsageBasis = 'reported' | 'estimated';
@@ -48,6 +51,8 @@ export type AttemptOutcome =
       usage: Usage;
       usageBasis: UsageBasis;
       stopReason: StopReason;
+      /** Complete tool calls the model made (stop reason `tool_use`); empty otherwise. */
+      toolCalls: ToolCall[];
       costUsd: number;
       durationMs: number;
     }
@@ -69,6 +74,7 @@ interface StreamState {
   text: string;
   usage: Usage | null;
   stopReason: StopReason | null;
+  toolCalls: ToolCall[];
 }
 
 const NO_TIMEOUTS: StallTimeouts = { firstChunkMs: 0, idleMs: 0 };
@@ -101,6 +107,7 @@ export async function runAttempt(ctx: AttemptContext): Promise<AttemptOutcome> {
     text: '',
     usage: null,
     stopReason: null,
+    toolCalls: [],
   };
   try {
     s.adapter = ctx.resolve();
@@ -125,6 +132,7 @@ function journalCall(ctx: AttemptContext, s: StreamState, estimate: CostEstimate
     sessionId: ctx.sessionId,
     type: 'call',
     payload: {
+      ...ctx.tags,
       requestId: s.requestId,
       attempt: ctx.index,
       taskType: ctx.taskType,
@@ -165,6 +173,7 @@ async function consume(ctx: AttemptContext, s: StreamState, dog: Watchdog): Prom
       s.text += ev.delta;
       ctx.hooks?.onText?.(ev.delta, ctx.ref);
     } else if (ev.type === 'usage') s.usage = ev.usage;
+    else if (ev.type === 'tool_call') s.toolCalls.push(ev.call);
     else if (ev.type === 'end') s.stopReason = ev.stopReason;
   }
   const id = adapter.descriptor.id;
@@ -201,16 +210,28 @@ function finish(ctx: AttemptContext, s: StreamState, status: 'ok' | 'cancelled')
     type: 'response',
     costUsd: cost,
     payload: {
+      ...ctx.tags,
       requestId: s.requestId,
       attempt: ctx.index,
       text: s.text,
       ...usage,
       usageBasis,
       stopReason,
+      ...(s.toolCalls.length > 0 ? { toolCalls: s.toolCalls } : {}),
       durationMs,
     },
   });
-  return { status, text: s.text, usage, usageBasis, stopReason, costUsd: cost, durationMs };
+  const toolCalls = s.toolCalls;
+  return {
+    status,
+    text: s.text,
+    usage,
+    usageBasis,
+    stopReason,
+    toolCalls,
+    costUsd: cost,
+    durationMs,
+  };
 }
 
 /**
@@ -237,6 +258,7 @@ function failed(ctx: AttemptContext, s: StreamState, err: unknown): AttemptOutco
     type: 'error',
     ...(billed ? { costUsd: cost } : {}),
     payload: {
+      ...ctx.tags,
       requestId: s.requestId,
       attempt: ctx.index,
       kind,

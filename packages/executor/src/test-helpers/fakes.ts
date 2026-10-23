@@ -11,6 +11,7 @@ import {
   type StopReason,
   type StreamEvent,
   type TaskNode,
+  type ToolCall,
 } from '@kernelpai/core';
 
 /** Same shape as packages/providers/descriptors/mock.yaml, with a configurable id. */
@@ -42,6 +43,7 @@ export type Step =
   | { end: StopReason }
   | { fail: ProviderError['kind']; status?: number }
   | { throwPlain: string }
+  | { toolCall: ToolCall }
   /** Waits until the request is aborted. */
   | { hang: true };
 
@@ -75,6 +77,7 @@ export class ScriptedAdapter extends BaseAdapter {
         const opts = step.status === undefined ? {} : { status: step.status };
         throw new ProviderError(step.fail, this.descriptor.id, `scripted ${step.fail}`, opts);
       } else if ('throwPlain' in step) throw new TypeError(step.throwPlain);
+      else if ('toolCall' in step) yield { type: 'tool_call', call: step.toolCall };
       else await new Promise((resolve) => signal.addEventListener('abort', resolve));
     }
   }
