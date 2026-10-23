@@ -7,6 +7,7 @@ import type { NotificationName, NotificationParams } from '../rpc/client';
 import { GraphEventSchema, TaskGraphSchema, parseArtifacts, parseEstimate } from '../rpc/schemas';
 import { resolveLocale, setLocale, t, type Key } from '../i18n/core';
 import { parseDisputeRecords, parseReused, parseVerification } from '../rpc/learning-schemas';
+import { receiveNotice } from '../enterprise/store';
 import { controlText } from './controls';
 import { applyDisputeControl, applyDisputeRecords } from './disputes';
 import { loadPrefs, savePrefs } from './prefs';
@@ -37,6 +38,7 @@ export function initialState(): StudioState {
     logs: [],
     announcement: { text: '', seq: 0 },
     tab: 'conversation',
+    view: 'workspace',
     paletteOpen: false,
     prefs,
     surface: 'web',
@@ -225,5 +227,7 @@ export function handleNotification<N extends NotificationName>(
     default:
       // A newer kernel's notice about a confirmation (P3-F2): taken leniently.
       if (String(name).startsWith('confirm.')) return confirmWithdrawn(params);
+      // The Enterprise stream (design §14.2) has its own store, coalesced per frame.
+      if (String(name).startsWith('enterprise.')) receiveNotice(name, params);
   }
 }

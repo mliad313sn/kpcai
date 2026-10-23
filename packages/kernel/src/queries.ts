@@ -139,6 +139,19 @@ export class Queries {
     return metrics(this.journal, sessionId ? { sessionId } : {});
   }
 
+  /**
+   * A typed fact of a program or the Enterprise daemon (ADR-0035): heartbeats, Sponsor
+   * answers, interrupted runs. Never model text, never a secret; returns its sequence.
+   */
+  recordFact(sessionId: string, payload: Record<string, unknown>): number {
+    return this.journal.append({ sessionId, type: 'intervention', payload }).seq;
+  }
+
+  /** What a session spent, from the journal (an interrupted run's cost after a restart). */
+  sessionSpendUsd(sessionId: string): number {
+    return this.journal.spend({ sessionId });
+  }
+
   verify(): ReturnType<Journal['verify']> {
     return this.journal.verify();
   }

@@ -122,7 +122,7 @@ export function sponsorYes(
   )?.id;
 }
 
-const runSettled: Handler<'run.settled'> = (s, e) => {
+const runSettled: Handler<'run.settled'> = (s, e, c) => {
   const run = s.runs.find((r) => r.runId === e.runId);
   if (!run || run.status !== 'running') return no(`no running run ${e.runId}`);
   const settled = {
@@ -132,6 +132,8 @@ const runSettled: Handler<'run.settled'> = (s, e) => {
     testsPassed: e.testsPassed,
     hours: e.hours ?? run.hours,
     evidence: [...run.evidence, ...e.evidence],
+    settledAt: c.now.toISOString(),
+    ...(e.assurance ? { assurance: e.assurance } : {}),
   };
   return ok({ ...s, runs: s.runs.map((r) => (r.runId === e.runId ? settled : r)) });
 };

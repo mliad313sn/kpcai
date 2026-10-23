@@ -48,6 +48,7 @@ export async function capCheck(
       runId: c.runId,
       // D-028: the band top asked, structured (a delegate never reads the question).
       amountUsd: c.capUsd,
+      physical: false,
     }))
   ) {
     journal.append({

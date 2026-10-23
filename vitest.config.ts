@@ -21,6 +21,7 @@ export default defineConfig({
       '@kernelpai/learning': src('./packages/learning/src/index.ts'),
       '@kernelpai/server': src('./packages/server/src/index.ts'),
       '@kernelpai/program': src('./packages/program/src/index.ts'),
+      '@kernelpai/enterprise': src('./packages/enterprise/src/index.ts'),
     },
   },
   test: {

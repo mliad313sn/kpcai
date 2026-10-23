@@ -1,6 +1,9 @@
 /** Boot wiring: one RpcClient per page, feeding the store and serving the actions. */
+import { loadSnapshot } from './enterprise/actions';
+import { enterprise } from './enterprise/store';
 import { t, type Key } from './i18n/core';
 import { RpcClient, type RpcClientOptions } from './rpc/client';
+import { setRawCaller } from './rpc/raw';
 import { forgetToken, rememberToken } from './rpc/token';
 import { loadModels, loadSessions, setClient } from './store/actions';
 import { resetCompetence } from './store/learning';
@@ -41,12 +44,15 @@ export function connect(
         // Model proposals waiting for a human (ADR-0027): the Memory tab shows the count.
         void loadPending(true);
         resetCompetence();
+        // A reconnect may have missed notices: an Enterprise view already shown reloads.
+        if (enterprise.getState().ui.status !== 'idle') void loadSnapshot();
       }
     },
     ...extra,
   });
   current = client;
   setClient(client);
+  setRawCaller(client);
   client.connect();
   return client;
 }
@@ -63,4 +69,5 @@ export function disconnect(): void {
   current?.close();
   current = undefined;
   setClient(undefined);
+  setRawCaller(undefined);
 }

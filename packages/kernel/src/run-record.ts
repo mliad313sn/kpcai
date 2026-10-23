@@ -102,3 +102,14 @@ export function planRecord(p: Plan): JournalEventInput {
     },
   };
 }
+
+/** S10 R6 J1: the run's intent id and origin, before anything of it is journaled. */
+export function intentRecord(sessionId: string, runId: string, o: GraphOptions) {
+  const payload = {
+    action: 'run intent',
+    runId,
+    intent: o.intent,
+    unattended: o.unattended === true,
+  };
+  return { sessionId, type: 'intervention' as const, payload };
+}

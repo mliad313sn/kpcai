@@ -16,7 +16,9 @@
     "@kernelpai/core": "workspace:*",
     "@kernelpai/kernel": "workspace:*",
     "ws": "^8.22.0",
-    "zod": "^4.1.0"
+    "zod": "^4.1.0",
+    "@kernelpai/enterprise": "workspace:*",
+    "@kernelpai/program": "workspace:*"
   },
   "devDependencies": {
     "@types/ws": "^8.18.2"

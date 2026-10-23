@@ -5,6 +5,7 @@
  */
 import { z } from 'zod';
 import {
+  AssuranceSchema,
   DecisionSchema,
   EscalationSchema,
   EvidenceSchema,
@@ -33,6 +34,8 @@ export const ProgramEventSchema = z.discriminatedUnion('type', [
     /** Local compute time or subscription hours used. */
     hours: z.number().nonnegative().optional(),
     evidence: EvidenceSchema,
+    /** S10 R5: V0–V2 from the run's journal (a kernel fact, never the PO's word). */
+    assurance: AssuranceSchema.optional(),
   }),
   z.strictObject({ type: z.literal('gate.open') }),
   z.strictObject({ type: z.literal('gate.close'), record: GateRecordSchema }),

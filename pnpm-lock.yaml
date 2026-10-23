@@ -44,6 +44,9 @@ importers:
       '@kernelpai/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@kernelpai/enterprise':
+        specifier: workspace:*
+        version: link:../../packages/enterprise
       '@kernelpai/executor':
         specifier: workspace:*
         version: link:../../packages/executor
@@ -65,6 +68,9 @@ importers:
       '@kernelpai/packs':
         specifier: workspace:*
         version: link:../../packages/packs
+      '@kernelpai/program':
+        specifier: workspace:*
+        version: link:../../packages/program
       '@kernelpai/providers':
         specifier: workspace:*
         version: link:../../packages/providers
@@ -203,6 +209,27 @@ importers:
 
   packages/core:
     dependencies:
+      zod:
+        specifier: ^4.1.0
+        version: 4.6.7
+
+  packages/enterprise:
+    dependencies:
+      '@kernelpai/core':
+        specifier: workspace:*
+        version: link:../core
+      '@kernelpai/journal':
+        specifier: workspace:*
+        version: link:../journal
+      '@kernelpai/kernel':
+        specifier: workspace:*
+        version: link:../kernel
+      '@kernelpai/learning':
+        specifier: workspace:*
+        version: link:../learning
+      '@kernelpai/program':
+        specifier: workspace:*
+        version: link:../program
       zod:
         specifier: ^4.1.0
         version: 4.6.7
@@ -390,9 +417,15 @@ importers:
       '@kernelpai/core':
         specifier: workspace:*
         version: link:../core
+      '@kernelpai/enterprise':
+        specifier: workspace:*
+        version: link:../enterprise
       '@kernelpai/kernel':
         specifier: workspace:*
         version: link:../kernel
+      '@kernelpai/program':
+        specifier: workspace:*
+        version: link:../program
       ws:
         specifier: ^8.22.0
         version: 8.22.0

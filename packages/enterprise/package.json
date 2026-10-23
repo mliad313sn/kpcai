@@ -1,0 +1,24 @@
+{
+  "name": "@kernelpai/enterprise",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Enterprise runtime (ADR-0031, ADR-0035): program store, kernel wiring, headless daemon, S10 safeguards",
+  "license": "UNLICENSED",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "dependencies": {
+    "@kernelpai/core": "workspace:*",
+    "@kernelpai/journal": "workspace:*",
+    "@kernelpai/kernel": "workspace:*",
+    "@kernelpai/learning": "workspace:*",
+    "@kernelpai/program": "workspace:*",
+    "zod": "^4.1.0"
+  }
+}

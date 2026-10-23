@@ -57,10 +57,14 @@ export async function call<M extends MethodName>(
 }
 
 /** Principle "zéro surprise": a request is always planned and shown before it can run. */
-export async function requestPlan(request: string): Promise<void> {
+export async function requestPlan(
+  request: string,
+  extra: { skill?: string | undefined; agent?: string | undefined } = {},
+): Promise<void> {
   patch({ planning: true });
   try {
-    const options = studio.getState().runOptions;
+    // A ticket's skill and agent (R-502) only narrow; they ride with this plan and its run.
+    const options = { ...studio.getState().runOptions, ...definedOnly(extra) };
     const raw = await call('plan', { request, options }, PLAN_TIMEOUT_MS);
     const parsed = PlanResultSchema.safeParse(raw);
     if (!parsed.success) throw new Error(t('error.badPlan'));
@@ -77,6 +81,7 @@ export async function requestPlan(request: string): Promise<void> {
       ...(raw.packs ? { packs: raw.packs } : {}),
       ...(raw.scope ? { scope: raw.scope } : {}),
       ...(raw.memory ? { memory: raw.memory } : {}),
+      ...(extra.skill || extra.agent ? { options } : {}),
     };
     patch({ plan, selectedNodeId: undefined });
     const cost = costOf(estimate);
@@ -92,6 +97,10 @@ export async function requestPlan(request: string): Promise<void> {
   } finally {
     patch({ planning: false });
   }
+}
+
+function definedOnly<T extends object>(o: T): Partial<T> {
+  return Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined)) as Partial<T>;
 }
 
 export function discardPlan(): void {
@@ -111,7 +120,7 @@ async function launch(plan: PlanView, s: StudioState): Promise<string> {
     request: plan.request,
     planId: plan.planId,
     ...(isEdited(plan) ? { graph: { nodes: plan.graph.nodes } } : {}),
-    options: s.runOptions,
+    options: plan.options ?? s.runOptions,
   });
   return runId;
 }

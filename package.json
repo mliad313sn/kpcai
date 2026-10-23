@@ -25,6 +25,7 @@
     "demo:phase2": "pnpm build && node scripts/demo-phase2.mjs",
     "demo:phase3": "pnpm build && pnpm --filter @kernelpai/studio build && node scripts/demo-phase3.mjs",
     "demo:phase4": "pnpm build && node scripts/demo-phase4.mjs",
+    "demo:phase5": "pnpm build && node scripts/demo-phase5.mjs",
     "e2e": "pnpm build && pnpm --filter @kernelpai/studio build && pnpm --filter @kernelpai/studio-e2e e2e"
   },
   "devDependencies": {

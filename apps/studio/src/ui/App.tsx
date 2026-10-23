@@ -4,6 +4,7 @@ import { useStudio } from '../store/store';
 import { AgentsBoard } from './AgentsBoard';
 import { CenterTabs } from './CenterTabs';
 import { CommandBar } from './CommandBar';
+import { EnterpriseView } from './enterprise/EnterpriseView';
 import { ConfirmModal } from './ConfirmModal';
 import { Explorer } from './Explorer';
 import { Header } from './Header';
@@ -43,22 +44,10 @@ function useLocale(): string {
   return locale;
 }
 
-/**
- * Spec §4.1: command bar on top; explorer, central tabs and agents board in the middle;
- * the execution thread across the bottom. Every zone but the centre can be resized and hidden.
- */
-export function App({ url }: { url: string }) {
-  useThemeEffect();
-  useGlobalKeys();
-  useDocumentTitle();
-  const locale = useLocale();
+/** The run console's middle row and thread (spec §4.1). */
+function Workspace() {
   return (
-    <div className="studio" key={locale}>
-      <a className="skip-link" href="#command-input">
-        {t('app.skip')}
-      </a>
-      <Header url={url} />
-      <CommandBar />
+    <>
       <main className="middle">
         <Explorer />
         <Splitter zone="explorer" />
@@ -68,6 +57,28 @@ export function App({ url }: { url: string }) {
       </main>
       <Splitter zone="thread" />
       <Thread />
+    </>
+  );
+}
+
+/**
+ * Spec §4.1: command bar on top; explorer, central tabs and agents board in the middle;
+ * the execution thread across the bottom. Every zone but the centre can be resized and hidden.
+ */
+export function App({ url }: { url: string }) {
+  useThemeEffect();
+  useGlobalKeys();
+  useDocumentTitle();
+  const locale = useLocale();
+  const view = useStudio((s) => s.view);
+  return (
+    <div className="studio" key={locale}>
+      <a className="skip-link" href="#command-input">
+        {t('app.skip')}
+      </a>
+      <Header url={url} />
+      <CommandBar />
+      {view === 'enterprise' ? <EnterpriseView /> : <Workspace />}
       <LastLog />
       <LiveRegion />
       <Palette />

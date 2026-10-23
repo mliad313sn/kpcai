@@ -15,6 +15,8 @@ import { toolsCommand } from './commands/tools.js';
 import { mcpCommand } from './commands/mcp.js';
 import { extensionsCommand } from './commands/extensions.js';
 import { ticketCommand } from './commands/ticket.js';
+import { programCommand } from './commands/program.js';
+import { serveCommand } from './commands/serve.js';
 import {
   checkpointsCommand,
   discardCommand,
@@ -69,6 +71,12 @@ const OPTIONS = {
   instruction: { type: 'string' },
   skill: { type: 'string' },
   agent: { type: 'string' },
+  budget: { type: 'string' },
+  departments: { type: 'boolean' },
+  'no-critic': { type: 'boolean' },
+  trivial: { type: 'boolean' },
+  check: { type: 'boolean' },
+  headless: { type: 'boolean' },
 } as const;
 
 function positiveInt(name: string, raw: string | undefined): number | undefined {
@@ -79,6 +87,13 @@ function positiveInt(name: string, raw: string | undefined): number | undefined 
 }
 
 class UsageError extends Error {}
+
+function positiveNumber(name: string, raw: string | undefined): number | undefined {
+  if (raw === undefined) return undefined;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0) throw new UsageError(t('error.positiveInt', { name }));
+  return n;
+}
 
 function portNumber(raw: string | undefined): number | undefined {
   if (raw === undefined) return undefined;
@@ -221,6 +236,19 @@ const COMMANDS: Readonly<Record<string, Handler>> = {
   mcp: (io, v, rest) => mcpCommand(io, rest, { db: v.db }),
   extensions: (io) => extensionsCommand(io),
   ticket: (io, v, rest) => ticketCommand(io, rest, ticketOptions(v)),
+  program: (io, v, rest) =>
+    programCommand(io, rest, {
+      db: v.db,
+      budgetUsd: positiveNumber('budget', v.budget),
+      departments: v.departments,
+      critic: v['no-critic'] ? false : undefined,
+      trivial: v.trivial,
+      check: v.check,
+      allowTest: v['allow-test'],
+    }),
+  // `kpai serve` is always headless (the UI is `kpai studio`); --headless is accepted.
+  serve: (io, v) =>
+    serveCommand(io, { db: v.db, port: portNumber(v.port), allowTest: v['allow-test'] }),
   studio: (io, v) =>
     studioCommand(io, { db: v.db, port: portNumber(v.port), allowTest: v['allow-test'] }),
   stats: (io, v) =>

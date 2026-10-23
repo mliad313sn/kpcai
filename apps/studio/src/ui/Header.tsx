@@ -3,6 +3,8 @@ import { connect } from '../connection';
 import { t, type Key, type LocalePref } from '../i18n/core';
 import { isValidToken } from '../rpc/token';
 import { patch, setPrefs, useStudio } from '../store/store';
+import { useEnt } from '../enterprise/store';
+import { showView } from './hooks';
 import { Modal } from './Modal';
 import { nextTheme } from './Palette';
 
@@ -44,6 +46,31 @@ export function LanguageSelect() {
   );
 }
 
+/** Workspace or Enterprise view (R-5E10); Alt+E switches too. */
+function ViewSwitch() {
+  const view = useStudio((s) => s.view);
+  const asks = useEnt((s) => (s.ui.status === 'ready' ? s.data.inbox.length : 0));
+  return (
+    <nav aria-label={t('view.label')} className="view-switch segmented">
+      <button
+        type="button"
+        aria-current={view === 'workspace' ? 'page' : undefined}
+        onClick={() => showView('workspace')}
+      >
+        {t('view.workspace')}
+      </button>
+      <button
+        type="button"
+        aria-current={view === 'enterprise' ? 'page' : undefined}
+        onClick={() => showView('enterprise')}
+        aria-keyshortcuts="Alt+E"
+      >
+        {asks ? t('view.enterpriseAsks', { count: asks }) : t('view.enterprise')}
+      </button>
+    </nav>
+  );
+}
+
 export function Header({ url }: { url: string }) {
   const conn = useStudio((s) => s.conn);
   const detail = useStudio((s) => s.connDetail);
@@ -57,6 +84,7 @@ export function Header({ url }: { url: string }) {
         {t(c.key)}
         {detail && conn !== 'open' ? <span className="muted small"> ({detail})</span> : null}
       </p>
+      <ViewSwitch />
       <span className="spacer" />
       <button type="button" onClick={() => patch({ paletteOpen: true })}>
         {t('header.commands')} <kbd>Ctrl K</kbd>

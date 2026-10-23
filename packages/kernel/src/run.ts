@@ -15,7 +15,7 @@ import { collectArtifacts } from './artifacts.js';
 import { queueProposals } from './memory-proposals.js';
 import { collect } from './patches.js';
 import { runnable } from './planning.js';
-import { recordOutcome } from './run-record.js';
+import { intentRecord, recordOutcome } from './run-record.js';
 import { annotate } from './routing-info.js';
 import { runDeps } from './run-deps.js';
 import { routingRecord, type GraphOptions } from './setup.js';
@@ -60,6 +60,8 @@ export interface RunContext {
  * journaled with the run id, so another process can refuse to merge a cancelled run (P3-F7).
  */
 export async function executeRun(c: RunContext, run: ActiveRun): Promise<RunOutcome> {
+  // S10 R6 J1: why the run exists, before anything else of it is journaled.
+  if (run.flags.intent) c.journal.append(intentRecord(run.plan.sessionId, run.runId, run.flags));
   let o: RunOutcome | undefined;
   try {
     o = await runToEnd(c, run);
@@ -259,6 +261,8 @@ async function runGraph(c: RunContext, run: ActiveRun): Promise<RunResult> {
       ...(run.scope !== undefined ? { scope: run.scope } : {}),
       // Its replays and forks keep these as a floor (P4-F2).
       routing: routingRecord(c.host.env, p.options),
+      // D-029 R1: a daemon's run refuses subscription agents (journaled in the run).
+      ...(o.unattended === true ? { unattended: true } : {}),
     };
     // A fork's graph already carries the rules and memory it recorded (R-403): as is.
     if (p.fork) return await runFork(run.runner, p.fork, opts);

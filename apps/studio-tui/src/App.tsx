@@ -6,6 +6,7 @@ import { answerConfirm } from '../../studio/src/store/actions';
 import { refKey } from '../../studio/src/store/reducer';
 import { patch, useStudio } from '../../studio/src/store/store';
 import type { ConfirmView } from '../../studio/src/store/types';
+import { EnterprisePane } from './enterprise';
 import { keyAction, type Confirming } from './keys';
 import { EMPTY_LINE, perform, withoutPick, type TuiLine } from './perform';
 import {
@@ -98,15 +99,34 @@ function useConfirming(
   return confirm.kind === 'dispute' || confirm.kind === 'memory' ? confirm.kind : true;
 }
 
+/** Plan, diff or thread, the agents and the selection: the run console's panes. */
+function Workspace({ line, now }: { line: TuiLine; now: number }) {
+  const plan = useStudio((s) => s.plan);
+  const run = useStudio((s) => (s.activeRunId ? s.runs[s.activeRunId] : undefined));
+  const selected = useStudio((s) => s.selectedNodeId);
+  const showDiff = line.diff && !plan;
+  return (
+    <>
+      {plan ? <PlanPane plan={plan} {...(selected ? { selected } : {})} /> : null}
+      {showDiff ? <DiffPane run={run} /> : null}
+      {!plan && !showDiff && run ? (
+        <ThreadPane run={run} {...(selected ? { selected } : {})} />
+      ) : null}
+      {!plan && !run && !showDiff ? <Text dimColor>{t('tui.noPlan')}</Text> : null}
+      <AgentsPane run={run} now={now} />
+      {run ? <ControlPane run={run} /> : null}
+      <Selected />
+      {run ? null : <Badge state={plan ? 'planned' : 'pending'} />}
+    </>
+  );
+}
+
 export function TuiApp() {
   const { exit } = useApp();
   const [line, setLine] = useState<TuiLine>(EMPTY_LINE);
   const now = useNow();
   const conn = useStudio((s) => s.conn);
-  const plan = useStudio((s) => s.plan);
-  const run = useStudio((s) => (s.activeRunId ? s.runs[s.activeRunId] : undefined));
   const confirm = useStudio((s) => s.confirms[0]);
-  const selected = useStudio((s) => s.selectedNodeId);
   const last = useStudio((s) => s.announcement.text);
   useConfirmTimeout();
   // Announcements name terminal keys, not web tabs (e.g. patches ready: Ctrl+O, Ctrl+A).
@@ -115,7 +135,7 @@ export function TuiApp() {
   useInput((input, key) => {
     setLine((current) => perform(keyAction(input, key, confirming), current, exit));
   });
-  const showDiff = line.diff && !plan;
+  const ent = line.enterprise === true;
   return (
     <Box flexDirection="column">
       <Text bold>
@@ -128,19 +148,10 @@ export function TuiApp() {
           {...(line.choice !== undefined ? { choice: line.choice, scroll: line.scroll ?? 0 } : {})}
         />
       ) : null}
-      {plan ? <PlanPane plan={plan} {...(selected ? { selected } : {})} /> : null}
-      {showDiff ? <DiffPane run={run} /> : null}
-      {!plan && !showDiff && run ? (
-        <ThreadPane run={run} {...(selected ? { selected } : {})} />
-      ) : null}
-      {!plan && !run && !showDiff ? <Text dimColor>{t('tui.noPlan')}</Text> : null}
-      <AgentsPane run={run} now={now} />
-      {run ? <ControlPane run={run} /> : null}
-      <Selected />
+      {ent ? <EnterprisePane now={now} /> : <Workspace line={line} now={now} />}
       <InputLine line={line} />
       {last ? <Text dimColor>{last}</Text> : null}
-      <Text dimColor>{t('tui.keys')}</Text>
-      {run ? null : <Badge state={plan ? 'planned' : 'pending'} />}
+      <Text dimColor>{t(ent ? 'tui.ent.keys' : 'tui.keys')}</Text>
     </Box>
   );
 }

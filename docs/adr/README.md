@@ -38,3 +38,4 @@ One page per decision. Format: Context, Decision, Consequences, Revisit when.
 | [0032](0032-mcp-pinning-test-evidence-driven-browser.md) | MCP pinning and egress, tests as evidence, the driven browser             | Accepted |
 | [0033](0033-skills-agents-hooks-tickets.md)              | Skills, named agents, hooks, local tickets; D-028 delegate facts          | Accepted |
 | [0034](0034-external-agents-and-source-fallback.md)      | External agents as node authors, interactive only, fallback per source    | Accepted |
+| [0035](0035-enterprise-runtime-and-daemon.md)            | Enterprise runtime: program store, headless daemon, S10 safeguards        | Accepted |

@@ -4,7 +4,10 @@ import { control, startRun, submit } from '../store/actions';
 import { COMMANDS, commandHint } from '../store/commands';
 import { patch, setPrefs, studio, useStudio } from '../store/store';
 import type { StudioState, Tab } from '../store/types';
+import { kill } from '../enterprise/actions';
+import { enterprise } from '../enterprise/store';
 import { TABS } from './CenterTabs';
+import { showView } from './hooks';
 import { Modal } from './Modal';
 import { toggleZone } from './Zone';
 import { activeRun } from './view';
@@ -29,8 +32,25 @@ function fillCommandBar(text: string): void {
 const goTo = (tab: Tab, label: Key): PaletteItem => ({
   id: `tab-${tab}`,
   label: t('palette.goTo', { tab: t(label) }),
-  run: () => patch({ tab }),
+  run: () => patch({ tab, view: 'workspace' }),
 });
+
+/** The other view, and the portfolio kill switch when the Enterprise view knows one. */
+function viewItems(s: StudioState): PaletteItem[] {
+  const ent = enterprise.getState();
+  const items: PaletteItem[] = [
+    s.view === 'enterprise'
+      ? { id: 'view-workspace', label: t('palette.workspace'), run: () => showView('workspace') }
+      : {
+          id: 'view-enterprise',
+          label: t('palette.enterprise'),
+          run: () => showView('enterprise'),
+        },
+  ];
+  if (ent.ui.status === 'ready' && !ent.data.killSwitch)
+    items.push({ id: 'stop-all', label: t('ent.kill.button'), run: () => void kill() });
+  return items;
+}
 
 function runItems(s: StudioState): PaletteItem[] {
   const items: PaletteItem[] = [];
@@ -62,6 +82,7 @@ function runItems(s: StudioState): PaletteItem[] {
 export function paletteItems(s: StudioState): PaletteItem[] {
   return [
     ...runItems(s),
+    ...viewItems(s),
     ...COMMANDS.map((c) => ({
       id: `cmd-${c.name}`,
       label: `/${c.name}`,

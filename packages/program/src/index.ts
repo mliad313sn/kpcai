@@ -22,3 +22,8 @@ export * from './notify.js';
 export * from './scheduler.js';
 export * from './driver.js';
 export * from './sources.js';
+export * from './assurance.js';
+export * from './safeguards.js';
+export * from './approvals.js';
+export * from './watchdog.js';
+export * from './team.js';

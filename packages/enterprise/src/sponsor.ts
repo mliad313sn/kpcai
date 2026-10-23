@@ -1,0 +1,137 @@
+/**
+ * What the Sponsor does (design §14.1, ADR-0035): approve a charter by its hash, pause,
+ * resume, stop, open evidence, answer questions. The host stamps the actor `sponsor`; the
+ * request never says who it is. S10 R8: a consequential question is answered alone and only
+ * after its evidence was opened; trivial ones may go in a batch. Each answer is journaled
+ * with its ask and answer times and whether the evidence was viewed (S10 R6 J2, B-28).
+ */
+import { KernelError } from '@kernelpai/kernel';
+import { answerBlocker, approvalClass } from '@kernelpai/program';
+import { cancelRun, type Ctx } from './context.js';
+import type { Ref } from './meta.js';
+
+function must(ok: boolean, code: 'refused' | 'not_found', message: string): void {
+  if (!ok) throw new KernelError(code, message);
+}
+
+export class Sponsor {
+  constructor(private readonly c: Ctx) {}
+
+  private exists(id: string): void {
+    must(this.c.store.has(id), 'not_found', `no program ${id.slice(0, 80)}`);
+  }
+
+  /** One Sponsor event through the machine; a refusal is an error the client sees. */
+  async act(id: string, event: Record<string, unknown>): Promise<void> {
+    this.exists(id);
+    const now = this.c.clock();
+    const t = await this.c.store.apply(id, event, 'sponsor', now);
+    must(t.ok, 'refused', t.ok ? '' : t.reason);
+    this.c.fact(id, { action: `sponsor ${String(event['type'])}`, programId: id });
+    this.c.feed.notify('enterprise.program', { programId: id, status: t.ok ? t.state.status : '' });
+    this.c.feed.line(`the Sponsor: ${String(event['type'])}`, id, [], now);
+  }
+
+  /** Stop also cancels the program's live runs; the program stays readable. */
+  async stop(id: string, reason: string): Promise<void> {
+    await this.act(id, { type: 'stop', reason });
+    for (const [runId, r] of this.c.live) if (r.programId === id) cancelRun(this.c, runId);
+  }
+
+  /** The Sponsor opened evidence: a run, a diff, a report, an escalation's evidence. */
+  async viewed(id: string, ref: Ref, escalationId?: string): Promise<void> {
+    this.exists(id);
+    const now = this.c.clock();
+    await this.c.store.locked(() => {
+      const { state } = this.c.store.read(id);
+      if (escalationId)
+        must(
+          state.escalations.some((e) => e.id === escalationId),
+          'not_found',
+          `no question ${escalationId}`,
+        );
+      if (ref.kind === 'run')
+        must(
+          state.runs.some((r) => r.runId === ref.id),
+          'not_found',
+          `no run ${ref.id} in ${id}`,
+        );
+      this.c.store.updateMeta(id, (m) => {
+        m.viewed.push({ ref, ...(escalationId ? { escalationId } : {}), at: now.toISOString() });
+      });
+    });
+    this.c.fact(id, {
+      action: 'evidence viewed',
+      programId: id,
+      ref,
+      escalationId,
+      at: now.toISOString(),
+    });
+  }
+
+  async answer(
+    id: string,
+    escalationId: string,
+    answer: 'yes' | 'no',
+    batch = false,
+  ): Promise<void> {
+    this.exists(id);
+    const now = this.c.clock();
+    const record = await this.c.store.locked(() => {
+      const { state, meta } = this.c.store.read(id);
+      const e = state.escalations.find((x) => x.id === escalationId);
+      must(!!e && !e.answer, 'not_found', `no open question ${escalationId}`);
+      must(!meta.escalations[escalationId]?.expired, 'refused', `question ${escalationId} expired`);
+      const seen = meta.viewed.filter((v) => v.escalationId === escalationId).at(-1);
+      const why = answerBlocker(e!, { viewed: !!seen, batch });
+      must(!why, 'refused', `${escalationId}: ${why ?? ''}`);
+      const t = this.c.store.applyLocked(
+        id,
+        { type: 'answer', id: escalationId, answer },
+        'sponsor',
+        now,
+      );
+      must(t.ok, 'refused', t.ok ? '' : t.reason);
+      const rec = {
+        escalationId,
+        rule: e!.rule,
+        answer,
+        askedAt: e!.at,
+        answeredAt: now.toISOString(),
+        viewed: !!seen,
+        ...(seen ? { viewedAt: seen.at } : {}),
+        ...(batch ? { batch: true } : {}),
+      };
+      this.c.store.updateMeta(id, (m) => void m.answers.push(rec));
+      return rec;
+    });
+    this.c.fact(id, {
+      action: 'sponsor answer',
+      programId: id,
+      ...record,
+      class: approvalClass(record),
+    });
+    this.c.feed.notify('enterprise.inbox', { programId: id, escalationId, state: 'answered' });
+    this.c.feed.line(
+      `the Sponsor answered ${answer} (${record.rule})`,
+      id,
+      [{ kind: 'escalation', id: escalationId }],
+      now,
+    );
+  }
+
+  /** Trivial questions in one go; consequential ones are refused, each with its reason. */
+  async answerBatch(id: string, ids: string[], answer: 'yes' | 'no') {
+    const answered: string[] = [];
+    const refused: Array<{ escalationId: string; reason: string }> = [];
+    for (const escalationId of ids) {
+      try {
+        await this.answer(id, escalationId, answer, true);
+        answered.push(escalationId);
+      } catch (err) {
+        refused.push({ escalationId, reason: err instanceof Error ? err.message : String(err) });
+      }
+    }
+    return { answered, refused };
+  }
+}

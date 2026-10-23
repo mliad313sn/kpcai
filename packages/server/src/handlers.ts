@@ -20,8 +20,10 @@ import {
   type RunOptions,
 } from '@kernelpai/kernel/protocol';
 import type { z } from 'zod';
+import type { EnterpriseRuntime } from '@kernelpai/enterprise';
 import type { ConfirmBroker } from './confirm-broker.js';
 import { extensionHandlers } from './extension-handlers.js';
+import { enterpriseHandlers } from './enterprise-handlers.js';
 
 type ParamsOf<M extends MethodName> = z.infer<(typeof Methods)[M]['params']>;
 type Handler<M extends MethodName> = (params: ParamsOf<M>) => unknown;
@@ -62,6 +64,8 @@ export interface HandlerDeps {
   watch(handle: RunHandle): void;
   /** The server's default run options; a request's own options win (`--allow-test`). */
   defaults?: Pick<RunOptions, 'allowTest'>;
+  /** Enterprise mode (ADR-0035); without it `program.*` and `enterprise.*` are unsupported. */
+  enterprise?: EnterpriseRuntime;
 }
 
 const hello: Handler<'kernel.hello'> = (p) => {
@@ -131,7 +135,16 @@ export function handlers(d: HandlerDeps): Handlers {
     ...memoryHandlers(kernel),
     ...learningHandlers(kernel, d, defaults),
     ...extensionHandlers(kernel),
+    ...enterpriseHandlers(d.enterprise),
     'confirm.answer': (p) => ({ accepted: d.broker.answer(p.confirmId, p.ok, p.choice) }),
+    ...journalHandlers(kernel),
+  };
+}
+
+type JournalMethod = 'sessions.list' | 'sessions.events' | 'stats' | 'journal.verify';
+
+function journalHandlers(kernel: Kernel): Pick<Handlers, JournalMethod> {
+  return {
     'sessions.list': (p) => ({ sessions: kernel.sessions(p.limit ?? 20) }),
     'sessions.events': (p) => ({ events: kernel.events(p.sessionId, p.limit ?? 1000) }),
     stats: (p) => kernel.stats(p?.sessionId),

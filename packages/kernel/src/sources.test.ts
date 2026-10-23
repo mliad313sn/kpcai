@@ -62,13 +62,19 @@ describe('sources', () => {
 
 describe('a program envelope consumes the confirmation facts', () => {
   it('maps a confirmation to a confirm action that parses; missing facts escalate', () => {
-    const budget = confirmFacts({ kind: 'budget', question: 'q', amountUsd: 0.5 });
+    const budget = confirmFacts({ kind: 'budget', question: 'q', amountUsd: 0.5, physical: false });
     expect(ProposedActionSchema.safeParse(budget).success).toBe(true);
     const s = running();
     expect(checkAction(s, budget, NOW).verdict).toBe('allow');
-    const noAmount = confirmFacts({ kind: 'budget', question: 'q' });
+    const noAmount = confirmFacts({ kind: 'budget', question: 'q', physical: false });
     expect(checkAction(s, noAmount, NOW).verdict).toBe('escalate');
-    const inWt = confirmFacts({ kind: 'patch', question: 'q', inWorktree: true, risk: 'write' });
+    const inWt = confirmFacts({
+      kind: 'patch',
+      question: 'q',
+      inWorktree: true,
+      risk: 'write',
+      physical: false,
+    });
     expect(checkAction(s, inWt, NOW).verdict).toBe('allow');
     const userTree = confirmFacts({ kind: 'patch', question: 'q', risk: 'write' });
     expect(checkAction(s, userTree, NOW).verdict).toBe('escalate');
@@ -77,6 +83,21 @@ describe('a program envelope consumes the confirmation facts', () => {
       verdict: 'escalate',
       reserved: 'physical-device',
     });
+  });
+
+  it('WP7-L3: an unstated physical fact escalates (ADR-0033 §7)', () => {
+    const unstated = confirmFacts({
+      kind: 'patch',
+      question: 'q',
+      inWorktree: true,
+      risk: 'write',
+    });
+    expect(unstated.physical).toBe(true);
+    expect(checkAction(running(), unstated, NOW)).toMatchObject({
+      verdict: 'escalate',
+      reserved: 'physical-device',
+    });
+    expect(confirmFacts({ kind: 'budget', question: 'q', physical: false }).physical).toBe(false);
   });
 });
 
@@ -90,6 +111,7 @@ describe('the kernel fills the facts (D-028)', () => {
     const o = await handle.done;
     const budget = h.asked.find((q) => q.kind === 'budget');
     expect(budget?.amountUsd).toBe(p.estimate.capUsd);
+    expect(budget?.physical).toBe(false);
     expect(o.status).toBe('finished');
     if (o.status !== 'finished') return;
     expect(o.providers?.length).toBeGreaterThan(0);

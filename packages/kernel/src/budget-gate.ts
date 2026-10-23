@@ -103,6 +103,8 @@ export class BudgetGate {
       question,
       ...(this.ctx.runId ? { runId: this.ctx.runId } : {}),
       ...(amountUsd !== undefined && Number.isFinite(amountUsd) ? { amountUsd } : {}),
+      // A spend question actuates nothing (D-028: said, not left to the escalating default).
+      physical: false,
     });
   }
 

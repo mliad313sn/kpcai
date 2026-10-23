@@ -262,6 +262,14 @@ export type Actor = z.infer<typeof ActorSchema>;
 /** Journal references: `event:<id>`, `run:<id>`, `ci:<commit>:<status>`, `test:<id>`… */
 export const EvidenceSchema = z.array(z.string().min(1).max(200)).max(100);
 
+/**
+ * S10 R5 assurance of a run's result: V0 unchecked; V1 approved by a critic of another
+ * provider; V2 plus objective evidence (tests that ran, CI on the exact commit); V3 plus a
+ * human opened the evidence. Only the kernel reports V0–V2; V3 is derived from `viewed`.
+ */
+export const AssuranceSchema = z.enum(['V0', 'V1', 'V2', 'V3']);
+export type Assurance = z.infer<typeof AssuranceSchema>;
+
 export const RunRecordSchema = z.strictObject({
   runId: IdSchema,
   wpId: IdSchema,
@@ -280,6 +288,10 @@ export const RunRecordSchema = z.strictObject({
   testsPassed: z.boolean().optional(),
   evidence: EvidenceSchema.default([]),
   startedAt: z.iso.datetime(),
+  /** When the kernel settled it (spend-rate window, S10 R3). */
+  settledAt: z.iso.datetime().optional(),
+  /** S10 R5, from kernel facts only (`run.settled`). */
+  assurance: AssuranceSchema.optional(),
 });
 export type RunRecord = z.infer<typeof RunRecordSchema>;
 

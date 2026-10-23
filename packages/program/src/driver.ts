@@ -49,6 +49,8 @@ export interface RunResult {
   testsPassed?: boolean;
   hours?: number;
   evidence: string[];
+  /** S10 R5: V0–V2, derived by the host from the run's journal. */
+  assurance?: 'V0' | 'V1' | 'V2';
   /** Model text for people to read. Never parsed, never acted on. */
   untrustedSummary?: string;
 }
@@ -144,6 +146,7 @@ export function settleEvent(r: RunResult): ProgramEvent {
     testsPassed: r.testsPassed,
     hours: r.hours,
     evidence: r.evidence,
+    ...(r.assurance ? { assurance: r.assurance } : {}),
   };
 }
 
@@ -161,7 +164,7 @@ function escalation(o: DelegateOptions, v: Verdict, wpId: string, capUsd: number
 }
 
 /** The reviewer gets the phase's goal and exit criteria, not the builders' conversations. */
-function reviewRequest(s: ProgramState): string {
+export function reviewRequest(s: ProgramState): string {
   const p = s.charter.phases[s.phaseIndex]!;
   return [
     `Independent gate review of phase "${p.title}". Read-only.`,

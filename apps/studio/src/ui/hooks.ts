@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { patch, setPrefs, studio, useStudio } from '../store/store';
+import type { View } from '../store/types';
 import { t } from '../i18n/core';
 import { stateLabel } from './StateBadge';
 import { activeRun } from './view';
@@ -44,6 +45,14 @@ export function useDocumentTitle(): void {
   }, [state, planning]);
 }
 
+/** Switches between the run console and the Enterprise view; focus goes to its heading. */
+export function showView(view: View): void {
+  patch({ view });
+  requestAnimationFrame(() =>
+    document.getElementById(view === 'enterprise' ? 'ent-title' : 'zone-center-heading')?.focus(),
+  );
+}
+
 export const ZONE_IDS = ['command', 'explorer', 'center', 'agents', 'thread'] as const;
 
 function focusZone(n: number): void {
@@ -66,9 +75,15 @@ function isEditable(t: EventTarget | null): boolean {
   return !!el && (el.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName));
 }
 
-/** Ctrl/Cmd+K palette, `/` focuses the command bar, Alt+1..5 focuses a zone. */
+/**
+ * Ctrl/Cmd+K palette, `/` focuses the command bar, Alt+1..5 focuses a zone, Alt+E switches
+ * between the workspace and the Enterprise view.
+ */
 export function onGlobalKey(e: KeyboardEvent): void {
-  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+  if (e.altKey && !e.ctrlKey && !e.metaKey && e.code === 'KeyE') {
+    e.preventDefault();
+    showView(studio.getState().view === 'enterprise' ? 'workspace' : 'enterprise');
+  } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
     e.preventDefault();
     patch({ paletteOpen: !studio.getState().paletteOpen });
   } else if (e.altKey && /^[1-5]$/.test(e.key)) {

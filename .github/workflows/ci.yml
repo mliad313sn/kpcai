@@ -37,6 +37,8 @@ jobs:
       - run: node scripts/demo-phase3.mjs
       # Phase 4: memory, grades and routing evidence, bench, replay, fork, dispute, metrics.
       - run: node scripts/demo-phase4.mjs
+      # Phase 5: Enterprise mode headless (charter, approval, daemon crash and restart, gate, labels).
+      - run: node scripts/demo-phase5.mjs
       - run: node scripts/bench-router.mjs
 
   e2e:

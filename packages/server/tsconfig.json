@@ -3,5 +3,10 @@
   "compilerOptions": { "rootDir": "src", "outDir": "dist" },
   "include": ["src"],
   "exclude": ["src/**/*.test.ts", "src/**/test-helpers/**"],
-  "references": [{ "path": "../core" }, { "path": "../kernel" }]
+  "references": [
+    { "path": "../core" },
+    { "path": "../kernel" },
+    { "path": "../enterprise" },
+    { "path": "../program" }
+  ]
 }

@@ -28,7 +28,9 @@
     "@kernelpai/server": "workspace:*",
     "@kernelpai/packs": "workspace:*",
     "@kernelpai/memory": "workspace:*",
-    "@kernelpai/learning": "workspace:*"
+    "@kernelpai/learning": "workspace:*",
+    "@kernelpai/enterprise": "workspace:*",
+    "@kernelpai/program": "workspace:*"
   },
   "devDependencies": {
     "@types/ws": "^8.18.2",

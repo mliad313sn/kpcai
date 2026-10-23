@@ -19,6 +19,9 @@ export const THEMES = {
     focus: '#ffd166',
     added: '#16331f',
     removed: '#3d1a1c',
+    local: '#c9a7ff',
+    api: '#7cd4e8',
+    sub: '#ffb37a',
   },
   light: {
     bg: '#ffffff',
@@ -35,6 +38,9 @@ export const THEMES = {
     focus: '#8a3ffc',
     added: '#dafbe1',
     removed: '#ffebe9',
+    local: '#6f36b0',
+    api: '#006577',
+    sub: '#8f4500',
   },
 } as const;
 export type ThemeName = keyof typeof THEMES;
@@ -62,6 +68,16 @@ export const TEXT_PAIRS: Array<[Token, Token]> = [
   ['danger', 'bg'],
   ['text', 'added'],
   ['text', 'removed'],
+  // Model sources in the Enterprise view (local, API, subscription).
+  ['local', 'surface'],
+  ['local', 'bg'],
+  ['local', 'raised'],
+  ['api', 'surface'],
+  ['api', 'bg'],
+  ['api', 'raised'],
+  ['sub', 'surface'],
+  ['sub', 'bg'],
+  ['sub', 'raised'],
 ];
 /** Non-text UI (borders of controls, focus ring) needs 3:1 (WCAG 1.4.11). */
 export const UI_PAIRS: Array<[Token, Token]> = [

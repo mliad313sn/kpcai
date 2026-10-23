@@ -46,6 +46,13 @@ export interface GraphOptions {
   skill?: string;
   /** A named agent every node of the plan is assigned (R-502); narrowing only. */
   agent?: string;
+  /**
+   * Nobody watches this run (the Enterprise daemon, ADR-0035): subscription agents are
+   * refused (D-029 R1), journaled with the run. Narrowing only; not a protocol option.
+   */
+  unattended?: boolean;
+  /** Why the run exists (S10 R6 J1): journaled as `run intent` with its run id. */
+  intent?: { id: string; origin: string };
 }
 
 /** The routing constraints journaled with a run (P4-F2). */

@@ -31,6 +31,11 @@ Usage:
                                        writing the outcome to the ticket's status
   kpai studio [--port N] [--allow-test] Start KP Studio's local kernel server, print its URL
                                        (--allow-test: offline mock providers by default)
+  kpai program new <goal> [--budget N] [--departments] [--no-critic]
+                                       A goal as a program: small-team charter, critic, baseline
+  kpai program list|show|approve|pause|resume|stop|inbox|answer|heartbeat
+                                       You are the Sponsor (answer <id> <q> yes|no, --trivial)
+  kpai serve [--headless]              Headless daemon on 127.0.0.1: runs approved programs
   kpai run <request>                   Classify, route by competence, budget-check,
                                        run with automatic fallback, journal everything
   kpai route <request>                 Same plan and routing, dry run (nothing sent)

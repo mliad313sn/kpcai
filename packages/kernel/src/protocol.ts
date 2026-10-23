@@ -29,7 +29,9 @@ import {
   ExtensionsSummarySchema,
   RunSourceFacts,
 } from './protocol-extensions.js';
+import { EnterpriseMethods, EnterpriseNotifications } from './protocol-enterprise.js';
 
+export * from './protocol-enterprise.js';
 export {
   AccuracySchema,
   CompetenceEntrySchema,
@@ -356,6 +358,7 @@ export const Methods = {
   ...MemoryMethods,
   ...LearningMethods,
   ...ExtensionMethods,
+  ...EnterpriseMethods,
   ...replayMethods({ RunOptionsSchema, EstimateSchema, GraphSchema, ScopeStatusSchema }),
 } as const;
 export type MethodName = keyof typeof Methods;
@@ -427,6 +430,8 @@ export const Notifications = {
     reason: z.enum(['cancelled']),
   }),
   log: z.object({ level: z.enum(['info', 'warn', 'error']), message: z.string().max(10_000) }),
+  /** Enterprise mode stream (design §14.2, ADR-0035). */
+  ...EnterpriseNotifications,
 } as const;
 export type NotificationName = keyof typeof Notifications;
 

@@ -103,7 +103,8 @@ export function confirmFacts(req: ConfirmRequest): {
     ...(req.risk ? { risk: req.risk } : {}),
     ...(req.amountUsd !== undefined ? { amountUsd: req.amountUsd } : {}),
     inWorktree: req.inWorktree === true,
-    physical: req.physical === true,
+    // ADR-0033 §7 (WP7-L3): an unknown physical fact takes the escalating value.
+    physical: req.physical !== false,
   };
 }
 

@@ -8,6 +8,7 @@ import { ArtifactsView } from './ArtifactsView';
 import { EvidenceView } from './Evidence';
 import { MemoryView } from './MemoryView';
 import { RunsView } from './RunsView';
+import { ToolsView } from './ToolsView';
 
 export const TABS: Array<{ id: Tab; label: Key }> = [
   { id: 'conversation', label: 'tab.conversation' },
@@ -16,6 +17,7 @@ export const TABS: Array<{ id: Tab; label: Key }> = [
   { id: 'runs', label: 'tab.runs' },
   { id: 'memory', label: 'tab.memory' },
   { id: 'evidence', label: 'tab.evidence' },
+  { id: 'tools', label: 'tab.tools' },
   { id: 'terminal', label: 'tab.terminal' },
   { id: 'files', label: 'tab.files' },
 ];
@@ -102,6 +104,7 @@ function TabPanel({ tab }: { tab: Tab }) {
       {tab === 'artifacts' && <ArtifactsView />}
       {tab === 'memory' && <MemoryView />}
       {tab === 'evidence' && <EvidenceView />}
+      {tab === 'tools' && <ToolsView />}
       {tab === 'terminal' && <Placeholder what="tab.terminalLater" />}
       {tab === 'files' && <Placeholder what="tab.filesLater" />}
     </div>

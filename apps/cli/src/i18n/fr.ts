@@ -30,6 +30,11 @@ Utilisation :
                                        d'écrire le résultat dans le statut du ticket
   kpai studio [--port N] [--allow-test] Démarre le serveur noyau local de KP Studio, affiche son URL
                                        (--allow-test : fournisseurs simulés hors ligne par défaut)
+  kpai program new <objectif> [--budget N] [--departments] [--no-critic]
+                                       Un objectif en programme : charte d'une petite équipe
+  kpai program list|show|approve|pause|resume|stop|inbox|answer|heartbeat
+                                       Vous êtes le Sponsor (answer <id> <q> yes|no, --trivial)
+  kpai serve [--headless]              Démon sans interface sur 127.0.0.1 : exécute les programmes
   kpai run <demande>                   Classe, route selon la compétence, vérifie le budget,
                                        exécute avec repli automatique, journalise tout
   kpai route <demande>                 Même plan et même routage, à blanc (rien n'est envoyé)

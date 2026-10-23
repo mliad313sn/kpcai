@@ -6,6 +6,7 @@ import { App } from './ui/App';
 import './styles.css';
 import './console.css';
 import './learn.css';
+import './enterprise.css';
 
 const settings = readConnectionSettings(window.location, window.history);
 if (settings.wsRefused) reportRefusedWs(settings.url);

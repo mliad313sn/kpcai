@@ -15,6 +15,8 @@ import {
   startRun,
   submit,
 } from '../../studio/src/store/actions';
+import { kill, loadSnapshot, unkill } from '../../studio/src/enterprise/actions';
+import { enterprise } from '../../studio/src/enterprise/store';
 import { gradeNode } from '../../studio/src/store/learning';
 import { rejectProposal } from '../../studio/src/store/memory';
 import { isTerminal } from '../../studio/src/store/reducer';
@@ -35,6 +37,8 @@ export interface TuiLine {
   /** First line of the picked option on screen, and how many of its lines were shown. */
   scroll?: number;
   seen?: number;
+  /** The Enterprise summary replaces the plan and thread panes (R-5E14). */
+  enterprise?: boolean;
 }
 
 export const EMPTY_LINE: TuiLine = { mode: 'request', text: '', diff: false };
@@ -199,6 +203,20 @@ function grade(g: 'good' | 'bad'): void {
   void gradeNode(run.runId, nodeId, g, '');
 }
 
+/** Ctrl+E: the Enterprise summary, loaded the first time it is shown. */
+function toggleEnterprise(line: TuiLine): TuiLine {
+  const on = !line.enterprise;
+  if (on && enterprise.getState().ui.status === 'idle') void loadSnapshot();
+  return { ...line, enterprise: on, diff: false };
+}
+
+/** Ctrl+X stops the run, or everything in the Enterprise summary (one key, Charter §2). */
+function cancel(a: Action, line: TuiLine): TuiLine {
+  if (line.enterprise) void kill();
+  else runControl(a);
+  return line;
+}
+
 /** Runs one key's action on the shared store; returns the new input line. */
 export function perform(a: Action, line: TuiLine, exit: () => void): TuiLine {
   switch (a.kind) {
@@ -233,6 +251,13 @@ export function perform(a: Action, line: TuiLine, exit: () => void): TuiLine {
     case 'grade':
       grade(a.grade);
       return line;
+    case 'enterprise':
+      return toggleEnterprise(line);
+    case 'unkill':
+      if (line.enterprise) void unkill();
+      return line;
+    case 'cancel':
+      return cancel(a, line);
     default:
       runControl(a);
       return line;

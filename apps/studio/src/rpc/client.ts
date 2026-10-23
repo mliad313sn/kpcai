@@ -115,6 +115,18 @@ export class RpcClient {
     return checked.value;
   }
 
+  /**
+   * A method the kernel's protocol module does not list (`mcp.status`, `mcp.approve`): the
+   * caller validates params and the result with its own schemas (rpc/raw.ts).
+   */
+  request(
+    method: string,
+    params: unknown,
+    timeoutMs = this.opts.requestTimeoutMs ?? 30_000,
+  ): Promise<unknown> {
+    return this.transmit(method, params, timeoutMs);
+  }
+
   private send<M extends MethodName>(
     method: M,
     params: Params<M>,
@@ -122,6 +134,10 @@ export class RpcClient {
   ): Promise<unknown> {
     const checked = parseParams(method, params);
     if (!checked.ok) return Promise.reject(new RpcError('invalid_params', checked.error));
+    return this.transmit(method, checked.value, timeoutMs);
+  }
+
+  private transmit(method: string, params: unknown, timeoutMs: number): Promise<unknown> {
     const ws = this.ws;
     if (!ws || ws.readyState !== 1)
       return Promise.reject(new RpcError('disconnected', 'not connected to the kernel'));
@@ -132,7 +148,7 @@ export class RpcClient {
         reject(new RpcError('timeout', `${method} timed out after ${timeoutMs} ms`));
       }, timeoutMs);
       this.pending.set(id, { resolve, reject, timer });
-      ws.send(JSON.stringify({ jsonrpc: '2.0', id, method, params: checked.value }));
+      ws.send(JSON.stringify({ jsonrpc: '2.0', id, method, params }));
     });
   }
 

@@ -45,6 +45,12 @@
     },
     {
       "path": "../../packages/learning"
+    },
+    {
+      "path": "../../packages/program"
+    },
+    {
+      "path": "../../packages/enterprise"
     }
   ]
 }

@@ -6,7 +6,9 @@
  * Esc, Enter — is the default No. A dispute (R-405) first takes a number to pick an
  * option; ] and [ (or the arrow and page keys) scroll the picked option, y then settles it
  * with that option once it was read to the end, anything else rejects (fail closed). A
- * memory proposal (ADR-0027) also takes r to reject it; No leaves it pending.
+ * memory proposal (ADR-0027) also takes r to reject it; No leaves it pending. Ctrl+E shows
+ * the Enterprise summary (R-5E14), where Ctrl+X stops everything and Ctrl+U allows work
+ * again.
  */
 export type Action =
   | { kind: 'type'; text: string }
@@ -27,6 +29,8 @@ export type Action =
   | { kind: 'choose'; index: number }
   | { kind: 'scroll'; pages: 1 | -1 }
   | { kind: 'grade'; grade: 'good' | 'bad' }
+  | { kind: 'enterprise' }
+  | { kind: 'unkill' }
   | { kind: 'none' };
 
 export interface KeyInfo {
@@ -54,6 +58,8 @@ const CTRL: Record<string, Action['kind']> = {
   t: 'redirect',
   q: 'quit',
   c: 'quit',
+  e: 'enterprise',
+  u: 'unkill',
 };
 
 /** What a confirmation is about: plain yes/no, a dispute (options), a memory proposal. */

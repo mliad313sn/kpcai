@@ -14,12 +14,13 @@
     "src",
     "vite.config.ts",
     "../studio/src/connection.ts",
+    "../studio/src/enterprise/*.ts",
     "../studio/src/i18n/*.ts",
     "../studio/src/rpc/*.ts",
     "../studio/src/store/*.ts",
     "../studio/src/test-helpers/*.ts"
   ],
-  "exclude": ["../studio/src/**/*.test.ts"],
+  "exclude": ["../studio/src/**/*.test.ts", "../studio/src/**/*.test.tsx"],
   "references": [
     {
       "path": "../../packages/kernel"

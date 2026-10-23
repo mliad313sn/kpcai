@@ -213,6 +213,8 @@ export interface PlanView {
   memory?: MemorySummary;
   /** Set when this plan is a fork of a past run: it starts with `run.fork`. */
   fork?: ForkPlanView;
+  /** Options this plan was made with when they differ from the defaults (a ticket's skill). */
+  options?: RunOptions;
 }
 
 export interface ConfirmView {
@@ -272,7 +274,18 @@ export interface LogLine {
 
 export type Zone = 'explorer' | 'agents' | 'thread';
 export type Tab =
-  'conversation' | 'diff' | 'artifacts' | 'runs' | 'memory' | 'evidence' | 'terminal' | 'files';
+  | 'conversation'
+  | 'diff'
+  | 'artifacts'
+  | 'runs'
+  | 'memory'
+  | 'evidence'
+  | 'tools'
+  | 'terminal'
+  | 'files';
+
+/** The run console, or the Enterprise view of programs and seats (R-5E10). */
+export type View = 'workspace' | 'enterprise';
 
 export interface Prefs {
   theme: 'system' | 'dark' | 'light';
@@ -318,6 +331,7 @@ export interface StudioState {
   /** Polite live-region text; `seq` changes so a repeated message is re-announced. */
   announcement: { text: string; seq: number };
   tab: Tab;
+  view: View;
   selectedNodeId?: string;
   paletteOpen: boolean;
   /** Output of the last `/` command (stats, tools, help), shown as plain text. */
