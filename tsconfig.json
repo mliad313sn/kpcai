@@ -1,0 +1,9 @@
+{
+  "files": [],
+  "references": [
+    { "path": "packages/core" },
+    { "path": "packages/journal" },
+    { "path": "packages/providers" },
+    { "path": "apps/cli" }
+  ]
+}

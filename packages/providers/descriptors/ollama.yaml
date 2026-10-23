@@ -1,0 +1,15 @@
+# Local models served by Ollama. Models are discovered at runtime (GET /api/tags).
+id: ollama
+name: Ollama (local)
+kind: local
+adapter: ollama
+baseUrl: http://127.0.0.1:11434
+baseUrlEnv: OLLAMA_HOST
+jurisdiction: local
+retention: 'stays on this machine'
+discoverModels: true
+defaultLocalCard:
+  contextWindow: 8192
+  maxOutput: 4096
+  modalities: [text, code]
+  price: { inputPerMTok: 0, outputPerMTok: 0 }

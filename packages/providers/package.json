@@ -1,0 +1,25 @@
+{
+  "name": "@kernelpai/providers",
+  "version": "0.0.1",
+  "private": true,
+  "license": "UNLICENSED",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "descriptors"
+  ],
+  "dependencies": {
+    "@kernelpai/core": "workspace:*",
+    "@anthropic-ai/sdk": "^1.1.0",
+    "yaml": "^2.8.0",
+    "zod": "^4.1.0"
+  }
+}

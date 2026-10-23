@@ -1,0 +1,15 @@
+# Deterministic offline provider for demos and tests. Never calls the network.
+id: mock
+name: Mock (offline)
+kind: test
+adapter: mock
+jurisdiction: local
+retention: 'stays on this machine'
+models:
+  - id: echo
+    displayName: Echo
+    contextWindow: 32000
+    maxOutput: 4096
+    modalities: [text, code]
+    price: { inputPerMTok: 1, outputPerMTok: 2 }
+    strengths: [writing]

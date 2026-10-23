@@ -1,0 +1,123 @@
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
+import { afterEach, describe, expect, it } from 'vitest';
+import { Journal } from './journal.js';
+import { sessionToMarkdown } from './markdown.js';
+import { GENESIS_HASH } from './hash.js';
+
+const open: Journal[] = [];
+function fresh(path = ':memory:'): Journal {
+  let t = Date.parse('2026-10-23T10:00:00Z');
+  const j = Journal.open(path, { now: () => new Date((t += 1000)) });
+  open.push(j);
+  return j;
+}
+afterEach(() => {
+  while (open.length) open.pop()?.close();
+});
+
+describe('Journal', () => {
+  it('appends hash-chained events and lists them per session', () => {
+    const j = fresh();
+    const s = j.startSession('first', '/repo');
+    const a = j.append({
+      sessionId: s,
+      type: 'routing',
+      provider: 'mock',
+      model: 'echo',
+      payload: { reason: 'r' },
+    });
+    const b = j.append({ sessionId: s, type: 'response', costUsd: 0.5, payload: { text: 'hi' } });
+    expect(a.prevHash).toBe(GENESIS_HASH);
+    expect(b.prevHash).toBe(a.hash);
+    expect(b.seq).toBe(a.seq + 1);
+    expect(j.events({ sessionId: s }).map((e) => e.type)).toEqual(['routing', 'response']);
+    const [row] = j.sessions();
+    expect(row).toMatchObject({ id: s, title: 'first', eventCount: 2, costUsd: 0.5 });
+    expect(j.findSession(s.slice(0, 6))?.id).toBe(s);
+    expect(j.verify()).toEqual({ ok: true, checked: 2 });
+  });
+
+  it('returns the most recent events across sessions in order', () => {
+    const j = fresh();
+    const s1 = j.startSession('a', '/');
+    const s2 = j.startSession('b', '/');
+    j.append({ sessionId: s1, type: 'call', payload: {} });
+    j.append({ sessionId: s2, type: 'call', payload: {} });
+    j.append({ sessionId: s2, type: 'error', payload: {} });
+    const last2 = j.events({ limit: 2 });
+    expect(last2.map((e) => e.sessionId)).toEqual([s2, s2]);
+    expect(last2[0]!.seq).toBeLessThan(last2[1]!.seq);
+    expect(j.sessions().map((s) => s.id)).toEqual([s2, s1]);
+  });
+
+  it('rejects unknown event types and unknown sessions', () => {
+    const j = fresh();
+    // @ts-expect-error deliberate bad type
+    expect(() => j.append({ sessionId: 'x', type: 'bogus', payload: {} })).toThrow(
+      /Unknown event type/,
+    );
+    expect(() => j.append({ sessionId: 'missing', type: 'call', payload: {} })).toThrow();
+  });
+
+  it('detects tampering with a stored event', () => {
+    const path = join(mkdtempSync(join(tmpdir(), 'kpai-')), 'nested', 'j.db');
+    const j = fresh(path);
+    const s = j.startSession('t', '/');
+    j.append({ sessionId: s, type: 'call', payload: { n: 1 } });
+    const victim = j.append({
+      sessionId: s,
+      type: 'response',
+      costUsd: 0.01,
+      payload: { text: 'real' },
+    });
+    j.append({ sessionId: s, type: 'call', payload: { n: 3 } });
+    const raw = new DatabaseSync(path);
+    raw.prepare('UPDATE events SET payload = ? WHERE seq = ?').run('{"text":"forged"}', victim.seq);
+    raw.close();
+    expect(j.verify()).toEqual({ ok: false, checked: 1, brokenAt: victim.seq });
+  });
+
+  it('reopens an existing file without re-running migrations', () => {
+    const path = join(mkdtempSync(join(tmpdir(), 'kpai-')), 'j.db');
+    const j1 = Journal.open(path);
+    j1.append({ sessionId: j1.startSession('x', '/'), type: 'call', payload: {} });
+    j1.close();
+    const j2 = fresh(path);
+    expect(j2.events()).toHaveLength(1);
+    expect(j2.verify().ok).toBe(true);
+  });
+});
+
+describe('sessionToMarkdown', () => {
+  it('renders a readable timeline and the answer', () => {
+    const j = fresh();
+    const s = j.startSession('md', '/repo');
+    j.append({
+      sessionId: s,
+      type: 'routing',
+      provider: 'p',
+      model: 'm',
+      payload: { reason: 'why' },
+    });
+    j.append({ sessionId: s, type: 'call', payload: { estimatedInputTokens: 12 } });
+    j.append({ sessionId: s, type: 'intervention', payload: { action: 'cancel' } });
+    j.append({ sessionId: s, type: 'error', payload: { kind: 'auth', message: 'no key' } });
+    j.append({ sessionId: s, type: 'tool', payload: {} });
+    j.append({
+      sessionId: s,
+      type: 'response',
+      costUsd: 0.25,
+      payload: { text: 'The answer.', outputTokens: 3, stopReason: 'end' },
+    });
+    const md = sessionToMarkdown(j.findSession(s)!, j.events({ sessionId: s }));
+    expect(md).toContain('routed to `p/m` — why');
+    expect(md).toContain('call sent (~12 input tokens)');
+    expect(md).toContain('human: cancel');
+    expect(md).toContain('error (auth): no key');
+    expect(md).toContain('response: 3 output tokens, stop=end · $0.250000');
+    expect(md).toMatch(/## Answer\n\nThe answer\.\n$/);
+  });
+});
