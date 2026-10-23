@@ -52,6 +52,10 @@ describe('replay (R-403, P4-F5)', () => {
     ).toBeTruthy();
     expect(within(box).getByText('Providers excluded (your setting): xai.')).toBeTruthy();
     expect(within(box).getByText('Routing profile: Economy.')).toBeTruthy();
+    // P4-R3: a diversity waiver kept from the original run is shown before anything runs.
+    expect(
+      within(box).getByText(/^Provider diversity waived \(as in the original run\)/),
+    ).toBeTruthy();
     expect(kernel!.calls('run.replay')).toHaveLength(0);
     // Changing the choice drops the estimate: what runs is what was shown.
     await user.selectOptions(within(dialog).getByLabelText('Protocol'), 'debate');

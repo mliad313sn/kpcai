@@ -5,7 +5,7 @@ import type { Env, Money } from './env.js';
 import type { Artifact, RefusedArtifact } from './artifacts.js';
 import type { Patch } from './patches.js';
 import type { SelectedPacks } from './packs.js';
-import type { LoadedMemory } from './memory.js';
+import type { LoadedMemory, TaintSeed } from './memory.js';
 import type { LoadedRules } from './rules.js';
 import type { ScopeCheck } from './scope.js';
 import type { ExplainedEstimate, KernelEvent } from './routing-info.js';
@@ -58,6 +58,11 @@ export interface Plan {
   rules: LoadedRules;
   /** Memory every node gets (ADR-0027); absent on plans made without it. */
   memory?: LoadedMemory;
+  /**
+   * A fork's or replay's recorded nodes whose output may quote local-only facts (P4-R1):
+   * the nodes run after them are held on local providers.
+   */
+  taint?: TaintSeed;
   /** Domain packs for the workspace, why, and the zones in force with origin (D-020). */
   packs: SelectedPacks;
   /** The authorised scope selected packs require (WI-S1-03). */

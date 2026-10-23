@@ -124,7 +124,13 @@ export const REPLAY_PLAN = {
   planId: 'rpl1',
   runId: 'r1',
   nodeId: 'impl',
-  routing: { localOnly: true, exclude: ['openai', 'xai'], profile: 'economy', allowTest: false },
+  routing: {
+    localOnly: true,
+    exclude: ['openai', 'xai'],
+    profile: 'economy',
+    allowTest: false,
+    allowSameProvider: true,
+  },
   estimate: {
     nodes: [],
     minUsd: 0.01,

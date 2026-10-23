@@ -17,6 +17,7 @@ import { candidates as scanCandidates, type ProviderRegistry } from '@kernelpai/
 import { CompetenceStore } from '@kernelpai/learning';
 import { CompetenceRouter } from '@kernelpai/router';
 import { buildRegistry, routingProfile, type Env } from './env.js';
+import { KernelError } from './errors.js';
 import { reviewPolicyOf } from './review-config.js';
 import { rulesResolver } from './rules.js';
 import type { Pack } from '@kernelpai/packs';
@@ -59,6 +60,7 @@ export function routingRecord(env: Env, o: GraphOptions): RunRouting {
     ...(o.exclude?.length ? { exclude: [...o.exclude] } : {}),
     ...(profile ? { profile } : {}),
     allowTest: o.allowTest === true,
+    ...(o.allowSameProvider === true ? { allowSameProvider: true } : {}),
   };
 }
 
@@ -67,8 +69,15 @@ export function routingRecord(env: Env, o: GraphOptions): RunRouting {
  * local-only stays on, excluded providers stay excluded, test providers stay refused when
  * the run refused them; the run's profile applies unless one is given. Stricter options
  * are kept. A run journaled before P4-F2 has no record: the options are used as given.
+ * `allowSameProvider` is refused unless the run had it (P4-R3; an unrecorded run did not).
  */
 export function routingFloor(o: GraphOptions, r: RunRouting | undefined): GraphOptions {
+  // Provider diversity (principle 2) is waived only if the run waived it (P4-R3).
+  if (o.allowSameProvider === true && r?.allowSameProvider !== true)
+    throw new KernelError(
+      'refused',
+      'allowSameProvider is refused: the original run kept provider diversity (principle 2)',
+    );
   if (!r) return o;
   const out: GraphOptions = { ...o };
   if (r.localOnly) out.localOnly = true;

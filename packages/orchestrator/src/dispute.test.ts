@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { DisputeQuestion } from './dispute.js';
+import { replayNode } from './replay.js';
 import { readRun } from './run-journal.js';
 import { GraphRunner } from './runner.js';
 import {
@@ -63,6 +64,22 @@ describe('disagreement surfaced (R-405)', () => {
     expect(r.disputes['n1']).toMatchObject({ choice: 'choice-2', by: 'human' });
     expect(asked[0]).toMatchObject({ runId: 'v-2', nodeId: 'n1', kind: 'vote' });
     expect(asked[0]?.positions.map((p) => p.role)).toEqual(['voter', 'voter', 'voter']);
+  });
+
+  it("a replay's question carries the replay id, so cancelling the replay closes it (P4-R2)", async () => {
+    const asked: DisputeQuestion[] = [];
+    const s = setup(three(), { voters: 3 });
+    await new GraphRunner(s.options).run(graph([voteNode]), { runId: 'v-3' });
+    const dispute = (q: DisputeQuestion) => (asked.push(q), Promise.resolve(null));
+    const deps = { ...s.options, dispute, replayId: 'replay-3' };
+    const r = await replayNode(s.journal, 'v-3', 'n1', {}, deps);
+    expect(r.replay.dispute?.by).toBe('none');
+    expect(asked).toHaveLength(1);
+    expect(asked[0]).toMatchObject({ runId: 'replay-3', replayOf: 'v-3', nodeId: 'n1' });
+    // The journal still files the dispute under the run whose node was replayed.
+    const notes = s.journal.events().filter(isNote);
+    const unresolved = notes.filter((e) => e.payload['action'] === 'dispute unresolved');
+    expect(unresolved.at(-1)?.payload).toMatchObject({ runId: 'v-3' });
   });
 
   it('a rejection, an unknown option or a throw keeps the node failed', async () => {

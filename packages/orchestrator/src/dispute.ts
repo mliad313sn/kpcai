@@ -34,7 +34,10 @@ export interface Dispute {
 
 /** What the human is asked (the kernel maps it to its confirm channel). */
 export interface DisputeQuestion extends Dispute {
+  /** The run asking; in a replay, the replay's id (cancelling it closes the question). */
   runId: string;
+  /** In a replay: the run whose node is replayed (P4-R2). */
+  replayOf?: string;
   nodeId: string;
   title: string;
 }
@@ -81,6 +84,8 @@ export function isDisputed(r: ProtocolResult): r is DisputedResult {
 export interface DisputeContext {
   steps: StepRunner;
   runId: string;
+  /** Set in a replay: the question carries it as its run id (P4-R2). */
+  replayId?: string | undefined;
   node: PlannedNode;
   signal?: AbortSignal | undefined;
 }
@@ -152,7 +157,7 @@ async function ask(
   if (c.signal?.aborted) return { choice: null, why: 'cancelled' };
   const question: DisputeQuestion = {
     ...d,
-    runId: c.runId,
+    ...(c.replayId !== undefined ? { runId: c.replayId, replayOf: c.runId } : { runId: c.runId }),
     nodeId: c.node.id,
     title: c.node.title,
   };

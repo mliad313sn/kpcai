@@ -19,6 +19,8 @@ export const enReview = {
   'replay.routingExcludeYours': 'Providers excluded (your setting): {providers}.',
   'replay.routingOpen': 'No provider restriction from the original run.',
   'replay.routingProfile': 'Routing profile: {profile}.',
+  'replay.routingSameProvider':
+    'Provider diversity waived (as in the original run): a critic may be the same provider as the author.',
   'replay.scopeProblem': 'Scope problem, the replay cannot run: {problem}',
   'replay.cancel': 'Cancel replay',
   'replay.cancelling': 'Cancelling the replay of #{id}…',

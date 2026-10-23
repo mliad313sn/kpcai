@@ -84,7 +84,8 @@ Status: proposed by S1, for the PO.
   read from `.kpstudio/scope.yaml` is confirmed by the human first, as for a run. A refusal
   is journaled as `replay refused` with the run and replay ids, and no provider is called.
   The node's `authorisedScope` boundary is stamped afresh.
-- **Consequence:** confirmations raised by a replay carry the replay id as `runId`. Dispute
-  questions inside a replay still carry the original run's id, so cancelling a replay does
-  not close an open dispute dialog. That dialog then times out and fails closed. This is
-  backlogged.
+- **Consequence:** confirmations raised by a replay carry the replay id as `runId`, dispute
+  questions included (P4-R2: `runId` is the replay id, `replayOf` the original run). So
+  cancelling a replay sends `confirm.closed` for an open dispute dialog too, and the
+  dispute fails closed at once. The journal still files the dispute events under the
+  original run id, between that replay's `replay started` and `replay recorded`.

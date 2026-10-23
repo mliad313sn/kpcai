@@ -78,13 +78,12 @@ R-306 treatment of repository content.
    non-local provider contains one verbatim, or any 24-character run of one, and the run's
    journal holds none of them either. A tainted node and its dependents never reach a
    non-local provider through routing. The same wiring (`runDeps`) serves runs, forks and
-   replays. A replay carries no memory of its own: it reruns the recorded messages, which
-   hold only the cloud version, so it gives no local-only fact to anyone.
+   replays. A replay or fork reruns the recorded messages (cloud version only) and is given
+   today's memory for the local swap, the redactor and the journal wrapper; it starts from
+   the taint of the recorded nodes it reads (addendum P4-R1).
    **Not guaranteed:** a paraphrase, a translation, an encoding, or a quote shorter than
    24 characters (for example a host name alone) in a local model's output. Only the taint
-   stops those, and it covers what the run routes. Outputs a fork reuses from its parent run
-   are not re-tainted: they reach the fork as recorded in the journal, so they are
-   redacted. Patches, artifacts, run results and the console stay on this machine and are
+   stops those, and it covers what the run routes. Patches, artifacts, run results and the console stay on this machine and are
    not redacted.
 
 7. **Proposals.** A node may end with a ` ```memory ` block of `- [project|user|session,
@@ -110,6 +109,16 @@ local-only] fact` items. The kernel reads only successful nodes of runs that wer
      values, cleaning and the size cap. Refused facts are counted in the plan's problems.
    - Repository facts are redacted with the environment's secret values.
    - Zone mentions are also matched on words cut at `=:@`, percent-decoded and lower-cased.
+
+   **Addendum P4-R1 (replay and fork).** A tainted node's `node recorded` event carries
+   `localTaint: true`. A replay or fork reads it, and, once there is something to protect
+   (a marked record, or local-only facts today), also counts as tainted every recorded node
+   a local or no-longer-known provider contributed to (journals from before the mark). A
+   fork seeds the taint with the tainted nodes it reuses, so the nodes it reruns after them
+   stay local or fail closed. A replay whose recorded input is tainted is planned and run
+   with `localOnly` (said in the plan), or is refused as unroutable when no local provider
+   is left. The fork's estimate still prices tainted reruns on routed (possibly cloud)
+   models; the run itself is held local.
 
 ## Consequences
 

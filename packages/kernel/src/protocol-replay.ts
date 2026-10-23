@@ -50,6 +50,8 @@ export function replayMethods<
           exclude: z.array(z.string()).optional(),
           profile: z.string().optional(),
           allowTest: z.boolean().optional(),
+          /** Provider diversity waived, as the original run did (P4-R3). */
+          allowSameProvider: z.boolean().optional(),
         }),
         estimate: EstimateSchema,
         /** Authorised scope status with the current packs; a replay is refused while it has problems. */

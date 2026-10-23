@@ -40,7 +40,10 @@ export async function execNode(
   let dispute: DisputeRecord | undefined;
   if (isDisputed(result)) {
     const node = run.node as PlannedNode;
-    const settled = await settleDispute({ steps, runId, node, signal: run.signal }, result);
+    // A replay's question carries the replay's id: cancelling the replay closes it (P4-R2).
+    const replayId = typeof run.tags?.['replayId'] === 'string' ? run.tags['replayId'] : undefined;
+    const c = { steps, runId, replayId, node, signal: run.signal };
+    const settled = await settleDispute(c, result);
     result = settled.result;
     dispute = settled.record;
   }

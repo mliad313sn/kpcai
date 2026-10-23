@@ -48,6 +48,8 @@ export interface RunRouting {
   profile?: string;
   /** True when `kind: test` providers were allowed. */
   allowTest?: boolean;
+  /** True when the run waived provider diversity (principle 2); else absent (P4-R3). */
+  allowSameProvider?: boolean;
 }
 
 /** A finished node as recorded: its inputs, its result and how long it took. */
@@ -73,6 +75,12 @@ export interface RecordedNode {
   /** For a reused node: the parent run's record event it was taken from. */
   reusedFrom?: string;
   dispute?: DisputeRecord;
+  /**
+   * Set by the kernel when the node's output may quote local-only memory facts (it, or a
+   * node it depends on, was served by a local provider while such facts existed: ADR-0027
+   * §6). A replay or fork keeps it on local providers (P4-R1).
+   */
+  localTaint?: boolean;
 }
 
 export interface RecordedReplay {
@@ -127,6 +135,7 @@ export function toRouting(x: unknown): RunRouting | undefined {
     ...(exclude.length > 0 ? { exclude } : {}),
     ...(typeof x['profile'] === 'string' ? { profile: x['profile'] } : {}),
     ...(typeof x['allowTest'] === 'boolean' ? { allowTest: x['allowTest'] } : {}),
+    ...(x['allowSameProvider'] === true ? { allowSameProvider: true } : {}),
   };
 }
 
@@ -208,6 +217,7 @@ function toNode(e: JournalEvent): RecordedNode | undefined {
     ...(p['reused'] === true ? { reused: true } : {}),
     ...(typeof p['reusedFrom'] === 'string' ? { reusedFrom: p['reusedFrom'] } : {}),
     ...(isObj(p['dispute']) ? { dispute: p['dispute'] as unknown as DisputeRecord } : {}),
+    ...(p['localTaint'] === true ? { localTaint: true } : {}),
   };
 }
 

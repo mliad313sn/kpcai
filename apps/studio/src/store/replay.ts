@@ -28,7 +28,13 @@ export interface ReplayPlanView {
   planId: string;
   runId: string;
   nodeId: string;
-  routing: { localOnly?: boolean; exclude?: string[]; profile?: string };
+  routing: {
+    localOnly?: boolean;
+    exclude?: string[];
+    profile?: string;
+    /** Provider diversity waived, as the original run did (P4-R3). */
+    allowSameProvider?: boolean;
+  };
   estimate: GraphEstimate;
   /** Authorised scope problems: the kernel refuses the replay while there are any. */
   scopeProblems: string[];
@@ -58,7 +64,12 @@ function readPlan(raw: {
   planId: string;
   runId: string;
   nodeId: string;
-  routing: { localOnly?: boolean; exclude?: string[]; profile?: string };
+  routing: {
+    localOnly?: boolean;
+    exclude?: string[];
+    profile?: string;
+    allowSameProvider?: boolean;
+  };
   estimate: unknown;
   scope?: { problems: string[] } | undefined;
 }): ReplayPlanView {
@@ -73,6 +84,7 @@ function readPlan(raw: {
       ...(r.localOnly ? { localOnly: true } : {}),
       ...(r.exclude?.length ? { exclude: r.exclude } : {}),
       ...(r.profile ? { profile: r.profile } : {}),
+      ...(r.allowSameProvider === true ? { allowSameProvider: true } : {}),
     },
     estimate,
     scopeProblems: raw.scope?.problems ?? [],
@@ -108,6 +120,7 @@ export function routingLines(plan: ReplayPlanView, mine: RunOptions): string[] {
     const key = PROFILE[r.profile];
     lines.push(t('replay.routingProfile', { profile: key ? t(key) : r.profile }));
   }
+  if (r.allowSameProvider) lines.push(t('replay.routingSameProvider'));
   return lines;
 }
 

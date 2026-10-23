@@ -138,6 +138,27 @@ describe('review findings over the protocol (D-024)', () => {
     const gone = await c.call('run.cancel', { runId: plan.planId });
     expect(gone.error?.code).toBe(-32004);
   });
+  it('P4-R3: run.replayPlan refuses a diversity waiver the run had not, and shows one it had', async () => {
+    const { c } = await boot();
+    const kept = await runToEnd(c, 'run.start', { request: REQ, options: { isolated: false } });
+    const waive = { allowSameProvider: true };
+    const refused = await c.call('run.replayPlan', {
+      runId: kept.runId,
+      nodeId: 'implementation',
+      options: waive,
+    });
+    expect(refused.error?.message).toMatch(/allowSameProvider is refused/);
+    const waived = await runToEnd(c, 'run.start', {
+      request: REQ,
+      options: { isolated: false, ...waive },
+    });
+    const plan = (await ok(c, 'run.replayPlan', {
+      runId: waived.runId,
+      nodeId: 'implementation',
+      options: waive,
+    })) as { routing: { allowSameProvider?: boolean } };
+    expect(plan.routing.allowSameProvider).toBe(true);
+  });
 });
 
 describe('stats.productivity (R-406)', () => {

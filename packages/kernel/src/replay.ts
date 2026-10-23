@@ -7,7 +7,10 @@
  * A fork is planned here (its estimate covers only the nodes that run again) and started
  * like any plan. Both hold the original run's routing constraints as a floor (P4-F2) and
  * only accept a run of this project (P4-F4). A fork's graph already carries the rules and
- * memory it recorded: it is never given them again.
+ * memory it recorded: it is never given them again. Both get today's memory for the local
+ * swap, the redactor and the journal wrapper, and start from the taint of the recorded
+ * nodes they read: what runs after a node that may quote local-only facts stays on local
+ * providers, or fails closed (P4-R1, ADR-0027 §6).
  */
 import { randomUUID } from 'node:crypto';
 import { realpath } from 'node:fs/promises';
@@ -30,12 +33,20 @@ import { capCheck } from './cap-check.js';
 import type { Choose } from './confirm.js';
 import { money, type Money } from './env.js';
 import { KernelError } from './errors.js';
+import type { LoadedMemory, TaintSeed } from './memory.js';
 import { noPacks, selectPacks, type SelectedPacks } from './packs.js';
 import { estimateDeps } from './planning.js';
 import { explainEstimate, type ExplainedEstimate } from './routing-info.js';
 import { runFlags } from './run-record.js';
 import { NO_RULES } from './rules.js';
 import { runDeps } from './run-deps.js';
+import {
+  currentMemory,
+  forkSeed,
+  recordedTaint,
+  replaySeed,
+  taintedInput,
+} from './replay-taint.js';
 import { checkScope, type ScopeCheck } from './scope.js';
 import {
   graphSetup,
@@ -81,6 +92,10 @@ export interface ReplayPlan {
   scope: ScopeCheck;
   /** Likely and cap (the band's top) of the replayed node (D-021). */
   estimate: ExplainedEstimate;
+  /** Today's memory: local swap, redaction and journal wrapper (P4-R1). */
+  memory: LoadedMemory;
+  /** Recorded nodes upstream that may quote local-only facts (P4-R1). */
+  taint: TaintSeed;
 }
 
 /** Run-time flags of a replay; waivers come from the plan, never from here (P3-F6). */
@@ -174,13 +189,12 @@ export class KernelReplays {
     const journal = this.h.journal();
     const { cwd, env } = this.h.gateHost;
     const run = await known(journal, cwd, runId, nodeId);
-    const o = routingFloor(given, run.routing);
-    const setup = await setupOf(this.h, o, false);
+    const packs = await packsOf(this.h);
+    const { o, setup, memory, taint } = await this.inputs(run, nodeId, given, packs);
     const graph = replayGraph(run, nodeId, edit, setup);
     const deps = estimateDeps(setup, o, journal);
     const est = estimateGraph(graph, deps);
     if (!est.complete) throw new KernelError('unroutable', est.problems.join('; '));
-    const packs = await packsOf(this.h);
     const plan: ReplayPlan = {
       planId: randomUUID(),
       runId,
@@ -192,12 +206,41 @@ export class KernelReplays {
       setup,
       m: money(env),
       packs,
+      memory,
+      taint,
       scope: await checkScope(packs.selected, cwd, o.scope, graph.nodes),
       estimate: explainEstimate(est, deps.router),
     };
     this.plans.set(plan.planId, plan);
     while (this.plans.size > KEEP_PLANS) this.plans.delete(this.plans.keys().next().value!);
     return plan;
+  }
+
+  /**
+   * A replay's options (the run's routing floor), setup, memory and taint. A replay whose
+   * recorded input may quote local-only facts is held on local providers (P4-R1).
+   */
+  private async inputs(
+    run: RecordedRun,
+    nodeId: string,
+    given: GraphOptions,
+    packs: SelectedPacks,
+  ) {
+    const host = this.h.gateHost;
+    let o = routingFloor(given, run.routing);
+    let setup = await setupOf(this.h, o, false);
+    const memory = await currentMemory(host, packs, run.sessionId);
+    const taint = replaySeed(run, nodeId, recordedTaint(run, setup, memory));
+    const from = taintedInput(taint, nodeId);
+    if (from !== undefined && o.localOnly !== true) {
+      host.say(
+        `  – replay of ${nodeId} held on local providers: node ${from} may carry ` +
+          'local-only memory facts (ADR-0027 §6)\n',
+      );
+      o = { ...o, localOnly: true };
+      setup = await setupOf(this.h, o, false);
+    }
+    return { o, setup, memory, taint };
   }
 
   /** Starts a planned replay once; `done` settles with the side-by-side result. */
@@ -304,9 +347,11 @@ export class KernelReplays {
       return invalid(err);
     }
     const packs = await packsOf(this.h);
+    const sessionId = this.h.session(`fork of ${runId.slice(0, 8)} at ${nodeId}`);
+    const memory = await currentMemory(this.h.gateHost, packs, sessionId);
     return {
       planId: randomUUID(),
-      sessionId: this.h.session(`fork of ${runId.slice(0, 8)} at ${nodeId}`),
+      sessionId,
       request: run.graph.request,
       graph: fork.graph,
       estimate: explainEstimate(fork.estimate, deps.router),
@@ -314,6 +359,8 @@ export class KernelReplays {
       setup,
       m: money(env),
       rules: NO_RULES,
+      memory,
+      taint: forkSeed(run, recordedTaint(run, setup, memory), fork.rerun),
       packs,
       scope: await checkScope(packs.selected, cwd, o.scope, fork.graph.nodes),
       fork,

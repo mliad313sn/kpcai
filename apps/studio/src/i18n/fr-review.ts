@@ -23,6 +23,8 @@ export const frReview: Record<keyof typeof enReview, Catalogue[keyof Catalogue]>
   'replay.routingExcludeYours': 'Fournisseurs exclus (votre réglage) : {providers}.',
   'replay.routingOpen': 'Aucune restriction de fournisseur héritée de l’exécution d’origine.',
   'replay.routingProfile': 'Profil de routage : {profile}.',
+  'replay.routingSameProvider':
+    'Diversité des fournisseurs levée (comme dans l’exécution d’origine) : un critique peut être du même fournisseur que l’auteur.',
   'replay.scopeProblem': 'Problème de périmètre, le rejeu ne peut pas partir : {problem}',
   'replay.cancel': 'Annuler le rejeu',
   'replay.cancelling': 'Annulation du rejeu de #{id}…',

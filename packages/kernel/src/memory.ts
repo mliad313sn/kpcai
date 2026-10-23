@@ -11,6 +11,7 @@ import { join } from 'node:path';
 import type { ChatMessage, ChatRequest, ProviderAdapter } from '@kernelpai/core';
 import type { AdapterResolver } from '@kernelpai/executor';
 import type { Journal, JournalEventInput } from '@kernelpai/journal';
+import { NODE_RECORDED } from '@kernelpai/orchestrator';
 import {
   DEFAULT_MEMORY_TOKENS,
   LocalTaint,
@@ -319,7 +320,7 @@ function redactingAdapter(inner: ProviderAdapter, redact: (t: string) => string)
   };
 }
 
-function hasLocalOnly(m: LoadedMemory): boolean {
+export function hasLocalOnly(m: LoadedMemory): boolean {
   return (m.localOnlyTexts?.length ?? 0) > 0 || (m.cloud !== '' && m.cloud !== m.local);
 }
 
@@ -342,15 +343,29 @@ export function memoryResolver(resolve: AdapterResolver, m: LoadedMemory): Adapt
 }
 
 /**
+ * What a replay or fork knows before it starts (P4-R1): the recorded graph and the nodes
+ * whose recorded output may quote local-only facts. Seeded, they taint the nodes after them.
+ */
+export interface TaintSeed {
+  nodes: ConstructorParameters<typeof LocalTaint>[0];
+  ids: readonly string[];
+}
+
+/**
  * Taint (P4-F3): once local-only facts exist, a node one of whose calls went to a local
  * provider, and every node depending on it, keeps all later steps on local providers
- * (`nodeConstraints`), or fails closed with the reason.
+ * (`nodeConstraints`), or fails closed with the reason. A seed (P4-R1) marks recorded nodes
+ * tainted from the start, and keeps the taint on even if today's memory has no such fact.
  */
 export function localTaint(
   m: LoadedMemory,
   nodes: ConstructorParameters<typeof LocalTaint>[0],
+  seed?: TaintSeed,
 ): LocalTaint {
-  return new LocalTaint(nodes, hasLocalOnly(m));
+  const ids = seed?.ids ?? [];
+  const taint = new LocalTaint(seed?.nodes ?? nodes, hasLocalOnly(m) || ids.length > 0);
+  for (const id of ids) taint.observe(id, true);
+  return taint;
 }
 
 export function taintConstraint(
@@ -370,7 +385,8 @@ export function taintConstraint(
 }
 
 /**
- * The run's journal: calls to a local provider taint their node, and every payload has the
+ * The run's journal: calls to a local provider taint their node, a tainted node's record is
+ * marked `localTaint` (so its replays and forks know, P4-R1), and every payload has the
  * quotes of local-only facts withheld before it is written (P4-F3).
  */
 export function memoryJournal(
@@ -379,15 +395,22 @@ export function memoryJournal(
   taint: LocalTaint,
   isLocal: (provider: string) => boolean,
 ): Journal {
-  if (!hasLocalOnly(m)) return journal;
+  if (!taint.active) return journal;
   const redact = localOnlyRedactor(m.localOnlyTexts ?? []);
+  const mark = (input: JournalEventInput): JournalEventInput['payload'] =>
+    input.type === 'intervention' &&
+    input.payload['action'] === NODE_RECORDED &&
+    input.nodeId !== undefined &&
+    taint.source(input.nodeId) !== undefined
+      ? { ...input.payload, localTaint: true }
+      : input.payload;
   return new Proxy(journal, {
     get: (target, prop) => {
       if (prop === 'append') {
         return (input: JournalEventInput) => {
           if (input.type === 'call' && input.nodeId && input.provider)
             taint.observe(input.nodeId, isLocal(input.provider));
-          return target.append({ ...input, payload: redactDeep(input.payload, redact) });
+          return target.append({ ...input, payload: redactDeep(mark(input), redact) });
         };
       }
       const v: unknown = Reflect.get(target, prop, target);

@@ -239,6 +239,8 @@ async function replayPlanResult(
       ...(o.exclude?.length ? { exclude: o.exclude } : {}),
       ...(o.profile ? { profile: o.profile } : {}),
       allowTest: o.allowTest === true,
+      // Provider diversity waived: only when the original run waived it (P4-R3).
+      ...(o.allowSameProvider === true ? { allowSameProvider: true } : {}),
     },
     estimate: plan.estimate,
     scope: scopeSummary(plan.scope),

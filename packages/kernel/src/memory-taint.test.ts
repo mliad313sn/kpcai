@@ -195,7 +195,9 @@ describe('P4-F3: defence in depth', () => {
     expect(JSON.stringify(written)).not.toContain(MARKER);
     expect((j as unknown as { x: number }).x).toBe(1);
     const none = { ...m, local: m.cloud, localOnlyTexts: [] };
-    expect(memoryJournal(journal, none, taint, () => true)).toBe(journal);
+    // Nothing to protect (no local-only fact, no seeded taint): the journal as it is.
+    const idle = localTaint(none, [{ id: 'n', dependsOn: [] }]);
+    expect(memoryJournal(journal, none, idle, () => true)).toBe(journal);
   });
 });
 

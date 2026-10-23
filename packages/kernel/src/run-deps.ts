@@ -28,7 +28,7 @@ export interface DepsInput {
   gateHost: GateHost;
   choose: Choose;
   /** What the wiring reads of a plan (a replay builds just this). */
-  plan: Pick<Plan, 'sessionId' | 'graph' | 'setup' | 'm' | 'packs' | 'memory'> & {
+  plan: Pick<Plan, 'sessionId' | 'graph' | 'setup' | 'm' | 'packs' | 'memory' | 'taint'> & {
     estimate: { capUsd: number };
   };
   flags: GraphOptions;
@@ -119,9 +119,10 @@ export async function runDeps(i: DepsInput): Promise<RunDeps> {
   const sessionId = i.sessionId ?? p.sessionId;
   // Local-only memory (ADR-0027 §6, P4-F3): local providers get the facts; a node that saw
   // them, and its dependents, stay on local providers; every quote of one is withheld from
-  // non-local providers and from the journal.
+  // non-local providers and from the journal. A replay or fork starts from the taint of
+  // the recorded nodes it reads (P4-R1).
   const memory = p.memory ?? NO_MEMORY;
-  const taint = localTaint(memory, p.graph.nodes);
+  const taint = localTaint(memory, p.graph.nodes, p.taint);
   const isLocal = (provider: string): boolean => {
     try {
       return p.setup.registry.get(provider).descriptor.kind === 'local';
