@@ -14,7 +14,8 @@
   },
   "files": [
     "dist",
-    "descriptors"
+    "descriptors",
+    "agents"
   ],
   "dependencies": {
     "@ai-sdk/deepseek": "^3.0.72",

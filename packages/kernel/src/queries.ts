@@ -1,4 +1,5 @@
 /** Read-only questions a front end asks the kernel: providers, tools, journal, stats. */
+import { listExtensions, type ExtensionsSummary } from './extensions/load.js';
 import { metrics, type ExecutorMetrics } from '@kernelpai/executor';
 import {
   sessionToMarkdown,
@@ -105,6 +106,11 @@ export class Queries {
     } finally {
       await bus.close();
     }
+  }
+
+  /** Skills, named agents and hooks of the workspace (R-502): names, never bodies. */
+  extensions(): Promise<ExtensionsSummary> {
+    return listExtensions(this.host.env, this.host.cwd);
   }
 
   sessions(limit = 20): SessionRow[] {

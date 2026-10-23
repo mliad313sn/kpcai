@@ -3,6 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { LocalToolBus } from './bus.js';
+import { builtinTools } from './builtins/index.js';
 import { createToolBus } from './create.js';
 import {
   connectMcpServer,
@@ -59,7 +60,7 @@ describe('MCP helpers', () => {
         JSON.stringify({ servers: { t: { command: 'x' } } }),
       );
       expect(await loadMcpConfig(dir)).toEqual({
-        servers: { t: { command: 'x', args: [], env: {} } },
+        servers: { t: { command: 'x', args: [], env: {}, egress: [] } },
       });
       await writeFile(
         path.join(dir, 'mcp.json'),
@@ -181,8 +182,10 @@ describe('MCP connection failures and createToolBus', () => {
     const { dir, cleanup } = await tempDir();
     try {
       await writeFile(path.join(dir, 'mcp.json'), JSON.stringify({ servers: { t: serverCfg } }));
-      const { bus, mcpErrors } = await createToolBus({ kpaiHome: dir });
-      expect(mcpErrors).toEqual([]);
+      const { bus, mcpErrors, mcpBlocked } = await createToolBus({ kpaiHome: dir });
+      // Never approved (R-501): attached, every call refused, reported as blocked.
+      expect(mcpBlocked.map((b) => b.server)).toEqual(['t']);
+      expect(mcpErrors).toEqual([{ server: 't', message: mcpBlocked[0]?.reason }]);
       const names = bus.list().map((d) => d.name);
       expect(names).toContain('fs.read');
       expect(names).toContain('git.apply');
@@ -192,7 +195,7 @@ describe('MCP connection failures and createToolBus', () => {
       await writeFile(path.join(dir, 'mcp.json'), '{ not json');
       const broken = await createToolBus({ kpaiHome: dir });
       expect(broken.mcpErrors[0]?.server).toBe('mcp.json');
-      expect(broken.bus.list().length).toBe(9);
+      expect(broken.bus.list().length).toBe(builtinTools().length);
       const none = await createToolBus();
       expect(none.mcpErrors).toEqual([]);
     } finally {

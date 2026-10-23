@@ -10,6 +10,7 @@ import {
   type TaskGraph,
 } from '@kernelpai/core';
 import type { Pack } from '@kernelpai/packs';
+import { agentOf } from './agent-author.js';
 import { RunController, type ControlOutcome, type RunControl, type RunStatus } from './control.js';
 import { deliverableOf, extractArtifacts, shapeOf, type NodeDeliverable } from './deliverable.js';
 import type { DisputeRecord } from './dispute.js';
@@ -58,6 +59,8 @@ export function effectiveProtocol(node: GraphNode): ProtocolName {
  */
 export function upgradeReason(node: GraphNode): string | undefined {
   if (node.protocol === 'author_critic') return undefined;
+  if (agentOf(node))
+    return "an external agent's work is always reviewed by another provider (R-503)";
   if (node.type === 'code_generation' || node.type === 'test') {
     return `${node.type} is always reviewed by another provider (principle 2)`;
   }
@@ -97,6 +100,11 @@ export interface RunOptions {
    * them as a floor; default: what the runner's own `constraints` say (no profile).
    */
   routing?: RunRouting;
+  /**
+   * Nobody is watching this run (a daemon, a schedule): subscription agents are refused
+   * (D-029 R1) and their nodes fall back within policy or fail. Default false (interactive).
+   */
+  unattended?: boolean;
 }
 
 /** The journal form of routing constraints, when the caller gave no record of its own. */
@@ -186,11 +194,16 @@ export class GraphRunner implements RunControl {
     this.control.run = r;
     this.steps.graph.reset();
     this.steps.nodes.reset();
+    this.steps.agentBudget?.reset();
+    this.steps.unattended = options.unattended === true;
     if (options.edits?.length) {
       this.steps.intervention(undefined, { action: 'plan edited', changes: options.edits });
     }
     const fork = options.fork && { parent: options.fork.parent, reused: Object.keys(reuse) };
-    const routing = options.routing ?? routingOf(this.o.constraints);
+    const routing = {
+      ...(options.routing ?? routingOf(this.o.constraints)),
+      ...(options.unattended ? { unattended: true } : {}),
+    };
     journalRunStart(this.steps, r.runId, r.graph, fork, routing);
     try {
       for (const n of r.graph.nodes) this.setState(r, n.id, 'pending');
@@ -275,11 +288,15 @@ export class GraphRunner implements RunControl {
   }
 
   private pinProblems(graph: TaskGraph, reuse: Readonly<Record<string, unknown>>): string[] {
-    return (graph.nodes as PlannedNode[]).flatMap((n) =>
-      n.model && !reuse[n.id] && !this.o.candidates.some((c) => sameRef(c.ref, n.model as ModelRef))
+    const agents = this.o.agents?.descriptors.map((d) => d.id) ?? [];
+    return (graph.nodes as PlannedNode[]).flatMap((n) => {
+      if (reuse[n.id]) return [];
+      const a = agentOf(n);
+      if (a && !agents.includes(a.id)) return [`node "${n.id}": agent ${a.id} is not available`];
+      return n.model && !this.o.candidates.some((c) => sameRef(c.ref, n.model as ModelRef))
         ? [`node "${n.id}": model ${refToString(n.model)} is not available`]
-        : [],
-    );
+        : [];
+    });
   }
 
   private ready(r: Run): PlannedNode[] {

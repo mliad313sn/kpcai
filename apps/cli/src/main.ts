@@ -12,6 +12,9 @@ import { statsCommand } from './commands/stats.js';
 import { doCommand, planCommand } from './commands/graph.js';
 import { studioCommand } from './commands/studio.js';
 import { toolsCommand } from './commands/tools.js';
+import { mcpCommand } from './commands/mcp.js';
+import { extensionsCommand } from './commands/extensions.js';
+import { ticketCommand } from './commands/ticket.js';
 import {
   checkpointsCommand,
   discardCommand,
@@ -64,6 +67,8 @@ const OPTIONS = {
   since: { type: 'string' },
   protocol: { type: 'string' },
   instruction: { type: 'string' },
+  skill: { type: 'string' },
+  agent: { type: 'string' },
 } as const;
 
 function positiveInt(name: string, raw: string | undefined): number | undefined {
@@ -123,7 +128,17 @@ function graphOptions(v: Values, rest: string[]): GraphOptions {
     db: v.db,
     ...(v.isolated ? { isolated: true } : {}),
     ...(v.scope ? { scopeFile: v.scope } : {}),
+    // R-502: a skill and a named agent for every node (they can only narrow).
+    ...(v.skill ? { skill: v.skill } : {}),
+    ...(v.agent ? { agent: v.agent } : {}),
   };
+}
+
+/** `kpai ticket …`: the graph flags without a request (the ticket gives it). */
+function ticketOptions(v: Values): Omit<GraphOptions, 'request'> {
+  const flags: Partial<GraphOptions> = graphOptions(v, ['ticket']);
+  delete flags.request;
+  return flags;
 }
 
 function runOptions(v: Values, rest: string[]): RunOptions {
@@ -203,6 +218,9 @@ const COMMANDS: Readonly<Record<string, Handler>> = {
   run: (io, v, rest) => runCommand(io, runOptions(v, rest)),
   route: (io, v, rest) => routeCommand(io, runOptions(v, rest)),
   tools: (io) => toolsCommand(io),
+  mcp: (io, v, rest) => mcpCommand(io, rest, { db: v.db }),
+  extensions: (io) => extensionsCommand(io),
+  ticket: (io, v, rest) => ticketCommand(io, rest, ticketOptions(v)),
   studio: (io, v) =>
     studioCommand(io, { db: v.db, port: portNumber(v.port), allowTest: v['allow-test'] }),
   stats: (io, v) =>

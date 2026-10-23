@@ -1,5 +1,6 @@
 import { mkdir, symlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import type { ToolDefinition, ToolRisk } from '@kernelpai/core';
 import { describe, expect, it } from 'vitest';
 import { LocalToolBus } from './bus.js';
@@ -232,5 +233,23 @@ describe('per-model deny and forbidden paths', () => {
     const diff = 'diff --git a/x b/y\nrename from x\n--- a/x\n+++ /dev/null\n';
     expect(diffPaths(diff)).toEqual(['x', 'y', 'x', 'x']);
     expect(isConfirmAware(new GradedPermissionPolicy())).toBe(true);
+  });
+
+  it('checks file: URLs against the zones (browser.open)', () => {
+    const file = pathToFileURL(path.join(path.resolve('/ws'), '.env')).href;
+    expect(pathsInCall(call('browser.open', { url: file }))).toEqual([path.resolve('/ws', '.env')]);
+    expect(pathsInCall(call('browser.open', { url: 'file://host%/x' }))).toEqual([
+      'file://host%/x',
+    ]);
+    expect(pathsInCall(call('browser.open', { url: 'http://localhost/.env' }))).toEqual([]);
+    const p = new GradedPermissionPolicy();
+    const def = {
+      name: 'browser.open',
+      description: '',
+      inputSchema: {},
+      risk: 'read' as const,
+      source: 'builtin',
+    };
+    expect(p.decide(def, call('browser.open', { url: file }), makeCtx('/ws'))).toBe('deny');
   });
 });

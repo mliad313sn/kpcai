@@ -25,6 +25,16 @@ export interface ConfirmRequest {
   question: string;
   runId?: string;
   risk?: 'read' | 'write' | 'destructive';
+  /**
+   * Structured facts for a delegate deciding without reading the question (D-028,
+   * ADR-0033; additive, optional). `amountUsd`: for `budget`, the amount asked in USD;
+   * absent when it is not known (then nobody may answer in the human's place).
+   */
+  amountUsd?: number;
+  /** The write lands in the run's own worktree (R-307), not in the user's tree. */
+  inWorktree?: boolean;
+  /** The step may actuate a physical device (a selected pack has physical effects, D-019). */
+  physical?: boolean;
   /** For `patch`: the exact diff that would be applied (shown apart from the question). */
   patch?: string;
   /** For `artifact`: the exact text that would be written, and what it is. */

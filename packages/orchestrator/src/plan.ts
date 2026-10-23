@@ -1,5 +1,5 @@
 import { refToString, TaskTypeSchema, type Candidate, type TaskGraph } from '@kernelpai/core';
-import { isDeliverable } from './deliverable.js';
+import { deliverableOf, isDeliverable } from './deliverable.js';
 import { estimateGraph, type EstimateDeps, type GraphEstimate } from './estimate.js';
 import { sameRef } from './routing.js';
 import type { PlannedNode } from './types.js';
@@ -27,13 +27,19 @@ export interface PlanCheckOptions extends EstimateDeps {
   maxGraphUsd?: number;
   /** The plan as proposed, to list the user's edits. */
   original?: TaskGraph;
+  /** Ids of the agent CLIs the run can use (R-503); a node naming another is a problem. */
+  agents?: readonly string[];
 }
 
 const isStr = (v: unknown): v is string => typeof v === 'string';
 const NODE_ID = /^[A-Za-z0-9_-]+$/;
 
 /** Field problems of one edited node (the UI sends untrusted JSON). */
-export function nodeProblems(n: PlannedNode, candidates: readonly Candidate[]): string[] {
+export function nodeProblems(
+  n: PlannedNode,
+  candidates: readonly Candidate[],
+  agents: readonly string[] = [],
+): string[] {
   // Ids end up in budget labels, journal keys and batch keys: letters, digits, _ and - only
   // (review NF-1: an id with a space escaped the node-cap question).
   const id = isStr(n.id) && NODE_ID.test(n.id) && n.id.length <= MAX_NODE_ID ? n.id : undefined;
@@ -60,6 +66,7 @@ export function nodeProblems(n: PlannedNode, candidates: readonly Candidate[]): 
     n.messages.some((m) => m?.role === 'user' && isStr(m.content) && m.content.trim() !== '');
   if (!asks) bad('needs a non-empty user message');
   p.push(...packFieldProblems(n).map((w) => `node "${id}": ${w}`));
+  p.push(...agentProblems(n, agents).map((w) => `node "${id}": ${w}`));
   if (n.model !== undefined) {
     const m = n.model as unknown as Record<string, unknown> | null;
     if (!m || !isStr(m.provider) || !isStr(m.model)) bad('model must be {provider, model}');
@@ -67,6 +74,24 @@ export function nodeProblems(n: PlannedNode, candidates: readonly Candidate[]): 
       bad(`model ${refToString(n.model)} is not an available candidate`);
     }
   }
+  return p;
+}
+
+/** An agent author (R-503): known, alone (no pinned model), delivering a patch. */
+function agentProblems(n: PlannedNode, agents: readonly string[]): string[] {
+  if (n.agent === undefined) return [];
+  const a = n.agent as unknown as Record<string, unknown> | null;
+  if (
+    !a ||
+    !isStr(a.id) ||
+    (a.fallback !== undefined && a.fallback !== 'route' && a.fallback !== 'none')
+  )
+    return ['agent must be {id, fallback?: "route" | "none"}'];
+  const p: string[] = [];
+  if (!agents.includes(a.id)) p.push(`agent ${a.id} is not available`);
+  if (n.model !== undefined) p.push('choose a model or an agent, not both');
+  if (deliverableOf(n) !== 'patch') p.push('an agent node delivers a patch');
+  if (n.protocol === 'debate' || n.protocol === 'vote') p.push('an agent node runs author+critic');
   return p;
 }
 
@@ -102,7 +127,7 @@ export function validatePlan(graph: TaskGraph, options: PlanCheckOptions): PlanC
   const nodes = (Array.isArray(graph?.nodes) ? graph.nodes : []) as PlannedNode[];
   const changes = options.original ? planChanges(options.original, graph) : [];
   const problems: string[] = nodes.length === 0 ? ['the plan has no node'] : [];
-  for (const n of nodes) problems.push(...nodeProblems(n, options.candidates));
+  for (const n of nodes) problems.push(...nodeProblems(n, options.candidates, options.agents));
   if (problems.length > 0) return { ok: false, problems, warnings: [], changes };
   problems.push(...graphProblems(nodes));
   if (problems.length > 0) return { ok: false, problems, warnings: [], changes };
@@ -136,6 +161,10 @@ const FIELDS: Array<[string, (n: PlannedNode) => string]> = [
   ['dependsOn', (n) => (Array.isArray(n.dependsOn) ? n.dependsOn.join(',') : '?')],
   ['tools', (n) => (n.tools ?? []).join(',')],
   ['deliverable', (n) => String(n.deliverable ?? 'default')],
+  [
+    'agent',
+    (n) => (n.agent ? `${n.agent.id}${n.agent.fallback === 'route' ? '+route' : ''}` : 'none'),
+  ],
 ];
 
 /** The user's edits between two plans, one line each, in the edited plan's order. */

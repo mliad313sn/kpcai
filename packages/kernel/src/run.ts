@@ -19,6 +19,7 @@ import { recordOutcome } from './run-record.js';
 import { annotate } from './routing-info.js';
 import { runDeps } from './run-deps.js';
 import { routingRecord, type GraphOptions } from './setup.js';
+import { runSources } from './sources.js';
 import type { KernelHost, Plan, RunOutcome, RunState } from './types.js';
 import { isGitTree, type WorkspaceOps } from './workspace-ops.js';
 
@@ -162,7 +163,18 @@ function finish(c: RunContext, run: ActiveRun, full: RunResult): RunOutcome {
     artifacts: arts.artifacts,
     refusedArtifacts: arts.refused,
     ...(run.worktree ? { worktree: run.worktree } : {}),
+    // D-028: which providers served the run, and from which source (typed facts).
+    ...runSources(full, (provider) => providerKind(run.plan, provider)),
   };
+}
+
+/** A provider's descriptor kind, or undefined when the plan's registry does not know it. */
+function providerKind(plan: Plan, provider: string): string | undefined {
+  try {
+    return plan.setup.registry.get(provider).descriptor.kind;
+  } catch {
+    return undefined;
+  }
 }
 
 /**

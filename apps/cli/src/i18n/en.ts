@@ -12,6 +12,7 @@ Usage:
       [--planner template|model] [--apply] [--yes-apply] [--allow-same-provider]
       [--isolated]  run in its own git worktree, merged back on confirmation
       [--scope <file>]  authorised scope (YAML/JSON) for packs that require one
+      [--skill <name>] [--agent <name>]  skill / named agent for every node (narrowing only)
       --yes accepts cost prompts only; writes need --yes-apply or a y at the prompt
   kpai checkpoints [--session <id>]   Checkpoints taken before writes, by run
   kpai restore <ref>                   Restore a checkpoint (always asks; undo printed)
@@ -23,6 +24,11 @@ Usage:
   kpai memory [list|add|edit|rm|pending|confirm|reject|export] [--layer user|project]
                                        Memory with provenance; models only propose, you confirm
   kpai tools                           Tools models can use, their risk and source
+  kpai mcp list|approve <s>|remove <s>  MCP allow-list: pinned servers (version + tool hash);
+                                       a changed server is blocked until you re-approve it
+  kpai extensions                      Skills, named agents and hooks of this workspace
+  kpai ticket list|show <id>|run <id>  Local tickets (.kpstudio/tickets); run asks before
+                                       writing the outcome to the ticket's status
   kpai studio [--port N] [--allow-test] Start KP Studio's local kernel server, print its URL
                                        (--allow-test: offline mock providers by default)
   kpai run <request>                   Classify, route by competence, budget-check,

@@ -1,0 +1,17 @@
+# opencode, headless (R-503, ADR-0034). opencode can be backed by many providers, so by
+# default it counts as all of them: its critic must then come from elsewhere (a local
+# model). Override this file in your user directory with the one provider you configured.
+id: opencode
+name: opencode
+binary: opencode
+args: ['run', '{prompt}']
+promptVia: arg
+provider: opencode
+alsoCounts: [anthropic, openai, google, xai, deepseek, mistral, openrouter]
+jurisdiction: US
+output:
+  format: text
+rateLimit:
+  patterns: ['rate limit', 'usage limit', '\b429\b', 'quota']
+  cooldownMinutes: 60
+timeoutMinutes: 20

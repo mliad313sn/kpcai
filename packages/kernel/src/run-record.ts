@@ -4,8 +4,11 @@
  * run, must refuse a cancelled run exactly as the kernel that ran it would.
  */
 import type { Journal } from '@kernelpai/journal';
+import type { JournalEventInput } from '@kernelpai/journal';
+import { extensionsUsed } from './extensions/assign.js';
+import { summarizeRules } from './rules.js';
 import type { GraphOptions } from './setup.js';
-import type { RunOutcome } from './types.js';
+import type { Plan, RunOutcome } from './types.js';
 
 export const OUTCOME_ACTION = 'run outcome';
 export const CANCEL_ACTION = 'cancel graph';
@@ -31,6 +34,10 @@ export function recordOutcome(
     runId,
     status: o?.status ?? 'failed',
     cancelled: o?.status === 'finished' && o.cancelled,
+    // D-028: providers and source, so a restarted program reads them from the journal.
+    ...(o?.status === 'finished' && o.providers
+      ? { providers: o.providers, source: o.source, sources: o.sources }
+      : {}),
   };
   journal.append({ sessionId, type: 'intervention', payload });
 }
@@ -72,4 +79,26 @@ export function notWritable(runId: string, o: RecordedOutcome | undefined): stri
 export function runFlags(plan: GraphOptions, given: GraphOptions | undefined): GraphOptions {
   const { overBudget, allowSameProvider } = plan;
   return { ...plan, ...given, overBudget, allowSameProvider };
+}
+
+/** The plan a run starts from, as journaled before it runs (names only, never content). */
+export function planRecord(p: Plan): JournalEventInput {
+  return {
+    sessionId: p.sessionId,
+    type: 'routing',
+    nodeId: p.graph.id,
+    payload: {
+      plan: p.graph,
+      estimate: p.estimate,
+      ...(p.edits ? { edits: p.edits } : {}),
+      // Which rule files every node was given (names only, R-306).
+      rules: summarizeRules(p.rules.rules),
+      // Which memory facts every node was given: ids and sources only (ADR-0027).
+      ...(p.memory ? { memory: p.memory.summary } : {}),
+      packs: p.packs.packs.map((x) => ({ id: x.id, reason: x.reason })),
+      zones: p.packs.zones,
+      // Which skill and agent each node uses: names only (R-502).
+      extensions: extensionsUsed(p.graph),
+    },
+  };
 }

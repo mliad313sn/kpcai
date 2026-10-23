@@ -1,0 +1,17 @@
+# OpenAI Codex CLI, headless (R-503, ADR-0034). `exec` runs one task non-interactively; the
+# workspace-write sandbox keeps its writes inside the working directory (the node worktree).
+id: codex
+name: Codex CLI
+binary: codex
+args:
+  ['exec', '--sandbox', 'workspace-write', '--skip-git-repo-check', '--color', 'never', '{prompt}']
+promptVia: arg
+provider: openai
+jurisdiction: US
+output:
+  # The final message goes to stdout; progress goes to stderr. No usage is reported.
+  format: text
+rateLimit:
+  patterns: ['usage limit', 'rate limit', '\b429\b', 'quota exceeded']
+  cooldownMinutes: 60
+timeoutMinutes: 20

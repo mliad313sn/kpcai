@@ -3,7 +3,7 @@
  * (budget gate at every spend point, the run's tool bus and jail, local-only memory, tool
  * confirmations, disputes asked of the human and failing closed).
  */
-import { refToString } from '@kernelpai/core';
+import { refToString, type ToolBus } from '@kernelpai/core';
 import { outputCalibration } from '@kernelpai/executor';
 import type { Journal } from '@kernelpai/journal';
 import type {
@@ -12,15 +12,19 @@ import type {
   OrchestratorOptions,
   RunControlEvent,
 } from '@kernelpai/orchestrator';
-import { createToolBus } from '@kernelpai/tools';
+import { createToolBus, type LocalToolBus, type ToolJournal } from '@kernelpai/tools';
 import { BudgetGate, type GateHost } from './budget-gate.js';
 import type { Choose, DisputeInfo } from './confirm.js';
 import { kpaiHome } from './env.js';
+import { busZones } from './extensions/hook-bus.js';
+import { hookedBus } from './extensions/hook-run.js';
+import { loadHooks } from './extensions/hooks.js';
 import { homeZones } from './home-zone.js';
 import { NO_MEMORY, localTaint, memoryJournal, memoryResolver, taintConstraint } from './memory.js';
 import { busPacks } from './packs.js';
 import { RouterTap, UsageTap } from './routing-info.js';
 import type { GraphOptions } from './setup.js';
+import { inWorktree, physicalPacks } from './sources.js';
 import type { Plan } from './types.js';
 
 export interface DepsInput {
@@ -114,6 +118,26 @@ export function disputeHook(choose: Choose): DisputeHook {
   };
 }
 
+/**
+ * The run's bus with the workspace's before-tool hooks in front (R-502), and the D-028
+ * facts of its tool confirmations: where its writes land, whether it may act on a device.
+ */
+async function runTools(
+  bus: LocalToolBus,
+  i: DepsInput,
+  journal: ToolJournal,
+): Promise<{ tools: ToolBus; facts: { inWorktree: boolean; physical: boolean } }> {
+  const host = i.gateHost;
+  const hooks = await loadHooks(kpaiHome(host.env), host.cwd, busZones(bus));
+  for (const x of hooks.problems) host.say(`  – hooks: ${x}\n`);
+  const tools = hookedBus(bus, { hooks, env: host.env, journal, runId: i.runId });
+  const facts = {
+    inWorktree: inWorktree(i.root, host.cwd),
+    physical: physicalPacks(i.plan.packs.selected),
+  };
+  return { tools, facts };
+}
+
 export async function runDeps(i: DepsInput): Promise<RunDeps> {
   const { plan: p, gateHost: host } = i;
   const sessionId = i.sessionId ?? p.sessionId;
@@ -143,6 +167,7 @@ export async function runDeps(i: DepsInput): Promise<RunDeps> {
   });
   for (const e of mcpErrors) host.say(`  – mcp ${e.server}: ${e.message}\n`);
   if (policyError) host.say(`  – policy.json ignored (defaults apply): ${policyError}\n`);
+  const { tools, facts } = await runTools(bus, i, journal);
   const ctx = { sessionId, nodeId: p.graph.id, m: p.m, runId: i.runId };
   const gate = new BudgetGate(host, i.journal, ctx, i.flags);
   const router = new RouterTap(p.setup.router);
@@ -161,8 +186,8 @@ export async function runDeps(i: DepsInput): Promise<RunDeps> {
     journal: usage.wrap(journal),
     sessionId,
     budget: (cand, label) => gate.allow(cand, label),
-    tools: bus,
-    confirm: (question) => host.confirm({ kind: 'tool', question, runId: i.runId }),
+    tools,
+    confirm: (question) => host.confirm({ kind: 'tool', question, runId: i.runId, ...facts }),
     root: i.root,
     allowSameProvider: i.flags.allowSameProvider === true,
     // R-404 (ADR-0030): the runner sets each node's protocol, journaled per change.
@@ -170,5 +195,5 @@ export async function runDeps(i: DepsInput): Promise<RunDeps> {
     dispute: disputeHook(i.choose),
     ...(i.onControl ? { onControl: i.onControl } : {}),
   };
-  return { options, router, usage, close: () => bus.close() };
+  return { options, router, usage, close: () => tools.close() };
 }

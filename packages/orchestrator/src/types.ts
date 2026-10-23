@@ -13,6 +13,10 @@ import type {
 } from '@kernelpai/core';
 import type { AdapterResolver, FallbackExecutorOptions } from '@kernelpai/executor';
 import type { Journal } from '@kernelpai/journal';
+import type { TestEvidence } from '@kernelpai/tools';
+import type { AgentDescriptor, AgentRunner, Env } from '@kernelpai/providers';
+import type { AgentBudgetLimits } from './agent-budget.js';
+import type { SourceLimits } from './source-limits.js';
 import type { Deliverable } from './deliverable.js';
 import type { DisputeHook, DisputeKind } from './dispute.js';
 import type { ReviewPolicy } from './review-policy.js';
@@ -88,6 +92,42 @@ export interface OrchestratorOptions {
    * fails with `reason` (fail closed). Default: none.
    */
   nodeConstraints?: (nodeId: string) => NodeConstraint | undefined;
+  /**
+   * External agent CLIs as node authors (R-503, ADR-0034). Absent: a node naming an agent
+   * is refused (or falls back, per its `agent.fallback`).
+   */
+  agents?: AgentOptions;
+  /** How long `api:<provider>` is skipped after a 429 (R-5E3). Default 60 s. */
+  rateLimitCooldownMs?: number;
+  /**
+   * Rate limits per `source:provider` (R-5E3), shared by every runner given the same object
+   * (one per kernel). Default: one per runner, kept across its runs.
+   */
+  sourceLimits?: SourceLimits;
+}
+
+/** Agent CLIs the run may use as authors, and their budget (R-503, R-5E7). */
+export interface AgentOptions {
+  descriptors: readonly AgentDescriptor[];
+  /** Per graph run, in runs and minutes (a subscription has no dollar price). */
+  budget: AgentBudgetLimits;
+  /** The parent environment handed (scrubbed) to the agent; default `process.env`. */
+  env?: Env;
+  /** KernelPAI's API key variable names (provider descriptors' `auth.env`): never passed on. */
+  scrub: readonly string[];
+  /** Runs one agent; default `runAgent` of `@kernelpai/providers` (tests inject fakes). */
+  run?: AgentRunner;
+}
+
+/**
+ * The node's author is an agent CLI (R-503). `fallback: 'route'` lets the author step be
+ * routed to a model as usual when the agent may not run (unattended run, rate limit or
+ * quota, local-only node, budget): the routed step keeps every policy and budget gate.
+ * Default `none`: the node fails with the reason (the user's choice is kept, like a pin).
+ */
+export interface AgentChoice {
+  id: string;
+  fallback?: 'route' | 'none';
 }
 
 /** Constraints one node's steps must meet, and why (shown when nothing meets them). */
@@ -131,6 +171,8 @@ export interface PlannedNode extends GraphNode {
   critics?: number;
   /** Debate: judges (1 to 3; default `OrchestratorOptions.judges`, else 1). */
   judges?: number;
+  /** An agent CLI writes the node's work in its own worktree (R-503); always reviewed. */
+  agent?: AgentChoice;
 }
 
 /** Run-level control events (principle 4, R-304); node states still go through `onEvent`. */
@@ -199,6 +241,11 @@ export interface NodeRun {
   pin?: ModelRef | undefined;
   /** Extra journal tags for every call of this node (e.g. a replay id). */
   tags?: Record<string, unknown>;
+  /**
+   * The last `test.run` result of this attempt (R-505), read from the tool's own header;
+   * replaced only by a newer run. Feeds the critic and gates its approval.
+   */
+  tests?: TestEvidence;
 }
 
 /** A finished model step. */

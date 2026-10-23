@@ -1,8 +1,10 @@
+import path from 'node:path';
 import type { PermissionPolicy } from '@kernelpai/core';
 import { builtinTools, type BuiltinOptions } from './builtins/index.js';
 import { LocalToolBus, type ToolJournal } from './bus.js';
 import type { Env } from './env.js';
-import { connectMcpServers, loadMcpConfig, type McpConnectResult } from './mcp.js';
+import { loadMcpConfig, type McpConnectResult } from './mcp.js';
+import { connectPinnedServers, type PinnedConnectResult } from './mcp-registry.js';
 import { journalPackZones, planPackZones, type PackZoneOptions } from './pack-zones.js';
 import type { ActivePolicy, GradedPermissionPolicy, GradedPolicyOptions } from './policy.js';
 import { buildPolicy, loadPolicyConfig } from './policy-config.js';
@@ -30,8 +32,13 @@ export interface CreateToolBusOptions extends BuiltinOptions {
 
 export interface CreatedToolBus {
   bus: LocalToolBus;
-  /** MCP servers that failed to start or a broken mcp.json (the bus still works). */
+  /**
+   * MCP servers that failed to start, a broken mcp.json, and servers blocked by their pin
+   * (unapproved or changed: their calls are refused, R-501). The bus still works.
+   */
   mcpErrors: McpConnectResult['errors'];
+  /** Allow-listed servers whose calls are refused until a person (re-)approves them. */
+  mcpBlocked: PinnedConnectResult['blocked'];
   /** The graded policy in force (absent when a custom `policy` was passed). */
   activePolicy?: ActivePolicy;
   /** A broken `$KPAI_HOME/policy.json` (defaults still apply). */
@@ -49,14 +56,20 @@ export async function createToolBus(options: CreateToolBusOptions = {}): Promise
   const packZones = resolvePackZones(options);
   const { policy, ...status } = await resolvePolicy(options, packZones);
   const bus = new LocalToolBus({
-    tools: builtinTools({ env, git: gitOptions(options, policy), shell: options.shell }),
+    tools: builtinTools({
+      env,
+      git: gitOptions(options, policy),
+      shell: options.shell,
+      test: options.test,
+      browser: browserOptions(options, policy),
+    }),
     policy,
     journal: options.journal,
     maxResultBytes: options.maxResultBytes,
     env,
   });
-  const mcpErrors = await attachMcp(bus, options);
-  return { bus, mcpErrors, ...status, packZones };
+  const { mcpErrors, mcpBlocked } = await attachMcp(bus, options);
+  return { bus, mcpErrors, mcpBlocked, ...status, packZones };
 }
 
 /**
@@ -73,6 +86,19 @@ function gitOptions(options: CreateToolBusOptions, policy: PermissionPolicy) {
     options.git?.zones ??
     (explicit ? zoneSetFromGlobs(explicit, ci) : (own ?? zoneSetFromGlobs(DEFAULT_ZONES, ci)));
   return { ...options.git, zones };
+}
+
+/**
+ * The browser reads `file:` pages under the same zones as the git tools; screenshots go
+ * to `$KPAI_HOME/artifacts/browser` when there is a home.
+ */
+function browserOptions(options: CreateToolBusOptions, policy: PermissionPolicy) {
+  const home = options.kpaiHome;
+  return {
+    ...(home ? { artifactDir: path.join(home, 'artifacts', 'browser') } : {}),
+    ...options.browser,
+    zones: options.browser?.zones ?? gitOptions(options, policy).zones,
+  };
 }
 
 /** Pack zones: journaled for the graded policy; not applied under a custom policy. */
@@ -105,14 +131,17 @@ async function resolvePolicy(
 async function attachMcp(
   bus: LocalToolBus,
   options: CreateToolBusOptions,
-): Promise<McpConnectResult['errors']> {
-  if (options.kpaiHome === undefined) return [];
-  let connected: McpConnectResult;
+): Promise<Pick<CreatedToolBus, 'mcpErrors' | 'mcpBlocked'>> {
+  if (options.kpaiHome === undefined) return { mcpErrors: [], mcpBlocked: [] };
+  let connected: PinnedConnectResult;
   try {
     const config = await loadMcpConfig(options.kpaiHome);
-    connected = await connectMcpServers(config, options.mcpConnectTimeoutMs);
+    connected = await connectPinnedServers(options.kpaiHome, config, {
+      ...(options.mcpConnectTimeoutMs ? { timeoutMs: options.mcpConnectTimeoutMs } : {}),
+      onEgressDenied: egressJournal(options),
+    });
   } catch (err) {
-    return [{ server: 'mcp.json', message: (err as Error).message }];
+    return { mcpErrors: [{ server: 'mcp.json', message: (err as Error).message }], mcpBlocked: [] };
   }
   const mcpErrors = [...connected.errors];
   for (const c of connected.connections) {
@@ -123,5 +152,20 @@ async function attachMcp(
       await c.close().catch(() => undefined);
     }
   }
-  return mcpErrors;
+  for (const b of connected.blocked) mcpErrors.push({ server: b.server, message: b.reason });
+  return { mcpErrors, mcpBlocked: connected.blocked };
+}
+
+/** Refused egress of an MCP server, journaled when the run's session is known. */
+function egressJournal(options: CreateToolBusOptions) {
+  const sessionId = options.packs?.sessionId;
+  const journal = options.journal;
+  return (server: string, d: { host: string; port: number }): void => {
+    if (!journal || !sessionId) return;
+    journal.append({
+      sessionId,
+      type: 'intervention',
+      payload: { action: 'mcp egress refused', server, host: d.host, port: d.port },
+    });
+  };
 }

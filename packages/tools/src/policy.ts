@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   refToString,
   type PermissionDecision,
@@ -118,6 +119,14 @@ export function pathsInCall(call: ToolCall): string[] {
   for (const [k, v] of Object.entries(input)) {
     if (PATH_KEYS.has(k)) add(v);
     if (DIFF_KEYS.has(k) && typeof v === 'string') out.push(...diffPaths(v));
+  }
+  // A `file:` URL names a file too (browser.open).
+  if (typeof input.url === 'string' && /^file:/i.test(input.url)) {
+    try {
+      out.push(fileURLToPath(input.url));
+    } catch {
+      out.push(input.url);
+    }
   }
   if (call.name === 'shell.run' && Array.isArray(input.args)) {
     for (const a of input.args) {

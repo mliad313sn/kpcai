@@ -18,6 +18,11 @@ export interface LocalTool {
   readonly def: ToolDefinition;
   /** Risk of this particular call when it depends on the input (e.g. `shell.run`). */
   riskFor?(input: Record<string, unknown>): ToolRisk;
+  /**
+   * Why every call of this tool is refused right now (an MCP server whose pinned tool
+   * list changed, R-501); checked before validation and permission. Undefined lets it run.
+   */
+  blocked?(): string | undefined;
   /** True when this call must be confirmed whatever the policy says (unsandboxed shell). */
   alwaysConfirm?(input: Record<string, unknown>): boolean;
   /**
@@ -28,7 +33,7 @@ export interface LocalTool {
   prepare?(input: Record<string, unknown>, ctx: ToolContext): Promise<PreparedCall>;
   /** Runs an already validated and permitted call. May throw; the bus turns it into isError. */
   run(input: Record<string, unknown>, ctx: ToolContext): Promise<ToolOutcome>;
-  /** Releases resources (MCP connections). */
+  /** Releases resources (a browser); the bus calls it on close. */
   close?(): Promise<void>;
 }
 

@@ -50,6 +50,8 @@ export interface RunRouting {
   allowTest?: boolean;
   /** True when the run waived provider diversity (principle 2); else absent (P4-R3). */
   allowSameProvider?: boolean;
+  /** True for an unattended run (no subscription agent, D-029 R1); else absent. */
+  unattended?: boolean;
 }
 
 /** A finished node as recorded: its inputs, its result and how long it took. */
@@ -136,6 +138,7 @@ export function toRouting(x: unknown): RunRouting | undefined {
     ...(typeof x['profile'] === 'string' ? { profile: x['profile'] } : {}),
     ...(typeof x['allowTest'] === 'boolean' ? { allowTest: x['allowTest'] } : {}),
     ...(x['allowSameProvider'] === true ? { allowSameProvider: true } : {}),
+    ...(x['unattended'] === true ? { unattended: true } : {}),
   };
 }
 

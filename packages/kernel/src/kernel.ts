@@ -28,15 +28,15 @@ import type {
   StartRunInput,
 } from './types.js';
 import { busPacks, selectPacks } from './packs.js';
-import { summarizeRules } from './rules.js';
 import { summarizeRun } from './runs-view.js';
 import { askZoneRelaxations, gatherScope, guardWorkspace } from './authorise.js';
 import { checkScope } from './scope.js';
-import { CANCEL_ACTION, notWritable, recordedOutcome, runFlags } from './run-record.js';
+import { CANCEL_ACTION, notWritable, planRecord, recordedOutcome, runFlags } from './run-record.js';
 import { WorkspaceOps, type CheckpointInfo } from './workspace-ops.js';
 import { KernelMemory, type ExportResult } from './memory-service.js';
 import { KernelLearning } from './learning.js';
 import { KernelReplays, type ReplayFlags, type ReplayHandle, type ReplayPlan } from './replay.js';
+import { KernelTickets } from './tickets-service.js';
 import type { PackZoneOptions } from '@kernelpai/tools';
 
 const KEEP_PLANS = 32;
@@ -64,6 +64,8 @@ export class Kernel extends Queries {
   readonly learning: KernelLearning;
   /** Replay a node, plan a fork (R-403); a fork starts with `startFork`. */
   readonly replays: KernelReplays;
+  /** Local Markdown tickets as run input, status written back on confirmation (ADR-0033). */
+  readonly tickets: KernelTickets;
 
   constructor(host: KernelHost, journal?: Journal) {
     super(host, journal);
@@ -100,6 +102,13 @@ export class Kernel extends Queries {
       journal: () => this.journal,
       plan: (request, options) => this.plan(request, options),
       startRun: (input) => this.startRun(input),
+    });
+    this.tickets = new KernelTickets({
+      env: host.env,
+      cwd: host.cwd,
+      journal: () => this.journal,
+      confirm: this.confirm,
+      session: (title) => this.openSession(title, true),
     });
     this.replays = new KernelReplays({
       gateHost: this.gateHost,
@@ -224,22 +233,7 @@ export class Kernel extends Queries {
     const proposed = input.planId ? this.planById(input.planId, input.request) : undefined;
     const planned = proposed ?? (await this.plan(input.request, input.options ?? {}));
     const p = input.graph !== undefined ? editedPlan(planned, input.graph, this.journal) : planned;
-    this.journal.append({
-      sessionId: p.sessionId,
-      type: 'routing',
-      nodeId: p.graph.id,
-      payload: {
-        plan: p.graph,
-        estimate: p.estimate,
-        ...(p.edits ? { edits: p.edits } : {}),
-        // Which rule files every node was given (names only, R-306).
-        rules: summarizeRules(p.rules.rules),
-        // Which memory facts every node was given: ids and sources only (ADR-0027).
-        ...(p.memory ? { memory: p.memory.summary } : {}),
-        packs: p.packs.packs.map((x) => ({ id: x.id, reason: x.reason })),
-        zones: p.packs.zones,
-      },
-    });
+    this.journal.append(planRecord(p));
     if (!p.estimate.complete) {
       const problems = p.estimate.problems.join('; ');
       throw new KernelError('unroutable', `some nodes cannot be routed: ${problems}`);

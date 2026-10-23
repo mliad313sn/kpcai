@@ -17,6 +17,7 @@
     "@kernelpai/journal": "workspace:*",
     "@kernelpai/packs": "workspace:*",
     "@modelcontextprotocol/client": "^2.3.1",
+    "playwright-core": "1.56.1",
     "zod": "^4.1.0"
   },
   "devDependencies": {

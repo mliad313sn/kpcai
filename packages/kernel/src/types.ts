@@ -8,6 +8,8 @@ import type { SelectedPacks } from './packs.js';
 import type { LoadedMemory, TaintSeed } from './memory.js';
 import type { LoadedRules } from './rules.js';
 import type { ScopeCheck } from './scope.js';
+import type { LoadedExtensions } from './extensions/load.js';
+import type { RunSources } from './sources.js';
 import type { ExplainedEstimate, KernelEvent } from './routing-info.js';
 import type { GraphOptions, GraphSetup } from './setup.js';
 
@@ -69,12 +71,14 @@ export interface Plan {
   scope: ScopeCheck;
   /** A fork of a past run (R-403): its graph runs as recorded, reused nodes not re-run. */
   fork?: ForkPlan;
+  /** Skills, named agents and hooks of the workspace (R-502); absent on older plans. */
+  extensions?: LoadedExtensions;
 }
 
 export type RunOutcome =
   /** Refused before anything ran: the whole-graph budget check said no. */
   | { status: 'not_run'; reason: string }
-  | {
+  | ({
       status: 'finished';
       result: GraphResult;
       /** True when any node was cancelled: nothing may then be applied (review P2-F6). */
@@ -90,7 +94,7 @@ export type RunOutcome =
       worktree?: string;
       /** Memory proposals of the run, pending until a human confirms them (ADR-0027). */
       proposals?: string[];
-    };
+    } & Partial<RunSources>);
 
 export interface RunHandle {
   runId: string;
@@ -115,6 +119,8 @@ export interface ApplyResult {
   ok: boolean;
   /** What the tool reported (first 300 characters). */
   message: string;
+  /** `after-patch` hooks that ran once the patch was written (R-502). */
+  hooks?: Array<{ name: string; ok: boolean }>;
 }
 
 export interface ArtifactApplyResult {

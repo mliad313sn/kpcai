@@ -95,15 +95,34 @@ function onResponse(w: NodeWork, e: JournalEvent, call: CallInfo | undefined): v
 }
 
 /**
- * The outcome of a test run journaled by `shell.run` (or a future `test.run` tool): only a
- * command that really runs tests counts, and a pass needs evidence where the output is
- * whole (P4-F10, `test-runs.ts`).
+ * A `test.run` result (R-505): the command it ran must be a real test command (no dry run,
+ * listing or `--passWithNoTests`, P4-F10) and its parsed status decides: passed 1, failed
+ * or timed out 0; no test ran, a refused start or a cancel prove nothing.
+ */
+function testRunResult(meta: unknown): boolean | undefined {
+  const m = (meta ?? {}) as {
+    command?: unknown;
+    args?: unknown;
+    status?: unknown;
+    timedOut?: unknown;
+  };
+  const args = Array.isArray(m.args) ? m.args.map(String) : [];
+  if (typeof m.command !== 'string' || !isTestCommand(m.command, args)) return undefined;
+  if (m.status === 'passed') return true;
+  if (m.status === 'failed' || m.timedOut === true) return false;
+  return undefined;
+}
+
+/**
+ * The outcome of a test run journaled by `shell.run` or `test.run`: only a command that
+ * really runs tests counts, and a pass needs evidence where the output is whole (P4-F10,
+ * `test-runs.ts`).
  */
 function testOutcome(e: JournalEvent): boolean | undefined {
   const p = e.payload;
   const decision = str(p.decision);
   if (decision !== 'allow' && decision !== 'confirmed') return undefined;
-  if (p.tool === 'test.run') return p.isError !== true;
+  if (p.tool === 'test.run') return testRunResult(p.meta);
   if (p.tool !== 'shell.run') return undefined;
   const input = (p.input ?? {}) as { command?: unknown; args?: unknown };
   const args = Array.isArray(input.args) ? input.args.map(String) : [];

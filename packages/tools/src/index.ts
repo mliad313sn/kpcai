@@ -86,6 +86,8 @@ export {
 export {
   connectMcpServer,
   connectMcpServers,
+  openMcpServer,
+  exposeTools,
   loadMcpConfig,
   riskFromAnnotations,
   mcpToolName,
@@ -97,6 +99,9 @@ export {
   type McpServerConfig,
   type McpConnection,
   type McpConnectResult,
+  type McpGuard,
+  type OpenedMcpServer,
+  type OpenMcpOptions,
 } from './mcp.js';
 export {
   JailError,
@@ -148,3 +153,69 @@ export {
 export { authorize, RESTORE_DEF, MERGE_DEF, type Gate } from './workspace/gate.js';
 export type { WorkspaceOptions } from './workspace/common.js';
 export type { WriteResult } from './workspace/writer.js';
+export {
+  TEST_RUN_TOOL,
+  MAX_FAILING,
+  formatEvidence,
+  readTestEvidence,
+  testsFailed,
+  evidenceSummary,
+  type TestEvidence,
+  type TestStatus,
+  type TestCounts,
+} from './test-evidence.js';
+export {
+  testRunTool,
+  TEST_RUN_DEFAULT_TIMEOUT_MS,
+  TEST_RUN_MAX_TIMEOUT_MS,
+  TEST_RUN_MAX_OUTPUT_BYTES,
+  TEST_RUN_TAIL_CHARS,
+  type TestRunToolOptions,
+} from './builtins/test-run.js';
+export {
+  resolveTestCommand,
+  withSelection,
+  REPO_TEST_CONFIG,
+  TestCommandConfigSchema,
+  type TestCommand,
+  type TestCommandConfig,
+  type RunnerKind,
+} from './builtins/test-detect.js';
+export { evidenceOf, parseOutput, type ParserName, type RunFacts } from './builtins/test-parse.js';
+export {
+  MCP_PINS_FILE,
+  canonicalJson,
+  checkPin,
+  diffTools,
+  loadPins,
+  makePin,
+  savePins,
+  snapshotTools,
+  toolsHash,
+  type McpPin,
+  type McpPins,
+  type PinCheck,
+  type ToolSnapshot,
+} from './mcp-pin.js';
+export {
+  connectPinnedServer,
+  connectPinnedServers,
+  openBehindProxy,
+  type PinnedConnectResult,
+  type PinnedConnection,
+  type PinnedMcpOptions,
+} from './mcp-registry.js';
+export {
+  approveMcpServer,
+  mcpStatus,
+  removeMcpServer,
+  type ApproveOptions,
+  type ApproveResult,
+  type McpServerStatus,
+} from './mcp-admin.js';
+export {
+  startEgressProxy,
+  egressAllowed,
+  type EgressProxy,
+  type EgressDenial,
+} from './egress-proxy.js';

@@ -14,6 +14,7 @@ import {
   type ToolDefinition,
 } from '@kernelpai/core';
 import type { ToolAwareResult } from '@kernelpai/executor';
+import { readTestEvidence, TEST_RUN_TOOL } from '@kernelpai/tools';
 import type { NodeHold } from './node-budget.js';
 import { preferRef, sameRef, servedCandidate } from './routing.js';
 import type { StepRunner } from './step.js';
@@ -63,7 +64,12 @@ function hooksFor(
         role,
       }),
     onText: (delta, ref) => s.emit({ type: 'text', nodeId, role, ref, delta }),
+    // R-5E3: a 429 marks that source and provider; later steps and fallbacks skip it.
+    onAttemptFailed: (a) => {
+      if (a.errorKind === 'rate_limit') s.routedLimitHit(a.ref, nodeId);
+    },
     beforeFallback: (next) =>
+      !s.isLimited(next.ref) &&
       s.allow(next, `${role} fallback on ${nodeId}: ${refToString(next.ref)}`, run, hold),
   };
 }
@@ -236,6 +242,21 @@ async function runTools(
 }
 
 async function callBus(
+  s: StepRunner,
+  run: NodeRun,
+  model: ModelRef,
+  call: ToolCall,
+): Promise<{ content: string; isError: boolean }> {
+  const res = await callBusOnce(s, run, model, call);
+  // R-505: the test run's evidence, for the critic of this draft.
+  if (call.name === TEST_RUN_TOOL) {
+    const evidence = readTestEvidence(res.content);
+    if (evidence) run.tests = evidence;
+  }
+  return res;
+}
+
+async function callBusOnce(
   s: StepRunner,
   run: NodeRun,
   model: ModelRef,

@@ -3,9 +3,13 @@ import { createToolBus, type LocalToolBus, type PackZoneOptions } from '@kernelp
 import { unreviewedOverwrite, type Artifact } from './artifacts.js';
 import type { Confirm } from './confirm.js';
 import { kpaiHome } from './env.js';
+import { busZones } from './extensions/hook-bus.js';
+import { runHooks } from './extensions/hook-run.js';
+import { loadHooks } from './extensions/hooks.js';
 import { homeZones } from './home-zone.js';
 import type { Patch } from './patches.js';
 import { busPacks } from './packs.js';
+import { inWorktree, physicalPacks } from './sources.js';
 import type { ApplyResult, ArtifactApplyResult, KernelHost, Plan } from './types.js';
 import { WT_SUFFIX, type WorkspaceOps } from './workspace-ops.js';
 
@@ -23,6 +27,13 @@ export interface ApplyContext {
   packs?: PackZoneOptions;
   /** Approve the git.apply write without asking (separate from `yes`, review P2-F15). */
   yesApply?: boolean;
+  /** A selected pack has physical effects (D-019): said on each confirmation (D-028). */
+  physical?: boolean;
+}
+
+/** D-028 facts of every write confirmation of this context. */
+function facts(c: ApplyContext): { inWorktree: boolean; physical: boolean } {
+  return { inWorktree: inWorktree(c.root, c.host.cwd), physical: c.physical === true };
 }
 
 /**
@@ -48,6 +59,7 @@ export function runApplyContext(
     root,
     checkpoint: (label) => base.workspace.before(root, ns, label, sessionId),
     packs: busPacks(run.plan.packs, sessionId),
+    ...(physicalPacks(run.plan.packs.selected) ? { physical: true } : {}),
     ...(yesApply ? { yesApply: true } : {}),
   };
 }
@@ -112,10 +124,12 @@ export function applyAll(c: ApplyContext, patches: Patch[]): Promise<ApplyResult
                   patch: p.patch,
                   risk: 'write',
                   runId: c.runId,
+                  ...facts(c),
                 }),
         },
       );
-      results.push({ nodeId: p.nodeId, ok: !r.isError, message: r.content.slice(0, 300) });
+      const result = { nodeId: p.nodeId, ok: !r.isError, message: r.content.slice(0, 300) };
+      results.push(r.isError ? result : await afterPatch(c, bus, p, i, result));
     }
     return results;
   });
@@ -184,5 +198,33 @@ function artifactAsk(c: ApplyContext, a: Artifact): (question: string) => Promis
       artifact: meta,
       risk: 'write',
       runId: c.runId,
+      ...facts(c),
     });
+}
+
+/**
+ * R-502: `after-patch` hooks run once a patch is written, through the same bus (confirmed
+ * unless allow-listed). They cannot undo the write; their untrusted output is reported.
+ */
+async function afterPatch(
+  c: ApplyContext,
+  bus: LocalToolBus,
+  p: Patch,
+  i: number,
+  result: ApplyResult,
+): Promise<ApplyResult> {
+  const hooks = await loadHooks(kpaiHome(c.host.env), c.host.cwd, busZones(bus));
+  if (!hooks.hooks.some((h) => h.event === 'after-patch')) return result;
+  const data = { runId: c.runId, nodeId: p.nodeId, files: p.files };
+  const v = await runHooks(bus, hooks, 'after-patch', data, {
+    root: c.root,
+    sessionId: c.sessionId,
+    nodeId: `${p.nodeId}#patch-${i}`,
+    env: c.host.env,
+    confirm: (question) =>
+      c.confirm({ kind: 'tool', question, risk: 'destructive', runId: c.runId, ...facts(c) }),
+  });
+  for (const h of v.runs)
+    if (!h.ok) c.host.say?.(`  – after-patch hook ${h.name} failed: ${h.output.split('\n')[0]}\n`);
+  return { ...result, hooks: v.runs.map((h) => ({ name: h.name, ok: h.ok })) };
 }

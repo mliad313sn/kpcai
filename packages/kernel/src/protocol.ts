@@ -23,6 +23,12 @@ import {
 import { MemoryConfirmSchema, MemoryMethods, MemorySummarySchema } from './protocol-memory.js';
 import { DisputeSchema, LearningMethods } from './protocol-learning.js';
 import { replayMethods } from './protocol-replay.js';
+import {
+  ConfirmFacts,
+  ExtensionMethods,
+  ExtensionsSummarySchema,
+  RunSourceFacts,
+} from './protocol-extensions.js';
 
 export {
   AccuracySchema,
@@ -38,6 +44,11 @@ export {
   PendingFactSchema,
   ProvenanceSchema,
 } from './protocol-memory.js';
+export {
+  ExtensionsSummarySchema,
+  TicketSchema,
+  TicketStatusSchema,
+} from './protocol-extensions.js';
 export {
   ArtifactKindSchema,
   ArtifactSchema,
@@ -73,6 +84,9 @@ export const RunOptionsSchema = z.object({
   isolated: z.boolean().optional(),
   /** Authorised scope for packs that require one (WI-S1-03). */
   scope: AuthorisedScopeInputSchema.optional(),
+  /** A skill and a named agent for every node (R-502); they can only narrow the nodes. */
+  skill: z.string().min(1).max(64).optional(),
+  agent: z.string().min(1).max(64).optional(),
 });
 export type RunOptions = z.infer<typeof RunOptionsSchema>;
 
@@ -180,6 +194,9 @@ export const EditedGraphSchema = z.looseObject({
           .regex(/^[A-Za-z0-9_-]+$/),
         model: Ref.optional(),
         deliverable: DeliverableSchema.optional(),
+        /** The node's skill and named agent (R-502); checked by the kernel. */
+        skill: z.string().min(1).max(64).optional(),
+        agent: z.string().min(1).max(64).optional(),
       }),
     )
     .min(1)
@@ -266,6 +283,8 @@ export const Methods = {
       scope: ScopeStatusSchema.optional(),
       /** Memory every node will get: counts, ids, sources, truncation (ADR-0027). */
       memory: MemorySummarySchema.optional(),
+      /** Skills, named agents and hooks of the workspace: names only (R-502). */
+      extensions: ExtensionsSummarySchema.optional(),
     }),
   },
   /** Checks an edited plan and re-estimates it; runs nothing (R-301). */
@@ -336,6 +355,7 @@ export const Methods = {
   ...WorkspaceMethods,
   ...MemoryMethods,
   ...LearningMethods,
+  ...ExtensionMethods,
   ...replayMethods({ RunOptionsSchema, EstimateSchema, GraphSchema, ScopeStatusSchema }),
 } as const;
 export type MethodName = keyof typeof Methods;
@@ -362,6 +382,8 @@ export const Notifications = {
     worktree: z.string().optional(),
     /** Review spend against accepted findings (R-404). */
     verification: z.looseObject({}).optional(),
+    /** Providers that served the run and their source (D-028). */
+    ...RunSourceFacts,
   }),
   /** The client must answer with `confirm.answer`; silence for `timeoutMs` means "no". */
   'confirm.request': z.object({
@@ -391,6 +413,8 @@ export const Notifications = {
     /** For `dispute` (R-405): the options to pick from, as untrusted quoted text. Answer
      * with `confirm.answer {ok: true, choice}`; silence or `ok: false` rejects (fail closed). */
     dispute: DisputeSchema.optional(),
+    /** Structured facts for a delegate (D-028): amount, worktree, physical effects. */
+    ...ConfirmFacts,
     timeoutMs: z.number().int().positive(),
   }),
   /**

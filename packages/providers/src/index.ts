@@ -31,3 +31,25 @@ export {
   type CatalogField,
 } from './catalog.js';
 export { localCard } from './local-card.js';
+export {
+  AgentDescriptorSchema,
+  BUILTIN_AGENT_DIR,
+  PROMPT_PLACEHOLDER,
+  agentArgs,
+  agentProviders,
+  loadAgentDescriptors,
+  parseAgentDescriptor,
+  type AgentDescriptor,
+} from './agents/descriptor.js';
+export { agentEnv, isScrubbed } from './agents/env.js';
+export { MAX_SUMMARY_CHARS, sanitize, type AgentUsage } from './agents/output.js';
+export {
+  MAX_ARG_PROMPT_CHARS,
+  detectAgent,
+  runAgent,
+  type AgentRunRequest,
+  type AgentRunResult,
+  type AgentRunStatus,
+  type AgentRunner,
+} from './agents/run.js';
+export { MAX_DIFF_BYTES, diffFiles, diffProblem } from './agents/worktree.js';

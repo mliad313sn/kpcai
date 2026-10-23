@@ -4,6 +4,7 @@ import { accepted, parseVerdict } from '../parse.js';
 import { criticPrompt, criticRetryPrompt } from '../prompts.js';
 import { decisionAfter, onlyDecision } from '../routing.js';
 import type { StepRunner } from '../step.js';
+import { testEvidenceText } from '../test-gate.js';
 import type { NodeRun, StepFailed, StepOk } from '../types.js';
 
 /** One critic's verdict and the model that gave it. */
@@ -113,7 +114,7 @@ async function critique(
   exclude: string[],
   diversity?: 'strict',
 ): Promise<Reviewed> {
-  const prompt = criticPrompt(run.node, run.context, work);
+  const prompt = criticPrompt(run.node, run.context, work, testEvidenceText(run));
   let decision: RoutingDecision | undefined;
   for (;;) {
     const once = await criticOnce(s, run, { prompt, exclude, decision, diversity });

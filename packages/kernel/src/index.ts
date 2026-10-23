@@ -123,3 +123,62 @@ export type {
   RunState,
   StartRunInput,
 } from './types.js';
+export { KernelTickets, type TicketRun, type TicketsHost } from './tickets-service.js';
+export {
+  TICKET_DIR,
+  TICKET_STATUSES,
+  listTickets,
+  parseTicket,
+  readTicket,
+  statusFor,
+  ticketRequest,
+  ticketSummary,
+  withStatus,
+  type Ticket,
+  type TicketStatus,
+} from './tickets.js';
+export {
+  confirmFacts,
+  inWorktree,
+  physicalPacks,
+  plannedSources,
+  runSources,
+  sourceOf,
+  sourcesOf,
+  type RunSources,
+  type SourceKind,
+} from './sources.js';
+export {
+  NO_EXTENSIONS,
+  extensionsSummary,
+  listExtensions,
+  loadExtensions,
+  plannerCatalog,
+  type ExtensionsSummary,
+  type LoadedExtensions,
+} from './extensions/load.js';
+export {
+  assignAll,
+  assignmentProblems,
+  expandGraph,
+  extensionsUsed,
+  resolveModelHint,
+} from './extensions/assign.js';
+export { discoverSkills, mapAllowedTools, parseSkill, type Skill } from './extensions/skills.js';
+export { discoverAgents, parseAgent, type NamedAgent } from './extensions/agents.js';
+export {
+  HOOK_EVENTS,
+  hookMatches,
+  hooksSummary,
+  loadHooks,
+  type HookEvent,
+  type HookSpec,
+  type LoadedHooks,
+} from './extensions/hooks.js';
+export {
+  HOOK_MODEL,
+  hookedBus,
+  runHooks,
+  type HookRun,
+  type HookVerdict,
+} from './extensions/hook-run.js';

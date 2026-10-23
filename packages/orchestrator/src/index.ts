@@ -124,6 +124,8 @@ export {
   type Reroute,
   type RunControlEvent,
   type NodeConstraint,
+  type AgentChoice,
+  type AgentOptions,
   type OrchestratorOptions,
   type StepOutcome,
   type StepSpec,
@@ -178,3 +180,13 @@ export {
   type ReplayResult,
 } from './replay.js';
 export { planFork, runFork, type ForkEdit, type ForkPlan } from './fork.js';
+export { AgentBudget, type AgentBudgetLimits, type AgentClaim } from './agent-budget.js';
+export { agentOf, agentWork, authorProviders, inert } from './agent-author.js';
+export {
+  DEFAULT_RATE_LIMIT_COOLDOWN_MS,
+  SourceLimits,
+  avoiding,
+  sourceKey,
+  sourceOf,
+  type SourceKind,
+} from './source-limits.js';

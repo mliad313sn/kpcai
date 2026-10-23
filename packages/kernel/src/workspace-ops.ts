@@ -215,7 +215,13 @@ export class WorkspaceOps {
         ).root
       : this.h.cwd;
     const ask = (question: string): Promise<boolean> =>
-      this.h.confirm({ kind: 'restore', question, risk: 'destructive', runId });
+      this.h.confirm({
+        kind: 'restore',
+        question,
+        risk: 'destructive',
+        runId,
+        inWorktree: worktree,
+      });
     try {
       const r = await restore(root, ref, this.gate(o.policy, root, sessionId, ask), o);
       this.note(sessionId, {
@@ -287,6 +293,8 @@ export class WorkspaceOps {
         patch: shown.diff,
         risk: 'write',
         runId,
+        // A merge writes the user's tree, never a worktree (D-028).
+        inWorktree: false,
       });
       if (!yes) return false;
       // No checkpoint, no write (a non-git workspace cannot hold an isolated run).

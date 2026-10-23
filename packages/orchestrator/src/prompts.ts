@@ -100,7 +100,12 @@ export function authorPrompt(node: PlannedNode, context: string): string {
 export const VERDICT_FORMAT =
   'Reply with only a JSON object: {"approve": true|false, "issues": [{"severity": "major"|"minor", "text": "..."}], "summary": "..."}. Approve when there is no major issue.';
 
-export function criticPrompt(node: PlannedNode, context: string, work: string): string {
+export function criticPrompt(
+  node: PlannedNode,
+  context: string,
+  work: string,
+  tests?: string,
+): string {
   return [
     'Role: critic',
     "You review another model's work. Check correctness, security, tests and completeness.",
@@ -112,10 +117,23 @@ export function criticPrompt(node: PlannedNode, context: string, work: string): 
     '',
     'Work to review:',
     quote('WORK', work),
+    ...(tests === undefined ? [] : testEvidence(tests)),
     '',
     UNTRUSTED_NOTE,
     VERDICT_FORMAT,
   ].join('\n');
+}
+
+/**
+ * The last `test.run` of the task (R-505): its first line is written by KP Studio, the
+ * failing test names come from the test output (untrusted).
+ */
+function testEvidence(tests: string): string[] {
+  return [
+    '',
+    'Test evidence (the last test.run of this task; a failing run means the work is not done):',
+    quote('TESTS', tests),
+  ];
 }
 
 export function criticRetryPrompt(base: string, error: string): string {
@@ -202,5 +220,29 @@ export function voterPrompt(node: PlannedNode, context: string): string {
     task(node, context),
     '',
     'Reply with only a JSON object: {"choice": "<the option, verbatim>", "reason": "..."}',
+  ].join('\n');
+}
+
+const AGENT_RULES =
+  'You work as the author of one task in a git checkout: your current directory. Make the change directly in its files. Do not write outside this directory; do not commit, push, install packages or reach the network. When done, reply with a short summary of what you changed. Your change is reviewed by an independent critic and applied only after the user approves it.';
+
+/** The prompt an agent CLI gets as a node's author (R-503). */
+export function agentPrompt(node: PlannedNode, context: string): string {
+  return ['Role: author', AGENT_RULES, '', task(node, context)].join('\n');
+}
+
+/** The prompt an agent CLI gets to revise its own change (it starts from that change). */
+export function agentRevisionPrompt(node: PlannedNode, context: string, v: Verdict): string {
+  return [
+    'Role: revision',
+    AGENT_RULES,
+    'The checkout already holds your previous change. Fix the issues an independent critic raised.',
+    '',
+    task(node, context),
+    '',
+    'Critic issues:',
+    quote('ISSUES', issues(v)),
+    '',
+    UNTRUSTED_NOTE,
   ].join('\n');
 }

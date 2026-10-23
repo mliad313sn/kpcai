@@ -101,7 +101,12 @@ export class LocalToolBus implements ToolBus {
 
   async close(): Promise<void> {
     const conns = this.connections.splice(0);
-    await Promise.allSettled(conns.map((c) => c.close()));
+    const owned = new Set(conns.flatMap((c) => c.tools));
+    const local = [...this.tools.values()].filter((t) => t.close && !owned.has(t));
+    await Promise.allSettled([
+      ...conns.map((c) => c.close()),
+      ...local.map((t) => (t.close as () => Promise<void>).call(t)),
+    ]);
   }
 
   private async dispatch(trace: Trace): Promise<ToolOutcome> {
@@ -109,6 +114,8 @@ export class LocalToolBus implements ToolBus {
     const tool = this.tools.get(call.name);
     if (!tool) return { content: `unknown tool: ${call.name}`, isError: true };
     trace.def = tool.def;
+    const blocked = safeBlocked(tool);
+    if (blocked !== undefined) return this.refuse(trace, 'deny', blocked);
     if (ctx.signal?.aborted) return this.refuse(trace, 'cancelled', 'cancelled before running');
     const errors = validateInput(tool.def.inputSchema, call.input);
     if (errors.length > 0) {
@@ -239,7 +246,7 @@ export class LocalToolBus implements ToolBus {
     if (trace.reason) payload.reason = stripControls(trace.reason).slice(0, 500);
     const relaxed = this.relaxedZones(trace);
     if (relaxed.length > 0) payload.relaxedZones = relaxed;
-    if (outcome.meta) payload.meta = outcome.meta;
+    if (outcome.meta) payload.meta = redactDeep(outcome.meta, this.secrets);
     try {
       this.journal.append({
         sessionId: ctx.sessionId,
@@ -268,6 +275,17 @@ export class LocalToolBus implements ToolBus {
 
 function errorText(err: unknown): string {
   return stripControls(err instanceof Error ? err.message : String(err)).slice(0, 2000);
+}
+
+/** A tool's block reason; a throwing check blocks (fail closed). */
+function safeBlocked(tool: LocalTool): string | undefined {
+  if (!tool.blocked) return undefined;
+  try {
+    const r = tool.blocked();
+    return r === undefined ? undefined : stripControls(r).slice(0, 1000);
+  } catch {
+    return `${tool.def.name} is blocked: its block check failed`;
+  }
 }
 
 function safeDecide(

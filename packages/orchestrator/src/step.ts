@@ -9,11 +9,20 @@ import {
   type TaskNode,
 } from '@kernelpai/core';
 import { FallbackExecutor } from '@kernelpai/executor';
+import { AgentBudget } from './agent-budget.js';
 import { stepBand } from './band.js';
 import { GraphBudget } from './graph-budget.js';
 import { NodeBudgets, type NodeHold } from './node-budget.js';
 import { stepMessages } from './prompts.js';
 import { constrainDecision, preferRef, routeDiverse, sameRef, type Routed } from './routing.js';
+import {
+  DEFAULT_RATE_LIMIT_COOLDOWN_MS,
+  SourceLimits,
+  avoiding,
+  sourceKey,
+  sourceOf,
+  type SourceKind,
+} from './source-limits.js';
 import { executeWithTools, type LoopResult } from './tool-loop.js';
 import {
   OrchestrationError,
@@ -37,9 +46,17 @@ export class StepRunner {
   readonly graph: GraphBudget;
   /** Per-node spend of the current graph run against each node's `budgetUsd`. */
   readonly nodes: NodeBudgets;
+  /** Rate-limited or out-of-quota `source:provider` pairs (R-5E3), kept across runs. */
+  readonly limits: SourceLimits;
+  /** Subscription agents' runs and minutes in the current graph run (R-5E7). */
+  readonly agentBudget: AgentBudget | undefined;
+  /** The current run is unattended: subscription agents are refused (D-029 R1). */
+  unattended = false;
 
   constructor(readonly o: OrchestratorOptions) {
     this.executor = new FallbackExecutor(o.resolve, o.journal, o.executor);
+    this.agentBudget = o.agents && new AgentBudget(o.agents.budget);
+    this.limits = o.sourceLimits ?? new SourceLimits();
     const ask = o.budget && ((c: ScoredCandidate, l: string) => this.hook(c, l));
     this.graph = new GraphBudget(o.maxGraphUsd, ask, o.journal, o.sessionId);
     this.nodes = new NodeBudgets(ask, o.journal, o.sessionId);
@@ -179,8 +196,51 @@ export class StepRunner {
     });
   }
 
+  /**
+   * A source and provider hit a rate limit or ran out of quota: skipped by later steps until
+   * the cooldown passes (journaled; no secret, no prompt).
+   */
+  limitHit(source: SourceKind, provider: string, ms: number, nodeId?: string): void {
+    const key = sourceKey(source, provider);
+    const until = new Date(this.limits.mark(key, ms)).toISOString();
+    this.intervention(nodeId, { action: 'source rate-limited', source: key, until });
+  }
+
+  /** A routed attempt failed with a 429: its `api:` or `local:` provider is skipped a while. */
+  routedLimitHit(ref: ModelRef, nodeId: string): void {
+    const c = this.o.candidates.find((k) => sameRef(k.ref, ref));
+    const ms = this.o.rateLimitCooldownMs ?? DEFAULT_RATE_LIMIT_COOLDOWN_MS;
+    this.limitHit(c ? sourceOf(c) : 'api', ref.provider, ms, nodeId);
+  }
+
+  /** True when this routed candidate's source and provider are rate-limited now. */
+  isLimited(ref: ModelRef): boolean {
+    const c = this.o.candidates.find((k) => sameRef(k.ref, ref));
+    return this.limits.limited(sourceKey(c ? sourceOf(c) : 'api', ref.provider));
+  }
+
+  /**
+   * Routes away from rate-limited sources first (R-5E3: the next candidate within policy);
+   * when nothing else is left, routes as if none were limited (the limit may have lifted).
+   */
+  private routeAvoiding(node: TaskNode, spec: StepSpec, pin: ModelRef | undefined): Routed {
+    const avoid = this.limits.limitedProviders(this.o.candidates);
+    if (avoid.length === 0) return routeDiverse(this.o, node, spec, pin);
+    try {
+      const o = { ...this.o, constraints: avoiding(this.o.constraints, avoid) };
+      return routeDiverse(o, node, spec, pin);
+    } catch {
+      this.intervention(node.id, {
+        action: 'rate-limited source used',
+        providers: avoid,
+        reason: 'no other candidate within policy',
+      });
+      return routeDiverse(this.o, node, spec, pin);
+    }
+  }
+
   private decide(node: TaskNode, spec: StepSpec, pin: ModelRef | undefined): RoutingDecision {
-    const routed = routeDiverse(this.o, node, spec, pin);
+    const routed = this.routeAvoiding(node, spec, pin);
     const decision = spec.prefer ? preferRef(routed.decision, spec.prefer) : routed.decision;
     this.journalRouting(node, spec, { ...routed, decision }, pin !== undefined);
     return decision;

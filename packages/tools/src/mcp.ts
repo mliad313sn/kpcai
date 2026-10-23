@@ -12,6 +12,11 @@ const ServerConfigSchema = z.object({
   args: z.array(z.string()).default([]),
   env: z.record(z.string(), z.string()).default({}),
   cwd: z.string().optional(),
+  /**
+   * Hosts the server may reach through its egress proxy (R-501): `host`, `host:port` or
+   * `*.domain`. Empty (the default) refuses every outbound HTTP(S) request.
+   */
+  egress: z.array(z.string().min(1).max(253)).default([]),
 });
 export const McpConfigSchema = z.object({
   servers: z.record(z.string().regex(/^[a-zA-Z0-9_-]{1,32}$/), ServerConfigSchema).default({}),
@@ -86,22 +91,54 @@ export function resultText(result: CallToolResult): string {
 
 export interface McpConnection {
   server: string;
+  /** The server's `serverInfo.version` from the MCP handshake ('' when absent). */
+  version?: string;
   tools: LocalTool[];
   /** Tools that could not be exposed (name too long, duplicate). */
   skipped: string[];
   close(): Promise<void>;
 }
 
-function toLocalTool(server: string, client: Client, tool: Tool, name: string): LocalTool {
+/** Decides, before every call, whether a server's tools may run (pinning, R-501). */
+export interface McpGuard {
+  /** Why calls are refused right now; undefined lets them through. */
+  blocked(): string | undefined;
+}
+
+/**
+ * The definition shown to models. A server blocked when its tools are exposed shows no
+ * text of its own (that text is what changed): a fixed notice and an open schema, so a
+ * call reaches the bus and is refused there with the reason.
+ */
+function toolDef(server: string, tool: Tool, name: string, guard?: McpGuard): LocalTool['def'] {
+  const source = `mcp:${server}`;
+  if (guard?.blocked() !== undefined) {
+    const description = `[blocked] MCP server ${server} is not approved in its current form; calls are refused.`;
+    return { name, description, inputSchema: { type: 'object' }, risk: 'destructive', source };
+  }
   return {
-    def: {
-      name,
-      description: stripControls(tool.description ?? tool.title ?? tool.name).slice(0, 1024),
-      inputSchema: tool.inputSchema as Record<string, unknown>,
-      risk: riskFromAnnotations(tool.annotations),
-      source: `mcp:${server}`,
-    },
+    name,
+    description: stripControls(tool.description ?? tool.title ?? tool.name).slice(0, 1024),
+    inputSchema: tool.inputSchema as Record<string, unknown>,
+    risk: riskFromAnnotations(tool.annotations),
+    source,
+  };
+}
+
+function toLocalTool(
+  server: string,
+  client: Client,
+  tool: Tool,
+  name: string,
+  guard?: McpGuard,
+): LocalTool {
+  return {
+    def: toolDef(server, tool, name, guard),
+    ...(guard ? { blocked: () => guard.blocked() } : {}),
     async run(input, ctx): Promise<ToolOutcome> {
+      // Checked again here: the bus checks first, this covers a direct caller.
+      const reason = guard?.blocked();
+      if (reason !== undefined) return { content: reason, isError: true };
       const result = await client.callTool(
         { name: tool.name, arguments: input },
         { signal: ctx.signal, timeout: MCP_CALL_TIMEOUT_MS },
@@ -112,7 +149,12 @@ function toLocalTool(server: string, client: Client, tool: Tool, name: string): 
   };
 }
 
-function exposeTools(server: string, client: Client, tools: Tool[]): Omit<McpConnection, 'close'> {
+export function exposeTools(
+  server: string,
+  client: Client,
+  tools: Tool[],
+  guard?: McpGuard,
+): Omit<McpConnection, 'close'> {
   const out: LocalTool[] = [];
   const skipped: string[] = [];
   const seen = new Set<string>();
@@ -123,7 +165,7 @@ function exposeTools(server: string, client: Client, tools: Tool[]): Omit<McpCon
       continue;
     }
     seen.add(name);
-    out.push(toLocalTool(server, client, t, name));
+    out.push(toLocalTool(server, client, t, name, guard));
   }
   return { server, tools: out, skipped };
 }
@@ -136,19 +178,35 @@ function withTimeout<T>(p: Promise<T>, ms: number, what: string): Promise<T> {
   return Promise.race([p, t]).finally(() => clearTimeout(timer));
 }
 
+/** An open MCP client with the server's version and tool list, not yet exposed. */
+export interface OpenedMcpServer {
+  client: Client;
+  version: string;
+  tools: Tool[];
+}
+
+export interface OpenMcpOptions {
+  timeoutMs?: number;
+  /** Set after the configured env (the egress proxy variables win). */
+  env?: Record<string, string>;
+  /** Called with the new tool list after a `tools/list_changed` notification. */
+  onToolsChanged?: (tools: Tool[] | null, error: Error | null) => void;
+}
+
 /**
- * Spawns one stdio MCP server (no shell; env = the SDK's safe defaults + the
- * configured `env`), lists its tools and wraps them as `mcp.<server>.<tool>`.
+ * Spawns one stdio MCP server (no shell; env = the SDK's safe defaults + the configured
+ * `env` + `options.env`) and lists its tools.
  */
-export async function connectMcpServer(
+export async function openMcpServer(
   server: string,
   cfg: McpServerConfig,
-  timeoutMs = MCP_CONNECT_TIMEOUT_MS,
-): Promise<McpConnection> {
+  options: OpenMcpOptions = {},
+): Promise<OpenedMcpServer> {
+  const timeoutMs = options.timeoutMs ?? MCP_CONNECT_TIMEOUT_MS;
   const transport = new StdioClientTransport({
     command: cfg.command,
     args: cfg.args,
-    env: cfg.env,
+    env: { ...cfg.env, ...options.env },
     cwd: cfg.cwd,
     stderr: 'pipe',
   });
@@ -156,7 +214,17 @@ export async function connectMcpServer(
   transport.stderr?.on('data', (c: Buffer) => {
     stderr = (stderr + c.toString('utf8')).slice(-STDERR_TAIL);
   });
-  const client = new Client({ name: 'kernelpai', version: '0.0.1' });
+  const onChanged = options.onToolsChanged;
+  const client = new Client(
+    { name: 'kernelpai', version: '0.0.1' },
+    onChanged
+      ? {
+          listChanged: {
+            tools: { debounceMs: 0, onChanged: (error, tools) => onChanged(tools, error) },
+          },
+        }
+      : {},
+  );
   try {
     await withTimeout(client.connect(transport), timeoutMs, `MCP server ${server} connect`);
     const listed = await withTimeout(
@@ -164,7 +232,7 @@ export async function connectMcpServer(
       timeoutMs,
       `MCP server ${server} tools/list`,
     );
-    return { ...exposeTools(server, client, listed.tools), close: () => client.close() };
+    return { client, version: client.getServerVersion()?.version ?? '', tools: listed.tools };
   } catch (err) {
     await client.close().catch(() => undefined);
     const tail = stderr.trim() ? `; stderr: ${stripControls(stderr.trim()).slice(-500)}` : '';
@@ -172,6 +240,19 @@ export async function connectMcpServer(
       cause: err,
     });
   }
+}
+
+/**
+ * Spawns one stdio MCP server and wraps its tools as `mcp.<server>.<tool>`, without
+ * pinning: the registry (`mcp-registry.ts`) is what runs use (R-501).
+ */
+export async function connectMcpServer(
+  server: string,
+  cfg: McpServerConfig,
+  timeoutMs = MCP_CONNECT_TIMEOUT_MS,
+): Promise<McpConnection> {
+  const { client, version, tools } = await openMcpServer(server, cfg, { timeoutMs });
+  return { ...exposeTools(server, client, tools), version, close: () => client.close() };
 }
 
 export interface McpConnectResult {

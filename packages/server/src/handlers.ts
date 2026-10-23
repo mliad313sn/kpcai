@@ -2,6 +2,7 @@
 import { ProviderError } from '@kernelpai/core';
 import {
   KernelError,
+  extensionsSummary,
   packSummary,
   scopeSummary,
   summarizeRules,
@@ -20,6 +21,7 @@ import {
 } from '@kernelpai/kernel/protocol';
 import type { z } from 'zod';
 import type { ConfirmBroker } from './confirm-broker.js';
+import { extensionHandlers } from './extension-handlers.js';
 
 type ParamsOf<M extends MethodName> = z.infer<(typeof Methods)[M]['params']>;
 type Handler<M extends MethodName> = (params: ParamsOf<M>) => unknown;
@@ -79,6 +81,7 @@ async function planResult(kernel: Kernel, p: ParamsOf<'plan'>, defaults: RunOpti
     packs: packSummary(plan.packs),
     scope: scopeSummary(plan.scope),
     ...(plan.memory ? { memory: plan.memory.summary } : {}),
+    ...(plan.extensions ? { extensions: extensionsSummary(plan.extensions) } : {}),
   };
 }
 
@@ -127,6 +130,7 @@ export function handlers(d: HandlerDeps): Handlers {
     ...workspaceHandlers(kernel),
     ...memoryHandlers(kernel),
     ...learningHandlers(kernel, d, defaults),
+    ...extensionHandlers(kernel),
     'confirm.answer': (p) => ({ accepted: d.broker.answer(p.confirmId, p.ok, p.choice) }),
     'sessions.list': (p) => ({ sessions: kernel.sessions(p.limit ?? 20) }),
     'sessions.events': (p) => ({ events: kernel.events(p.sessionId, p.limit ?? 1000) }),

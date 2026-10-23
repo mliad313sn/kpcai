@@ -1,0 +1,23 @@
+# Claude Code, headless (R-503, ADR-0034). Runs under the user's own login: KernelPAI never
+# reads, stores or forwards its credentials, and removes its own API keys from the child's
+# environment, so the run uses the user's plan and not KernelPAI's key.
+id: claude-code
+name: Claude Code
+binary: claude
+args: ['-p', '{prompt}', '--output-format', 'json', '--permission-mode', 'acceptEdits']
+promptVia: arg
+provider: anthropic
+jurisdiction: US
+output:
+  format: json
+  text: result
+  error: is_error
+  # Claude Code reports a notional cost even on a subscription: shown, never billed.
+  costUsd: total_cost_usd
+  inputTokens: usage.input_tokens
+  outputTokens: usage.output_tokens
+rateLimit:
+  patterns: ['usage limit reached', 'rate limit', '\b429\b', 'quota']
+  cooldownMinutes: 60
+timeoutMinutes: 20
+notes: 'acceptEdits lets it edit files in its working directory (the node worktree) without asking.'

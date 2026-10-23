@@ -1,0 +1,17 @@
+# Gemini CLI, headless (R-503, ADR-0034). auto_edit approves file edits only; shell commands
+# still need approval, which a headless run never gives.
+id: gemini-cli
+name: Gemini CLI
+binary: gemini
+args: ['-p', '{prompt}', '--output-format', 'json', '--approval-mode', 'auto_edit']
+promptVia: arg
+provider: google
+jurisdiction: US
+output:
+  format: json
+  text: response
+  error: error
+rateLimit:
+  patterns: ['quota', 'rate limit', 'RESOURCE_EXHAUSTED', '\b429\b']
+  cooldownMinutes: 60
+timeoutMinutes: 20

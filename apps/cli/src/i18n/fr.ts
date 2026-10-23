@@ -11,6 +11,7 @@ Utilisation :
       [--planner template|model] [--apply] [--yes-apply] [--allow-same-provider]
       [--isolated]  exécution dans son propre worktree git, fusionné après confirmation
       [--scope <fichier>]  périmètre autorisé (YAML/JSON) pour les packs qui l'exigent
+      [--skill <nom>] [--agent <nom>]  skill / agent nommé pour chaque nœud (ne fait que restreindre)
       --yes n'accepte que les questions de coût ; écrire exige --yes-apply ou o à la question
   kpai checkpoints [--session <id>]   Points de reprise pris avant les écritures, par exécution
   kpai restore <réf>                   Restaure un point de reprise (demande toujours ; annulation affichée)
@@ -22,6 +23,11 @@ Utilisation :
   kpai memory [list|add|edit|rm|pending|confirm|reject|export] [--layer user|project]
                                        Mémoire avec provenance ; les modèles proposent, vous confirmez
   kpai tools                           Outils utilisables par les modèles, leur risque et leur source
+  kpai mcp list|approve <s>|remove <s>  Liste blanche MCP : serveurs épinglés (version + empreinte) ;
+                                       un serveur modifié est bloqué jusqu'à nouvelle approbation
+  kpai extensions                      Skills, agents nommés et crochets de cet espace de travail
+  kpai ticket list|show <id>|run <id>  Tickets locaux (.kpstudio/tickets) ; run demande avant
+                                       d'écrire le résultat dans le statut du ticket
   kpai studio [--port N] [--allow-test] Démarre le serveur noyau local de KP Studio, affiche son URL
                                        (--allow-test : fournisseurs simulés hors ligne par défaut)
   kpai run <demande>                   Classe, route selon la compétence, vérifie le budget,

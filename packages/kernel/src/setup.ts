@@ -42,6 +42,10 @@ export interface GraphOptions {
   isolated?: boolean | 'auto';
   /** Authorised scope for packs that require one (WI-S1-03); validated by the kernel. */
   scope?: unknown;
+  /** A skill every node of the plan uses (R-502); it can only narrow the nodes' tools. */
+  skill?: string;
+  /** A named agent every node of the plan is assigned (R-502); narrowing only. */
+  agent?: string;
 }
 
 /** The routing constraints journaled with a run (P4-F2). */

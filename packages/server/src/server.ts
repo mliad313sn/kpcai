@@ -174,6 +174,9 @@ function watchRun(handle: RunHandle, broadcast: Broadcast): void {
         artifacts: o.artifacts,
         ...(o.worktree ? { worktree: o.worktree } : {}),
         ...(verificationOf(o.result) ? { verification: verificationOf(o.result) } : {}),
+        // D-028: providers that served the run and their source.
+        ...(o.providers ? { providers: o.providers, sources: o.sources ?? [] } : {}),
+        ...(o.source ? { source: o.source } : {}),
       });
     },
     (err: unknown) => {

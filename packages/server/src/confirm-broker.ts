@@ -61,6 +61,10 @@ export class ConfirmBroker {
       ...(req.artifact ? { artifact: req.artifact } : {}),
       ...(req.memory ? { memory: req.memory } : {}),
       ...(req.dispute ? { dispute: req.dispute } : {}),
+      // D-028 facts, structured (a delegate never reads the question).
+      ...(req.amountUsd !== undefined && req.amountUsd >= 0 ? { amountUsd: req.amountUsd } : {}),
+      ...(req.inWorktree !== undefined ? { inWorktree: req.inWorktree } : {}),
+      ...(req.physical !== undefined ? { physical: req.physical } : {}),
     };
     return new Promise((resolve) => {
       const timer = setTimeout(() => settle(false), this.timeoutMs);

@@ -4,6 +4,9 @@ import { localAuthor, recordGrade } from './manual.js';
 import { SIGNAL_WEIGHTS, isTestCommand } from './signals.js';
 import { Script } from './test-helpers/script.js';
 
+/** Journal meta of a `test.run` call (tools/builtins/test-run.ts). */
+const run = (status: string, args = ['vitest', 'run']) => ({ command: 'npx', args, status });
+
 const of = (grades: NodeGrade[], model: string, nodeId = 'n1'): NodeGrade | undefined =>
   grades.find((g) => `${g.ref.provider}/${g.ref.model}` === model && g.nodeId === nodeId);
 
@@ -156,7 +159,12 @@ describe('more outcomes', () => {
       input: { command: 'vitest', args: [] },
       meta: { exitCode: null, timedOut: true },
     });
-    s.tool('n2', 'a/m', { tool: 'test.run', decision: 'allow', isError: false });
+    s.tool('n2', 'a/m', {
+      tool: 'test.run',
+      decision: 'allow',
+      isError: false,
+      meta: run('passed'),
+    });
     s.tool('n2', 'a/m', { tool: 'test.run', decision: 'deny', isError: true });
     s.outcome('run-1');
     s.apply('run-1', 'n1', 0);
@@ -167,6 +175,42 @@ describe('more outcomes', () => {
       ['rollback', 0],
     ]);
     expect(of(grades, 'a/m', 'n2')?.signals.map((x) => [x.kind, x.value])).toEqual([['tests', 1]]);
+  });
+});
+
+describe('test.run evidence (R-505)', () => {
+  it('counts a real test command by its parsed status; no-op commands and no-test runs do not', () => {
+    const s = new Script();
+    s.plan([
+      { id: 'n1', type: 'test' },
+      { id: 'n2', type: 'test' },
+      { id: 'n3', type: 'test' },
+    ]);
+    for (const n of ['n1', 'n2', 'n3']) s.answer(n, 'a/m', 'author', 't', { taskType: 'test' });
+    s.tool('n1', 'a/m', { tool: 'test.run', decision: 'confirmed', meta: run('failed') });
+    s.tool('n2', 'a/m', {
+      tool: 'test.run',
+      decision: 'confirmed',
+      meta: run('passed', ['vitest', 'run', '--passWithNoTests']),
+    });
+    s.tool('n2', 'a/m', { tool: 'test.run', decision: 'confirmed', meta: run('no-tests') });
+    s.tool('n2', 'a/m', {
+      tool: 'test.run',
+      decision: 'confirmed',
+      meta: { ...run('passed'), command: 'make', args: ['lint'] },
+    });
+    s.tool('n3', 'a/m', {
+      tool: 'test.run',
+      decision: 'confirmed',
+      meta: { ...run('error'), timedOut: true },
+    });
+    s.tool('n3', 'a/m', { tool: 'test.run', decision: 'confirmed', meta: null });
+    s.outcome('run-1');
+    const { grades } = gradeJournal(s.j);
+    expect(of(grades, 'a/m', 'n1')?.signals.map((x) => [x.kind, x.value])).toEqual([['tests', 0]]);
+    // No signal at all: n2 gets no grade.
+    expect(of(grades, 'a/m', 'n2')?.signals ?? []).toEqual([]);
+    expect(of(grades, 'a/m', 'n3')?.signals.map((x) => [x.kind, x.value])).toEqual([['tests', 0]]);
   });
 });
 

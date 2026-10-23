@@ -42,7 +42,13 @@ export async function capCheck(
   } else if (
     yes ||
     overBudget ||
-    (await host.confirm({ kind: 'budget', question: `${why}. Continue?`, runId: c.runId }))
+    (await host.confirm({
+      kind: 'budget',
+      question: `${why}. Continue?`,
+      runId: c.runId,
+      // D-028: the band top asked, structured (a delegate never reads the question).
+      amountUsd: c.capUsd,
+    }))
   ) {
     journal.append({
       sessionId,

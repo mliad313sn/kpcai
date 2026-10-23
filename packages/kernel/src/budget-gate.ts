@@ -74,6 +74,7 @@ export class BudgetGate {
       this.flags.yes === true ||
       (await this.ask(
         `${who}: expected ${this.money(est)} is above your confirmation threshold. Continue?`,
+        est,
       ));
     if (!ok) this.host.say(`not run — ${who} declined at confirmation\n`);
     return ok ? true : this.record(`budget: ${who} declined at confirmation`, v, false);
@@ -92,11 +93,16 @@ export class BudgetGate {
     return this.record(`${ok ? 'accepted' : 'refused'}: ${label}`, { label }, ok);
   }
 
-  private ask(question: string): Promise<boolean> {
+  /**
+   * `amountUsd` (D-028) only when the amount is known: going past an accepted cap has no
+   * structured amount, so no delegate can pre-answer it.
+   */
+  private ask(question: string, amountUsd?: number): Promise<boolean> {
     return this.host.confirm({
       kind: 'budget',
       question,
       ...(this.ctx.runId ? { runId: this.ctx.runId } : {}),
+      ...(amountUsd !== undefined && Number.isFinite(amountUsd) ? { amountUsd } : {}),
     });
   }
 
