@@ -31,4 +31,5 @@ jobs:
       - run: pnpm test:coverage
       - run: node scripts/demo-phase0.mjs
       - run: node scripts/demo-phase1.mjs
+      - run: node scripts/demo-phase2.mjs
       - run: node scripts/bench-router.mjs

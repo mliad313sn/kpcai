@@ -7,6 +7,9 @@ export interface MockSpec {
   price: [number, number];
   code: number;
   writing: number;
+  analysis?: number;
+  test?: number;
+  critique?: number;
 }
 
 /** Writes offline mock providers into $KPAI_HOME/providers so routing has real choices. */
@@ -29,7 +32,7 @@ export function writeMockProviders(home: string, specs: readonly MockSpec[]): vo
         '    maxOutput: 4096',
         '    modalities: [text, code]',
         `    price: { inputPerMTok: ${s.price[0]}, outputPerMTok: ${s.price[1]} }`,
-        `    competence: { code_generation: ${s.code}, test: ${s.code}, writing: ${s.writing}, critique: ${s.writing}, analysis: 0.6, research: 0.5, decision: 0.6 }`,
+        `    competence: { code_generation: ${s.code}, test: ${s.test ?? s.code}, writing: ${s.writing}, critique: ${s.critique ?? s.writing}, analysis: ${s.analysis ?? 0.6}, research: 0.5, decision: 0.6 }`,
         '',
       ].join('\n'),
     );

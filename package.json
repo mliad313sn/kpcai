@@ -2,7 +2,7 @@
   "name": "kernelpai",
   "version": "0.0.1",
   "private": true,
-  "description": "KernelPAI — local multi-AI development console (orchestration kernel)",
+  "description": "KernelPAI \u2014 local multi-AI development console (orchestration kernel)",
   "license": "UNLICENSED",
   "type": "module",
   "packageManager": "pnpm@10.28.0",
@@ -21,7 +21,8 @@
     "demo:phase1": "pnpm build && node scripts/demo-phase1.mjs",
     "bench": "pnpm build && node scripts/bench-phase0.mjs && node scripts/bench-router.mjs",
     "kpai": "node apps/cli/dist/bin.js",
-    "check": "pnpm format:check && pnpm lint && pnpm build && pnpm test:coverage"
+    "check": "pnpm format:check && pnpm lint && pnpm build && pnpm test:coverage",
+    "demo:phase2": "pnpm build && node scripts/demo-phase2.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

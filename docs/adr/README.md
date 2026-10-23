@@ -22,3 +22,4 @@ Status values: Accepted, Superseded by ADR-NNNN.
 | [0015](0015-untrusted-text-and-provider-trust.md)    | Untrusted text and provider trust boundaries                    | Accepted |
 | [0016](0016-sessions-fallback-budget-calibration.md) | Sessions, budget-checked fallbacks, stall timeouts, calibration | Accepted |
 | [0017](0017-graph-protocols-and-tool-contracts.md)   | Task graph, protocols and tool contracts                        | Accepted |
+| [0018](0018-graph-cli.md)                            | `kpai plan` / `kpai do`: planning, gating and patches           | Accepted |

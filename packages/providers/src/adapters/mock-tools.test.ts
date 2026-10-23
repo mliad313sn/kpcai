@@ -107,4 +107,13 @@ describe('MockAdapter diff scripting', () => {
     expect(diff).toContain('@@ -0,0 +1,4 @@');
     expect(diff).toContain('+// [[revised]]');
   });
+
+  it('[[testdiff:<path>]] is used instead of [[diff:]] for a test task', async () => {
+    const markers = '[[diff:src/a.ts]] [[testdiff:test/a.test.ts]]';
+    const say = async (content: string) => textOf(await events([{ role: 'user', content }]));
+    const impl = await say(`Role: author\nTask (Implementation):\n${markers}`);
+    const tests = await say(`Role: author\nTask (Tests):\n${markers}`);
+    expect(impl).toContain('+++ b/src/a.ts');
+    expect(tests).toContain('+++ b/test/a.test.ts');
+  });
 });

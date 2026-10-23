@@ -100,7 +100,8 @@ function toolCall(scope: Scope): MockReply | undefined {
 /** A critique is in the conversation: a verdict JSON key or the word "critique". */
 function hasCritique(req: ChatRequest): boolean {
   return req.messages.some(
-    (m) => m.role !== 'system' && /"approve"\s*:|\bcritique\b/i.test(m.content),
+    // The orchestrator's revision prompt mentions "an independent critic" (not "critique").
+    (m) => m.role !== 'system' && /"approve"\s*:|\bcritique\b|\bcritic\b/i.test(m.content),
   );
 }
 
@@ -115,7 +116,7 @@ function roleReply(role: Role | undefined, scope: Scope): string | undefined {
 /**
  * The scripted answer for this request, or undefined for the default echo.
  * Precedence: planner/critic/judge/voter role → tool result answer → `[[tool:…]]`
- * call → `[[diff:…]]` → revised author → echo.
+ * call → `[[diff:…]]` (`[[testdiff:…]]` for a `Task (Tests…)` prompt) → revised author → echo.
  */
 export function scriptedReply(
   req: ChatRequest,
@@ -133,7 +134,10 @@ export function scriptedReply(
   const call = toolCall(scope);
   if (call) return call;
   const revised = role === 'author' && hasCritique(req);
-  const diff = /\[\[diff:([^\]\s]+)\]\]/.exec(scope.markers);
+  // A test task (`Task (Tests…):` in the prompt) uses `[[testdiff:<path>]]` when present.
+  const testTask = /Task \([^)]*test/i.test(scope.lastUser);
+  const testDiff = testTask ? /\[\[testdiff:([^\]\s]+)\]\]/.exec(scope.markers) : null;
+  const diff = testDiff ?? /\[\[diff:([^\]\s]+)\]\]/.exec(scope.markers);
   if (diff?.[1]) return text(creationDiff(diff[1], scope.model, revised));
   if (revised) return text(echo.replace('] ', '] [[revised]] '));
   return undefined;

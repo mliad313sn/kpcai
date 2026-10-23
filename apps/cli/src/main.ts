@@ -5,11 +5,19 @@ import { exportCommand, logCommand, verifyCommand } from './commands/log.js';
 import { providersCommand } from './commands/providers.js';
 import { routeCommand, runCommand, type RunOptions } from './commands/run.js';
 import { statsCommand } from './commands/stats.js';
+import { doCommand, planCommand } from './commands/graph.js';
+import { toolsCommand } from './commands/tools.js';
+import type { GraphOptions } from './graph/setup.js';
 import type { Io } from './io.js';
 
-export const USAGE = `KernelPAI (phase 1)
+export const USAGE = `KernelPAI (phase 2)
 
 Usage:
+  kpai do <request>                    Plan a task graph, show who does what and the cost,
+                                       run it with cross-provider review, show patches
+  kpai plan <request>                  The same plan and estimate, dry run
+      [--planner template|model] [--apply] [--allow-same-provider] (+ run options below)
+  kpai tools                           Tools models can use, their risk and source
   kpai run <request>                   Classify, route by competence, budget-check,
                                        run with automatic fallback, journal everything
   kpai route <request>                 Same plan and routing, dry run (nothing sent)
@@ -45,6 +53,9 @@ const OPTIONS = {
   'allow-test': { type: 'boolean' },
   'over-budget': { type: 'boolean' },
   'new-session': { type: 'boolean' },
+  planner: { type: 'string' },
+  apply: { type: 'boolean' },
+  'allow-same-provider': { type: 'boolean' },
   verbose: { type: 'boolean', short: 'v' },
 } as const;
 
@@ -83,6 +94,28 @@ type Values = ReturnType<
   typeof parseArgs<{ args: string[]; options: typeof OPTIONS; allowPositionals: true }>
 >['values'];
 
+function graphOptions(v: Values, rest: string[]): GraphOptions {
+  if (rest.length === 0) throw new UsageError('plan/do need a request');
+  return {
+    request: rest.join(' '),
+    planner: oneOf('planner', v.planner, ['template', 'model']),
+    profile: v.profile,
+    localOnly: v['local-only'],
+    exclude: v.exclude
+      ?.split(',')
+      .map((x) => x.trim())
+      .filter(Boolean),
+    allowTest: v['allow-test'],
+    allowSameProvider: v['allow-same-provider'],
+    apply: v.apply,
+    yes: v.yes,
+    overBudget: v['over-budget'],
+    newSession: v['new-session'],
+    verbose: v.verbose,
+    db: v.db,
+  };
+}
+
 function runOptions(v: Values, rest: string[]): RunOptions {
   if (rest.length === 0) throw new UsageError('run/route need a request');
   return {
@@ -105,6 +138,38 @@ function runOptions(v: Values, rest: string[]): RunOptions {
   };
 }
 
+type Handler = (io: Io, v: Values, rest: string[]) => number | Promise<number>;
+
+function askOptions(v: Values, rest: string[]): Parameters<typeof askCommand>[1] {
+  if (rest.length === 0) throw new UsageError('ask needs a prompt');
+  return {
+    model: v.model,
+    prompt: rest.join(' '),
+    system: v.system,
+    maxTokens: positiveInt('max-tokens', v['max-tokens']),
+    yes: v.yes,
+    db: v.db,
+  };
+}
+
+const COMMANDS: Readonly<Record<string, Handler>> = {
+  do: (io, v, rest) => doCommand(io, graphOptions(v, rest)),
+  plan: (io, v, rest) => planCommand(io, graphOptions(v, rest)),
+  run: (io, v, rest) => runCommand(io, runOptions(v, rest)),
+  route: (io, v, rest) => routeCommand(io, runOptions(v, rest)),
+  tools: (io) => toolsCommand(io),
+  stats: (io, v) => statsCommand(io, { db: v.db, session: v.session }),
+  providers: (io) => providersCommand(io),
+  ask: (io, v, rest) => askCommand(io, askOptions(v, rest)),
+  log: (io, v) =>
+    logCommand(io, { db: v.db, session: v.session, limit: positiveInt('limit', v.limit) }),
+  export: (io, v, rest) => {
+    if (!rest[0]) throw new UsageError('export needs a session id');
+    return exportCommand(io, { db: v.db, session: rest[0], out: v.out });
+  },
+  verify: (io, v) => verifyCommand(io, { db: v.db }),
+};
+
 export async function main(argv: readonly string[], io: Io): Promise<number> {
   try {
     const { values: v, positionals } = parseArgs({
@@ -113,41 +178,13 @@ export async function main(argv: readonly string[], io: Io): Promise<number> {
       allowPositionals: true,
     });
     const [command, ...rest] = positionals;
-    const db = v.db;
-    switch (v.help ? 'help' : command) {
-      case 'run':
-      case 'route': {
-        const o = runOptions(v, rest);
-        return command === 'run' ? await runCommand(io, o) : await routeCommand(io, o);
-      }
-      case 'stats':
-        return statsCommand(io, { db, session: v.session });
-      case 'providers':
-        return await providersCommand(io);
-      case 'ask':
-        if (rest.length === 0) throw new UsageError('ask needs a prompt');
-        return await askCommand(io, {
-          model: v.model,
-          prompt: rest.join(' '),
-          system: v.system,
-          maxTokens: positiveInt('max-tokens', v['max-tokens']),
-          yes: v.yes,
-          db,
-        });
-      case 'log':
-        return logCommand(io, { db, session: v.session, limit: positiveInt('limit', v.limit) });
-      case 'export':
-        if (!rest[0]) throw new UsageError('export needs a session id');
-        return exportCommand(io, { db, session: rest[0], out: v.out });
-      case 'verify':
-        return verifyCommand(io, { db });
-      case 'help':
-      case undefined:
-        io.out(USAGE);
-        return 0;
-      default:
-        throw new UsageError(`Unknown command "${command}"`);
+    if (v.help || command === undefined || command === 'help') {
+      io.out(USAGE);
+      return 0;
     }
+    const handler = Object.hasOwn(COMMANDS, command) ? COMMANDS[command] : undefined;
+    if (!handler) throw new UsageError(`Unknown command "${command}"`);
+    return await handler(io, v, rest);
   } catch (err) {
     return reportError(io, err);
   }
