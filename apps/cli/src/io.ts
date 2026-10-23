@@ -49,6 +49,10 @@ export function processIo(): Io {
       try {
         const answer = await rl.question(`${question} [y/N] `);
         return /^y(es)?$/i.test(answer.trim());
+      } catch (err) {
+        // Ctrl+C at a prompt is an interrupt like any other: exit 130 (review N5).
+        if (err instanceof Error && err.name === 'AbortError') process.exit(130);
+        throw err;
       } finally {
         rl.close();
       }

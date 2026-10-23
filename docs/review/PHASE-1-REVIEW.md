@@ -22,4 +22,12 @@ Reviewed: 4dd2d47. Fixes: 4481b57, 76ba1f4. Process: review → PO disposition �
 | F15 | Low    | Month spend unbounded; test locked wrong semantics                            | Fixed                                                 | `until` bound; test corrected                                                                                                                                           |
 | F16 | Low    | Currency ignored in prompts; `--allow-test` undocumented; project = raw cwd   | Partly fixed                                          | Prompts use display currency, flag documented; router reason still USD and project key = cwd → backlog B-11                                                             |
 
-Re-verification: see the section appended below once the reviewer reports.
+## Re-verification 1 (at 76ba1f4)
+
+Fixed and confirmed: F1, F2, F3, F4, F5, F6, F10, F12, F13, F15. Partial: F8 (key reuse by override), F9 (piped output), F16. New findings: N1 (refused fallback ended the chain, Medium), N2 (mid-stream disconnect stopped fallback, Medium), N3 (http endpoint looked available, Low/Medium), N4 (one bad user descriptor broke every command, Low), R1 (stall watchdog killed reasoning models — regression from F4, Medium).
+
+## Re-verification 2 (at 5fb4d6d, clean `git archive` build)
+
+N1, N2, N3, N4, R1 **confirmed fixed**. New: N5 (Ctrl+C at the confirmation prompt exited 1, Low) — fixed in the commit closing the gate. Residuals logged as B-14 to B-17 and B-9 to B-13.
+
+**Reviewer recommendation: PASS for phase 1.** No Critical or High finding open. Condition on the estimate target: deferred by the PO (D-010); the Sponsor's acknowledgement is requested (Q-2).
