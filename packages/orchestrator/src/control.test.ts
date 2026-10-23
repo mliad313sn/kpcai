@@ -2,7 +2,15 @@ import { describe, expect, it } from 'vitest';
 import type { GraphEvent, GraphResult, TaskGraph } from '@kernelpai/core';
 import { MAX_INSTRUCTION_CHARS, withInstruction } from './control.js';
 import { GraphRunner } from './runner.js';
-import { RoleAdapter, friendly, gnode, graph, setup, type Script } from './test-helpers/fakes.js';
+import {
+  RoleAdapter,
+  friendly,
+  gnode,
+  graph,
+  setup,
+  type Script,
+  isNote,
+} from './test-helpers/fakes.js';
 import type { OrchestratorOptions, RunControlEvent } from './types.js';
 
 const A = { provider: 'a', model: 'm' };
@@ -52,7 +60,7 @@ function harness(
   const interventions = () =>
     s.journal
       .events({ sessionId: s.sessionId })
-      .filter((e) => e.type === 'intervention')
+      .filter(isNote)
       .map((e) => ({ nodeId: e.nodeId, ...e.payload }));
   return { ...s, adapters, runner, control, states, onEvent, interventions };
 }

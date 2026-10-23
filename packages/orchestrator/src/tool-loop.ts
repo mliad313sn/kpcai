@@ -104,7 +104,7 @@ export async function executeWithTools(
       ...(run.signal ? { signal: run.signal } : {}),
       hooks: hooksFor(s, run, spec.role, hold),
       tools,
-      tags: { role: spec.role },
+      tags: { ...run.tags, role: spec.role },
     });
     cost += r.costUsd;
     s.graph.add(r.costUsd);

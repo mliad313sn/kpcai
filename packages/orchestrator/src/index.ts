@@ -127,3 +127,53 @@ export {
   type StepOutcome,
   type StepSpec,
 } from './types.js';
+export {
+  SUGGESTED_REVIEW_POLICY,
+  REVIEW_DEPTHS,
+  applyReviewPolicy,
+  isReviewPolicy,
+  mustBeReviewed,
+  reviewedNode,
+  type PolicyChange,
+  type ReviewDepth,
+  type ReviewPolicy,
+} from './review-policy.js';
+export {
+  isDisputed,
+  type Dispute,
+  type DisputeHook,
+  type DisputeKind,
+  type DisputeOption,
+  type DisputePosition,
+  type DisputeQuestion,
+  type DisputeRecord,
+} from './dispute.js';
+export {
+  VERIFICATION_ROLES,
+  nodeVerification,
+  verificationRoi,
+  type NodeVerification,
+  type VerificationRoi,
+} from './verification.js';
+export {
+  NODE_RECORDED,
+  RECORD_ACTIONS,
+  REPLAY_RECORDED,
+  REPLAY_STARTED,
+  RUN_STARTED,
+  readRun,
+  type ForkOrigin,
+  type RecordedNode,
+  type RecordedReplay,
+  type RecordedRun,
+} from './run-journal.js';
+export {
+  ReplayError,
+  replayNode,
+  type AttemptView,
+  type ReplayComparison,
+  type ReplayDeps,
+  type ReplayEdit,
+  type ReplayResult,
+} from './replay.js';
+export { planFork, runFork, type ForkEdit, type ForkPlan } from './fork.js';

@@ -28,7 +28,9 @@ import {
   type StepBand,
   type StepInput,
 } from './band.js';
+import { criticsOf } from './protocols/review.js';
 import { routePinned, sameRef, servedCandidate } from './routing.js';
+import type { PlannedNode } from './types.js';
 
 export interface StepEstimate {
   role: ContributionRole;
@@ -96,6 +98,8 @@ export interface StepContext {
   allowSameProvider: boolean;
   maxRevisions: number;
   voters: number;
+  /** Debate judges by default (a node's `judges` wins). */
+  judges?: number | undefined;
   node: GraphNode;
   /** Quoted placeholders of the dependencies' outputs, at their expected, low, high size. */
   context: ContextTexts;
@@ -329,7 +333,12 @@ function authorCritic(x: StepContext, steps: StepEstimate[]): void {
     exclude: [a.c.ref.provider],
     work: author.output,
   });
-  steps.push(step(x, { role: 'critic', type: 'critique' }, c, { min: 1, max: x.maxRevisions + 2 }));
+  const calls = { min: 1, max: x.maxRevisions + 2 };
+  steps.push(step(x, { role: 'critic', type: 'critique' }, c, calls));
+  const prompt: Prompt = (ctx, work) => criticPrompt(node, ctx, work);
+  const more = { role: 'critic' as const, type: 'critique' as const, prompt, work: author.output };
+  const wanted = criticsOf((node as PlannedNode).critics);
+  extraReviewers(x, steps, { ...more, exclude: [a.c.ref.provider], wanted, calls }, c);
   const rev = on(
     x,
     a.c.ref,
@@ -368,17 +377,52 @@ function debate(x: StepContext, steps: StepEstimate[]): void {
     ),
   );
   steps.push(...rebuttals);
-  const j = price(x, {
-    role: 'judge',
-    type: 'decision',
-    prompt: (ctx, work) => judgePrompt(node, ctx, work, work),
+  const judge = {
+    role: 'judge' as const,
+    type: 'decision' as const,
+    prompt: (ctx: string, work: string) => judgePrompt(node, ctx, work, work),
     exclude: [d1.c.ref.provider, d2.c.ref.provider],
     work: unionText(
       rebuttals.map((r) => r.output),
       x.allowance,
     ),
-  });
-  steps.push(step(x, { role: 'judge', type: 'decision' }, j, { min: 1, max: 2 }));
+  };
+  const j = price(x, judge);
+  const calls = { min: 1, max: 2 };
+  steps.push(step(x, judge, j, calls));
+  const wanted = criticsOf((node as PlannedNode).judges ?? x.judges);
+  extraReviewers(x, steps, { ...judge, wanted, calls }, j);
+}
+
+/**
+ * Critics or judges beyond the first (R-404 policy): each from a provider not used yet
+ * (strict, as the runner does); when none is left the node runs with fewer.
+ */
+function extraReviewers(
+  x: StepContext,
+  steps: StepEstimate[],
+  a: {
+    role: ContributionRole;
+    type: TaskType;
+    prompt: Prompt;
+    work: TextSize;
+    exclude: string[];
+    wanted: number;
+    calls: { min: number; max: number };
+  },
+  first: Priced,
+): void {
+  const used = [...a.exclude, first.c.ref.provider];
+  for (let i = 1; i < a.wanted; i++) {
+    try {
+      const p = price(x, { ...a, exclude: [...used], strict: true });
+      steps.push(step(x, { role: a.role, type: a.type }, p, a.calls));
+      used.push(p.c.ref.provider);
+    } catch (err) {
+      if (!(err instanceof Diversity)) throw err;
+      break;
+    }
+  }
 }
 
 /** Voters from distinct providers (never waived), +1 retry each; fewer than two is incomplete. */

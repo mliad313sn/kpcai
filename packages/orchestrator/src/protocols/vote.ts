@@ -1,4 +1,5 @@
-import type { ModelRef, ProtocolResult } from '@kernelpai/core';
+import { refToString, type ModelRef, type ProtocolResult } from '@kernelpai/core';
+import { disputed, type Dispute } from '../dispute.js';
 import { parseVote } from '../parse.js';
 import { voterPrompt } from '../prompts.js';
 import type { StepRunner } from '../step.js';
@@ -47,7 +48,8 @@ export function tally(ballots: readonly Ballot[]): TallyRow[] {
 /**
  * Vote (spec §3.1): up to `voters` (default 3) voters, each from a provider not used yet.
  * When no new provider is left, voting continues with fewer voters (journaled). A voter
- * that fails or answers unreadably is left out; cancellation stops the vote.
+ * that fails or answers unreadably is left out; cancellation stops the vote. Without a
+ * clear majority the node is disputed (R-405): the human picks, nothing is picked silently.
  */
 export async function vote(s: StepRunner, run: NodeRun): Promise<ProtocolResult> {
   const wanted = s.o.voters ?? DEFAULT_VOTERS;
@@ -82,7 +84,42 @@ export async function vote(s: StepRunner, run: NodeRun): Promise<ProtocolResult>
     });
     used.push(r.step.ref.provider);
   }
-  const [winner] = tally(ballots);
+  const rows = tally(ballots);
+  const [winner] = rows;
   if (!winner) return failure(run, 'vote', { error: 'no valid vote' });
+  if (!hasMajority(winner, rows, ballots.length)) {
+    return disputed(run, 'vote', voteDispute(rows, ballots));
+  }
   return finish(run, 'vote', winner.choice);
+}
+
+/**
+ * A clear majority (R-405): the leading choice has more than half of the ballots and more
+ * than half of the competence weight. Weights rank the choices but never turn a split
+ * (1–1–1, 1–1, or a 2–1 outweighed by one stronger voter) into a decision.
+ */
+export function hasMajority(winner: TallyRow, rows: readonly TallyRow[], ballots: number): boolean {
+  const weight = rows.reduce((a, r) => a + r.weight, 0);
+  return winner.votes * 2 > ballots && winner.weight * 2 > weight + EPS;
+}
+
+function voteDispute(rows: readonly TallyRow[], ballots: readonly Ballot[]): Dispute {
+  const options = rows.map((row, i) => ({
+    id: `choice-${i + 1}`,
+    label: `${row.choice} (${row.votes} vote${row.votes === 1 ? '' : 's'})`,
+    text: row.choice,
+    backers: ballots.filter((b) => b.choice === row.choice).map((b) => b.ref),
+  }));
+  const split = rows.map((r) => r.votes).join('–');
+  return {
+    kind: 'vote',
+    reason: `no majority among ${ballots.length} voters (${split})`,
+    options,
+    positions: ballots.map((b) => ({
+      ref: b.ref,
+      role: 'voter' as const,
+      says: `${refToString(b.ref)} votes ${b.choice}`,
+      option: options.find((o) => o.text === b.choice)?.id ?? '',
+    })),
+  };
 }

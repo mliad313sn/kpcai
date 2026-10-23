@@ -1,8 +1,14 @@
 import type { Contribution, NodeState, ProtocolResult, TaskGraph } from '@kernelpai/core';
+import type { DisputeRecord } from './dispute.js';
 import type { PlannedNode } from './types.js';
 
 /** Live state of one graph run, shared by the scheduler and the run controller. */
 export interface Run {
+  runId: string;
+  /** Nodes whose result a fork took from its parent run (reused, not re-run). */
+  reused: Set<string>;
+  /** How each disputed node was settled (R-405). */
+  disputes: Map<string, DisputeRecord>;
   /** A private copy of the approved graph; control actions replace its nodes. */
   graph: TaskGraph & { nodes: PlannedNode[] };
   states: Record<string, NodeState>;
@@ -23,9 +29,12 @@ export interface Run {
   wake: () => void;
 }
 
-export function newRun(graph: TaskGraph, signal: AbortSignal | undefined): Run {
+export function newRun(graph: TaskGraph, signal: AbortSignal | undefined, runId: string): Run {
   const cancel = new AbortController();
   const r: Run = {
+    runId,
+    reused: new Set(),
+    disputes: new Map(),
     graph: { ...graph, nodes: structuredClone(graph.nodes) as PlannedNode[] },
     states: {},
     results: new Map(),

@@ -8,6 +8,7 @@ import {
   setup,
   verdict,
   type Script,
+  isNote,
 } from './test-helpers/fakes.js';
 
 const run = (s: ReturnType<typeof setup>, nodes = [gnode()]) =>
@@ -57,7 +58,7 @@ describe('author + critic', () => {
     const s = setup([new RoleAdapter('a', friendly('A'))], { allowSameProvider: true });
     const r = await run(s, [ac]);
     expect(r.ok).toBe(true);
-    const iv = s.journal.events().filter((e) => e.type === 'intervention');
+    const iv = s.journal.events().filter(isNote);
     expect(iv.map((e) => e.payload['action'])).toContain('diversity waived');
   });
 
@@ -91,7 +92,7 @@ describe('author + critic', () => {
     ]);
     expect(r?.ok).toBe(true);
     expect(r?.approved).toBe(false);
-    const iv = s.journal.events().filter((e) => e.type === 'intervention');
+    const iv = s.journal.events().filter(isNote);
     expect(iv.map((e) => e.payload['action'])).toContain('not approved');
   });
 
@@ -141,7 +142,7 @@ describe('author + critic', () => {
     const r = await run(s, [gnode({ criticality: 'critical' })]);
     expect(r.results['n1']?.protocol).toBe('author_critic');
     expect(r.results['n1']?.contributions.map((c) => c.role)).toEqual(['author', 'critic']);
-    const iv = s.journal.events().filter((e) => e.type === 'intervention');
+    const iv = s.journal.events().filter(isNote);
     expect(iv[0]?.payload['action']).toBe('protocol upgraded');
   });
 
@@ -188,7 +189,7 @@ describe('debate', () => {
     const s = setup(two(), { allowSameProvider: true });
     const r = (await run(s, [node])).results['n1'];
     expect(r?.output).toBe('synthesis');
-    const iv = s.journal.events().filter((e) => e.type === 'intervention');
+    const iv = s.journal.events().filter(isNote);
     expect(iv.map((e) => [e.payload['action'], e.payload['role']])).toContainEqual([
       'diversity waived',
       'judge',
@@ -229,7 +230,7 @@ describe('vote', () => {
     expect(new Set(r?.contributions.map((c) => c.ref.provider))).toEqual(new Set(['a', 'b', 'c']));
   });
 
-  it('breaks a tie by the most competent voter', async () => {
+  it('never breaks a tie silently: a 1–1 or an outweighed 2–1 is disputed (R-405)', async () => {
     const s = setup(
       [
         new RoleAdapter('a', voter('beta'), { decision: 0.6 }),
@@ -237,7 +238,9 @@ describe('vote', () => {
       ],
       { voters: 2 },
     );
-    expect((await run(s, [node])).results['n1']?.output).toBe('alpha');
+    const r = await run(s, [node]);
+    expect(r.results['n1']?.output).toBe('');
+    expect(r.disputes['n1']?.options.map((o) => o.text)).toEqual(['alpha', 'beta']);
     const s2 = setup(
       [
         new RoleAdapter('a', voter('beta'), { decision: 0.9 }),
@@ -246,7 +249,9 @@ describe('vote', () => {
       ],
       { voters: 3 },
     );
-    expect((await run(s2, [node])).results['n1']?.output).toBe('beta');
+    const r2 = await run(s2, [node]);
+    expect(r2.states['n1']).toBe('failed');
+    expect(r2.disputes['n1']?.kind).toBe('vote');
   });
 
   it('votes with fewer voters when providers run out, even with allowSameProvider', async () => {
@@ -254,7 +259,7 @@ describe('vote', () => {
     const r = (await run(s, [node])).results['n1'];
     expect(r?.output).toBe('x');
     expect(r?.contributions).toHaveLength(1);
-    const iv = s.journal.events().filter((e) => e.type === 'intervention');
+    const iv = s.journal.events().filter(isNote);
     expect(iv[0]?.payload['reason']).toMatch(/only 1 distinct provider/);
   });
 
@@ -265,7 +270,7 @@ describe('vote', () => {
     ]);
     const r = await run(s, [node]);
     expect(r.results['n1']?.output).toBe('x');
-    const iv = s.journal.events().filter((e) => e.type === 'intervention');
+    const iv = s.journal.events().filter(isNote);
     expect(iv.map((e) => e.payload['action'])).toContain('voter left out');
     const s2 = setup([new RoleAdapter('a', () => [{ fail: 'auth' }])]);
     expect((await run(s2, [node])).states['n1']).toBe('failed');

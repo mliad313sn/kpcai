@@ -17,6 +17,7 @@ import {
   type TextSize,
 } from './estimate-steps.js';
 import { sumBands, type CostBand, type SpreadFn } from './band.js';
+import { applyReviewPolicy, type ReviewPolicy } from './review-policy.js';
 import { effectiveProtocol, upgradeReason } from './runner.js';
 import { DEFAULT_MAX_REVISIONS, DEFAULT_VOTERS, type PlannedNode } from './types.js';
 
@@ -86,6 +87,10 @@ export interface EstimateDeps {
   voters?: number;
   maxRevisions?: number;
   allowSameProvider?: boolean;
+  /** Debate judges (`OrchestratorOptions.judges`). */
+  judges?: number;
+  /** Review depth by criticality (R-404), applied as the runner applies it. */
+  reviewPolicy?: ReviewPolicy;
   /** Default `DEFAULT_DEPENDENCY_ALLOWANCE_TOKENS`. */
   dependencyAllowanceTokens?: number;
   /** Output spread from history (e.g. `outputSpread(journal)`); else a heuristic band. */
@@ -105,7 +110,8 @@ const sum = (xs: number[]): number => r6(xs.reduce((a, b) => a + b, 0));
  * counted at each dependency's output size (learned, else `dependencyAllowanceTokens`),
  * times its call count. The band takes the low and high sizes of every text a step reads.
  */
-export function estimateGraph(graph: TaskGraph, deps: EstimateDeps): GraphEstimate {
+export function estimateGraph(given: TaskGraph, deps: EstimateDeps): GraphEstimate {
+  const graph = applyReviewPolicy(given, deps.reviewPolicy).graph;
   const memo = new Map<string, NodeEstimate>();
   const byId = new Map(graph.nodes.map((n) => [n.id, n]));
   const allowance = deps.dependencyAllowanceTokens ?? DEFAULT_DEPENDENCY_ALLOWANCE_TOKENS;
@@ -153,6 +159,7 @@ function estimateNode(
     allowSameProvider: deps.allowSameProvider === true,
     maxRevisions: deps.maxRevisions ?? DEFAULT_MAX_REVISIONS,
     voters: deps.voters ?? DEFAULT_VOTERS,
+    judges: deps.judges,
     node,
     context: placeholderContext(node, allowance, size),
     allowance,

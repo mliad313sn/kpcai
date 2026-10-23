@@ -83,6 +83,12 @@ function packFieldProblems(n: PlannedNode): string[] {
   if (rc !== undefined && !(Array.isArray(rc) && rc.every(isStr))) {
     p.push('reviewCriteria must list strings');
   }
+  for (const f of ['critics', 'judges'] as const) {
+    const v = n[f];
+    if (v !== undefined && !(Number.isInteger(v) && (v as number) >= 1 && (v as number) <= 3)) {
+      p.push(`${f} must be 1, 2 or 3`);
+    }
+  }
   return p;
 }
 

@@ -14,6 +14,7 @@ import {
   toolDef,
   verdict,
   type Script,
+  isNote,
 } from './test-helpers/fakes.js';
 
 /** Phase 2 gate review regressions (P2-F3, F4, F8, F9). */
@@ -90,7 +91,7 @@ describe('P2-F4: code and tests always get a critic', () => {
       'author@a',
       'critic@b',
     ]);
-    const iv = s.journal.events().find((e) => e.type === 'intervention');
+    const iv = s.journal.events().find(isNote);
     expect(iv?.payload).toMatchObject({
       action: 'protocol upgraded',
       from: 'solo',

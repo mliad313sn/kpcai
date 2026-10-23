@@ -8,6 +8,7 @@ import {
   setup,
   toolDef,
   type Script,
+  isNote,
 } from './test-helpers/fakes.js';
 
 const call = (name: string, id = `c-${name}`) => ({ tool: { id, name, input: { path: 'a.ts' } } });
@@ -92,7 +93,7 @@ describe('tool loop', () => {
   it('journals tools a node lists but the bus does not know, and runs without a bus', async () => {
     const s = setup([new RoleAdapter('a', toolUser('fs.read'))], { tools: bus() });
     await new GraphRunner(s.options).run(graph([gnode({ tools: ['fs.read', 'git.blame'] })]));
-    const iv = s.journal.events().filter((e) => e.type === 'intervention');
+    const iv = s.journal.events().filter(isNote);
     expect(iv[0]?.payload).toEqual({ action: 'tools unavailable', tools: ['git.blame'] });
     const none = setup([new RoleAdapter('a', () => 'plain')]);
     const r = await new GraphRunner(none.options).run(graph([gnode({ tools: ['fs.read'] })]));

@@ -3,7 +3,7 @@ import type { ScoredCandidate } from '@kernelpai/core';
 import { stepBand } from './band.js';
 import { NodeBudgets } from './node-budget.js';
 import { GraphRunner } from './runner.js';
-import { RoleAdapter, friendly, gnode, graph, setup } from './test-helpers/fakes.js';
+import { RoleAdapter, friendly, gnode, graph, setup, isNote } from './test-helpers/fakes.js';
 import type { OrchestratorOptions } from './types.js';
 
 /** Review P3-F5: a node's `budgetUsd` is a cap, enforced like `maxGraphUsd`. */
@@ -19,7 +19,7 @@ function harness(over: Partial<OrchestratorOptions> = {}) {
   const actions = () =>
     s.journal
       .events({ sessionId: s.sessionId })
-      .filter((e) => e.type === 'intervention')
+      .filter(isNote)
       .map((e) => ({ nodeId: e.nodeId, ...e.payload }));
   const calls = () => adapters.reduce((n, a) => n + a.seen.length, 0);
   return { ...s, adapters, actions, calls };

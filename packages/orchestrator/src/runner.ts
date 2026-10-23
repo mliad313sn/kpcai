@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import {
   refToString,
   type GraphNode,
@@ -11,9 +12,12 @@ import {
 import type { Pack } from '@kernelpai/packs';
 import { RunController, type ControlOutcome, type RunControl, type RunStatus } from './control.js';
 import { deliverableOf, extractArtifacts, shapeOf, type NodeDeliverable } from './deliverable.js';
+import type { DisputeRecord } from './dispute.js';
+import { execNode } from './node-exec.js';
 import { quote } from './prompts.js';
-import { PROTOCOLS } from './protocols/registry.js';
+import { reviewedNode } from './review-policy.js';
 import { sameRef } from './routing.js';
+import { journalNode, journalRunStart, type ForkOrigin, type RecordedNode } from './run-journal.js';
 import { carry, newRun, withCarried, type Run } from './run-state.js';
 import {
   ScopeError,
@@ -32,6 +36,7 @@ import {
   type PlannedNode,
 } from './types.js';
 import { graphProblems } from './validate.js';
+import { verificationRoi, type VerificationRoi } from './verification.js';
 
 const BLOCKING: ReadonlySet<NodeState> = new Set(['failed', 'skipped', 'cancelled']);
 
@@ -74,12 +79,26 @@ export interface RunOptions {
   scope?: unknown;
   /** Clock for the scope expiry; default now. */
   now?: () => Date;
+  /** The kernel's run id, journaled with the run's record (R-403); default a new UUID. */
+  runId?: string;
+  /**
+   * A fork (`planFork`): these nodes keep their parent run's recorded result and are not
+   * re-run ("reused, not re-run"); the parent is journaled with the run.
+   */
+  fork?: { parent: ForkOrigin; reuse: Readonly<Record<string, RecordedNode>> };
 }
 
 /** A graph result plus each finished node's deliverable and extracted artifacts. */
 export interface RunResult extends GraphResult {
+  runId: string;
   /** By node id, for nodes that finished ok, in graph order (for the kernel, S1/ADR-0021). */
   deliverables: Record<string, NodeDeliverable>;
+  /** Fork: nodes whose result was reused from the parent run (their cost is not counted). */
+  reused: string[];
+  /** Disputed nodes (R-405) and how each was settled; unresolved ones failed closed. */
+  disputes: Record<string, DisputeRecord>;
+  /** Review spend against accepted findings (R-404), over the nodes that ran. */
+  verification: VerificationRoi;
 }
 
 /**
@@ -104,11 +123,12 @@ export class GraphRunner implements RunControl {
   }
 
   async run(graph: TaskGraph, options: RunOptions = {}): Promise<RunResult> {
-    const problems = [...graphProblems(graph.nodes), ...this.pinProblems(graph)];
+    const reuse = options.fork?.reuse ?? {};
+    const problems = [...graphProblems(graph.nodes), ...this.pinProblems(graph, reuse)];
     if (problems.length > 0) throw new OrchestrationError(`invalid graph: ${problems.join('; ')}`);
     if (this.control.run) throw new OrchestrationError('this runner is already running a graph');
     const scope = this.admit(graph, options);
-    const r = newRun(graph, options.signal);
+    const r = newRun(this.policy(graph, reuse), options.signal, options.runId ?? randomUUID());
     stampScope(r.graph.nodes, scope.boundary);
     this.control.run = r;
     this.steps.graph.reset();
@@ -116,13 +136,43 @@ export class GraphRunner implements RunControl {
     if (options.edits?.length) {
       this.steps.intervention(undefined, { action: 'plan edited', changes: options.edits });
     }
+    const fork = options.fork && { parent: options.fork.parent, reused: Object.keys(reuse) };
+    journalRunStart(this.steps, r.runId, r.graph, fork);
     try {
       for (const n of r.graph.nodes) this.setState(r, n.id, 'pending');
+      this.preload(r, reuse);
       await this.schedule(r);
     } finally {
       this.control.run = undefined;
     }
     return this.result(r);
+  }
+
+  /** R-404: the review policy on the nodes that will run (journaled per change). */
+  private policy(graph: TaskGraph, reuse: Readonly<Record<string, RecordedNode>>): TaskGraph {
+    const policy = this.o.reviewPolicy;
+    if (!policy) return graph;
+    const nodes = (graph.nodes as PlannedNode[]).map((n) => {
+      if (reuse[n.id]) return n;
+      const { node, change } = reviewedNode(n, policy);
+      if (change)
+        this.steps.intervention(n.id, { action: 'protocol set by review policy', ...change });
+      return node;
+    });
+    return { ...graph, nodes };
+  }
+
+  /** Fork: reused nodes are done with their parent's result, journaled as reused, not re-run. */
+  private preload(r: Run, reuse: Readonly<Record<string, RecordedNode>>): void {
+    for (const n of r.graph.nodes) {
+      const rec = reuse[n.id];
+      if (!rec) continue;
+      r.reused.add(n.id);
+      r.results.set(n.id, rec.result);
+      const { eventId, ...kept } = rec;
+      journalNode(this.steps, r.runId, { ...kept, node: n, reused: true, reusedFrom: eventId });
+      this.setState(r, n.id, 'done');
+    }
   }
 
   /**
@@ -194,9 +244,9 @@ export class GraphRunner implements RunControl {
     }
   }
 
-  private pinProblems(graph: TaskGraph): string[] {
+  private pinProblems(graph: TaskGraph, reuse: Readonly<Record<string, unknown>>): string[] {
     return (graph.nodes as PlannedNode[]).flatMap((n) =>
-      n.model && !this.o.candidates.some((c) => sameRef(c.ref, n.model as ModelRef))
+      n.model && !reuse[n.id] && !this.o.candidates.some((c) => sameRef(c.ref, n.model as ModelRef))
         ? [`node "${n.id}": model ${refToString(n.model)} is not available`]
         : [],
     );
@@ -259,22 +309,32 @@ export class GraphRunner implements RunControl {
       priorUsd: r.carried.get(node.id)?.costUsd ?? 0,
       pin: node.model,
     };
-    let result: ProtocolResult;
-    try {
-      result = await PROTOCOLS[protocol](this.steps, run);
-    } catch (err) {
-      const error = err instanceof Error ? err.message : String(err);
-      result = {
-        nodeId: node.id,
-        protocol,
-        output: '',
-        contributions: run.contributions,
-        costUsd: run.costUsd,
-        ok: false,
-        error,
-      };
-    }
-    this.settle(r, result);
+    const out = await execNode(this.steps, r.runId, run, protocol);
+    if (out.dispute) r.disputes.set(node.id, out.dispute);
+    this.settle(r, out.result);
+    this.record(r, run, protocol, out.durationMs);
+  }
+
+  /** The node's record for replay and fork (R-403): what it received and returned. */
+  private record(r: Run, run: NodeRun, protocol: ProtocolName, durationMs: number): void {
+    const id = run.node.id;
+    const result = r.results.get(id);
+    if (!result || r.states[id] === 'pending') return;
+    const dependencies = Object.fromEntries(
+      run.node.dependsOn.map((d) => [d, r.results.get(d)?.output ?? '']),
+    );
+    const dispute = r.disputes.get(id);
+    journalNode(this.steps, r.runId, {
+      state: r.states[id] as NodeState,
+      node: run.node as PlannedNode,
+      protocol,
+      context: run.context,
+      upstream: run.upstream ?? [],
+      dependencies,
+      result,
+      durationMs,
+      ...(dispute ? { dispute } : {}),
+    });
   }
 
   /** Records a node's outcome; an attempt cancelled by a redirect goes back to pending. */
@@ -323,19 +383,30 @@ export class GraphRunner implements RunControl {
     const results: Record<string, ProtocolResult> = {};
     const states: Record<string, NodeState> = {};
     const deliverables: Record<string, NodeDeliverable> = {};
-    let cost = 0;
+    const ran: ProtocolResult[] = [];
     for (const n of r.graph.nodes) {
       states[n.id] = r.states[n.id] as NodeState;
       const res = r.results.get(n.id);
       if (res) {
         results[n.id] = res;
-        cost += res.costUsd;
+        if (!r.reused.has(n.id)) ran.push(res);
         if (res.ok) deliverables[n.id] = extractArtifacts(n.id, deliverableOf(n), res.output);
       }
     }
-    const costUsd = Math.round(cost * 1e6) / 1e6;
+    const costUsd = Math.round(ran.reduce((a, x) => a + x.costUsd, 0) * 1e6) / 1e6;
     const ok = Object.values(states).every((s) => s === 'done');
     this.steps.emit({ type: 'graph_done', costUsd, ok });
-    return { graphId: r.graph.id, results, states, costUsd, ok, deliverables };
+    return {
+      graphId: r.graph.id,
+      runId: r.runId,
+      results,
+      states,
+      costUsd,
+      ok,
+      deliverables,
+      reused: [...r.reused],
+      disputes: Object.fromEntries(r.disputes),
+      verification: verificationRoi(ran),
+    };
   }
 }

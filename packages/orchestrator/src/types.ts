@@ -14,6 +14,8 @@ import type {
 import type { AdapterResolver, FallbackExecutorOptions } from '@kernelpai/executor';
 import type { Journal } from '@kernelpai/journal';
 import type { Deliverable } from './deliverable.js';
+import type { DisputeHook, DisputeKind } from './dispute.js';
+import type { ReviewPolicy } from './review-policy.js';
 
 /**
  * Spend gate called before every model step and every fallback (principle 6), with the
@@ -63,8 +65,21 @@ export interface OrchestratorOptions {
   voters?: number;
   /** Live progress feed (node states, text deltas, contributions, graph done). */
   onEvent?: (event: GraphEvent) => void;
-  /** Run control feed (pause, resume, cancel, redirect, instruction, refusal). */
+  /** Run control feed (pause, resume, cancel, redirect, instruction, refusal, disputes). */
   onControl?: (event: RunControlEvent) => void;
+  /**
+   * Review depth by criticality (R-404). When set, nodes planned as solo or author+critic
+   * get the protocol (and critic count) the policy names; code and tests never go below
+   * author+critic (principle 2). Default: the plan's protocols as they are.
+   */
+  reviewPolicy?: ReviewPolicy;
+  /**
+   * The human's choice for a disputed node (R-405): returns an option id, or null to
+   * reject. Absent, a disputed node stays disputed and fails closed (no output, no patch).
+   */
+  dispute?: DisputeHook;
+  /** Debate: judges wanted (each from a new provider). Default 1. */
+  judges?: number;
 }
 
 /**
@@ -98,6 +113,10 @@ export interface PlannedNode extends GraphNode {
    * validated (WI-S4-02); any value given in the graph is discarded.
    */
   authorisedScope?: string;
+  /** Author+critic: independent critics per review round (1 to 3; default 1, R-404 policy). */
+  critics?: number;
+  /** Debate: judges (1 to 3; default `OrchestratorOptions.judges`, else 1). */
+  judges?: number;
 }
 
 /** Run-level control events (principle 4, R-304); node states still go through `onEvent`. */
@@ -116,7 +135,22 @@ export type RunControlEvent =
       reroutes: Reroute[];
     }
   | { type: 'instruction_added'; nodeId: string; text: string }
-  | { type: 'control_refused'; action: ControlAction; nodeId?: string; reason: string };
+  | { type: 'control_refused'; action: ControlAction; nodeId?: string; reason: string }
+  | {
+      /** R-405: critics, judges or voters disagree; the human is asked to choose. */
+      type: 'node_disputed';
+      nodeId: string;
+      kind: DisputeKind;
+      reason: string;
+      options: Array<{ id: string; label: string }>;
+    }
+  | {
+      type: 'dispute_resolved';
+      nodeId: string;
+      /** The option chosen, or null when rejected or nobody answered (fails closed). */
+      choice: string | null;
+      by: 'human' | 'none';
+    };
 
 export type ControlAction = 'pause' | 'resume' | 'cancel' | 'redirect' | 'instruction';
 
@@ -149,6 +183,8 @@ export interface NodeRun {
   priorUsd?: number;
   /** The user's model for the node's first step; taken (cleared) by that step. */
   pin?: ModelRef | undefined;
+  /** Extra journal tags for every call of this node (e.g. a replay id). */
+  tags?: Record<string, unknown>;
 }
 
 /** A finished model step. */

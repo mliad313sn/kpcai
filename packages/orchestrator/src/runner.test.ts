@@ -1,7 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import type { GraphEvent } from '@kernelpai/core';
 import { GraphRunner } from './runner.js';
-import { RoleAdapter, friendly, gnode, graph, setup, type Script } from './test-helpers/fakes.js';
+import {
+  RoleAdapter,
+  friendly,
+  gnode,
+  graph,
+  setup,
+  type Script,
+  isNote,
+} from './test-helpers/fakes.js';
 
 const slow =
   (name: string, ms = 20): Script =>
@@ -125,7 +133,7 @@ describe('GraphRunner', () => {
     const one = setup([new RoleAdapter('a', friendly('A'))], { allowSameProvider: true });
     const r1 = await new GraphRunner(one.options).run(graph(nodes));
     expect(r1.ok).toBe(true);
-    const iv = one.journal.events().filter((e) => e.type === 'intervention');
+    const iv = one.journal.events().filter(isNote);
     expect(iv[0]?.payload['action']).toBe('diversity waived');
   });
 });
@@ -144,7 +152,7 @@ describe('budget hook', () => {
     expect(r.states['n1']).toBe('failed');
     expect(r.results['n1']?.error).toBe('budget: critic on n1: b/m not allowed');
     expect(r.results['n1']?.output).toBe('A:author:0');
-    const iv = s.journal.events().filter((e) => e.type === 'intervention');
+    const iv = s.journal.events().filter(isNote);
     expect(iv[0]?.payload['action']).toBe('step blocked by budget');
   });
 

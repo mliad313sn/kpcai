@@ -19,7 +19,13 @@ import {
 } from '@kernelpai/core';
 import { Journal } from '@kernelpai/journal';
 import { CompetenceRouter } from '@kernelpai/router';
+import { RECORD_ACTIONS } from '../run-journal.js';
 import type { OrchestratorOptions } from '../types.js';
+
+/** An intervention that is a decision or control action, not one of the run's own records. */
+export function isNote(e: { type: string; payload: Record<string, unknown> }): boolean {
+  return e.type === 'intervention' && !RECORD_ACTIONS.has(String(e.payload['action']));
+}
 
 /** What a scripted model answers: plain text, or a list of stream steps. */
 export type Reply =
