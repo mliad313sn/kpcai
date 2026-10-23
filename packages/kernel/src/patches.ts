@@ -1,4 +1,5 @@
 import type { GraphResult, TaskGraph } from '@kernelpai/core';
+import { deliverableOf } from '@kernelpai/orchestrator';
 
 /**
  * Unified diffs inside model output: fenced ```diff / ```patch blocks, or a bare text that
@@ -42,8 +43,6 @@ export function hasHiddenBytes(patch: string): boolean {
   return /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f‪-‮⁦-⁩]|\r(?!\n)/.test(patch);
 }
 
-const CODE_TYPES = new Set(['code_generation', 'test']);
-
 export interface Patch {
   nodeId: string;
   patch: string;
@@ -52,7 +51,7 @@ export interface Patch {
 }
 
 /**
- * Patches from code and test nodes that succeeded **and were approved** by a critic from
+ * Patches from nodes that deliver a patch, succeeded **and were approved** by a critic from
  * another provider (principle 2, review P2-F4), without exact duplicates. A patch carrying
  * control characters is refused outright, so what the human reads is exactly what would be
  * applied (P2-F1, F12).
@@ -60,7 +59,8 @@ export interface Patch {
 export function collect(graph: TaskGraph, r: GraphResult): { patches: Patch[]; refused: Patch[] } {
   const seen = new Set<string>();
   const all = graph.nodes
-    .filter((n) => CODE_TYPES.has(n.type))
+    // Only nodes that deliver a patch (code and tests by default; S4's `deliverableOf`).
+    .filter((n) => deliverableOf(n) === 'patch')
     .filter((n) => r.results[n.id]?.ok === true && r.results[n.id]?.approved === true)
     .flatMap((n) =>
       extractPatches(r.results[n.id]?.output ?? '').map((patch) => ({

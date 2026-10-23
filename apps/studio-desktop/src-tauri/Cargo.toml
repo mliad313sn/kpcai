@@ -1,0 +1,24 @@
+[package]
+name = "kp-studio-desktop"
+version = "0.0.1"
+description = "KP Studio desktop: Tauri 2 shell around the KP Studio web build, kernel as sidecar"
+edition = "2021"
+publish = false
+license = "UNLICENSED"
+
+[lib]
+name = "kp_studio_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+# Exact versions, published at least two weeks before this scaffold (2026-10-23).
+tauri-build = { version = "=2.7.1", features = [] }
+
+[dependencies]
+tauri = { version = "=2.12.1", features = [] }
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true

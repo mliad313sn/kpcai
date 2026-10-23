@@ -1,0 +1,31 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "KP Studio",
+  "version": "0.0.1",
+  "identifier": "dev.kernelpai.studio",
+  "build": {
+    "frontendDist": "../../studio/dist",
+    "beforeBuildCommand": "pnpm --filter @kernelpai/studio build"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "KP Studio",
+        "width": 1280,
+        "height": 820,
+        "minWidth": 720,
+        "minHeight": 480
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; connect-src 'self' ws://127.0.0.1:* ws://localhost:* ws://[::1]:*; img-src 'self' data:; style-src 'self'; script-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'",
+      "freezePrototype": true
+    },
+    "withGlobalTauri": false
+  },
+  "bundle": {
+    "active": false,
+    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/icon.icns", "icons/icon.ico"]
+  }
+}

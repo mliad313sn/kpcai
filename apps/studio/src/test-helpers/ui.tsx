@@ -1,7 +1,7 @@
 import { cleanup, render } from '@testing-library/react';
 import WebSocket from 'ws';
 import { connect, disconnect } from '../connection';
-import { initialState, studio } from '../store/store';
+import { initialState, setPrefs, studio } from '../store/store';
 import { App } from '../ui/App';
 import { FakeKernel, TOKEN, until } from './fake-kernel';
 import { kernelHandlers } from './fixtures';
@@ -13,6 +13,7 @@ export async function renderStudio(
   handlers: Record<string, (p: unknown) => unknown> = {},
 ): Promise<{ kernel: FakeKernel }> {
   studio.setState(initialState(), true);
+  setPrefs((p) => ({ ...p, onboarded: true }));
   const kernel = await new FakeKernel({ ...kernelHandlers(), ...handlers }).start();
   connect(kernel.url, TOKEN, { WebSocketImpl: WS, backoff: { initialMs: 10, maxMs: 20 } });
   render(<App url={kernel.url} />);

@@ -31,7 +31,7 @@ describe('confirmations', () => {
     const user = userEvent.setup();
     kernel.notify('confirm.request', confirm());
     const dialog = await screen.findByRole('alertdialog', { name: 'Apply patch?' });
-    expect(within(dialog).getByText('Destructive')).toBeTruthy();
+    expect(within(dialog).getByText('Risk: Destructive')).toBeTruthy();
     expect(dialog.querySelector('pre')!.textContent).toBe(confirm().question);
     expect(dialog.querySelector('img')).toBeNull();
     expect(document.activeElement?.textContent).toBe('No');
@@ -59,9 +59,9 @@ describe('confirmations', () => {
     kernel.notify('confirm.request', confirm({ confirmId: 'c2', kind: 'tool', risk: 'read' }));
     const dialog = await screen.findByRole('alertdialog', { name: 'Tool permission' });
     await until(() => within(dialog).getByText(/1 more waiting/));
-    expect(within(dialog).getByText('Writes files')).toBeTruthy();
+    expect(within(dialog).getByText('Risk: Writes files')).toBeTruthy();
     await user.click(within(dialog).getByRole('button', { name: 'Yes, allow' }));
-    expect(await screen.findByText('Read only')).toBeTruthy();
+    expect(await screen.findByText('Risk: Read only')).toBeTruthy();
     await user.click(screen.getByRole('button', { name: 'No' }));
     await until(() => kernel!.calls('confirm.answer').length === 2);
     expect(kernel.calls('confirm.answer')).toEqual([
@@ -136,14 +136,14 @@ describe('keyboard and palette', () => {
     await user.type(input, 'plan me{Enter}');
     await screen.findByRole('button', { name: /^Run/ });
     await user.type(input, 'fix #');
-    expect(screen.getAllByRole('option')).toHaveLength(3);
+    expect(within(screen.getByRole('listbox')).getAllByRole('option')).toHaveLength(3);
     await user.keyboard('{ArrowDown}{ArrowDown}{ArrowUp}{Tab}');
     expect(input.value).toBe('fix #impl ');
     await user.type(input, '#t');
     await user.keyboard('{Escape}');
-    expect(screen.queryByRole('option')).toBeNull();
+    expect(screen.queryByRole('listbox')).toBeNull();
     await user.type(input, '@sr');
-    expect(screen.queryByRole('option')).toBeNull();
+    expect(screen.queryByRole('listbox')).toBeNull();
   });
 
   it('focuses zones with Alt+digits and the command bar with /', async () => {

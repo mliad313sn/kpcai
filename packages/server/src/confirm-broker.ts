@@ -26,7 +26,8 @@ export class ConfirmBroker {
 
   ask(req: ConfirmRequest): Promise<boolean> {
     // What cannot be shown in full cannot be approved.
-    if (req.patch !== undefined && req.patch.length > MAX_PATCH) return Promise.resolve(false);
+    if ((req.patch?.length ?? 0) > MAX_PATCH || (req.content?.length ?? 0) > MAX_PATCH)
+      return Promise.resolve(false);
     const confirmId = randomUUID();
     const params: ConfirmParams = {
       confirmId,
@@ -39,6 +40,8 @@ export class ConfirmBroker {
       ...(req.runId ? { runId: req.runId } : {}),
       ...(req.risk ? { risk: req.risk } : {}),
       ...(req.patch !== undefined ? { patch: req.patch } : {}),
+      ...(req.content !== undefined ? { content: req.content } : {}),
+      ...(req.artifact ? { artifact: req.artifact } : {}),
     };
     return new Promise((resolve) => {
       const timer = setTimeout(() => settle(false), this.timeoutMs);

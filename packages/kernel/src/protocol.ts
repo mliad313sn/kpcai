@@ -12,6 +12,24 @@
  * the token is refused. Non-browser clients may send `Authorization: Bearer <token>`.
  */
 import { z } from 'zod';
+import {
+  ArtifactSchema,
+  AuthorisedScopeInputSchema,
+  PacksSchema,
+  RulesSchema,
+  ScopeStatusSchema,
+  WorkspaceMethods,
+} from './protocol-workspace.js';
+
+export {
+  ArtifactKindSchema,
+  ArtifactSchema,
+  AuthorisedScopeInputSchema,
+  CheckpointSchema,
+  PacksSchema,
+  RulesSchema,
+  ScopeStatusSchema,
+} from './protocol-workspace.js';
 
 export const PROTOCOL_VERSION = 1;
 export const SUBPROTOCOL = 'kernelpai.v1';
@@ -30,6 +48,11 @@ export const RunOptionsSchema = z.object({
   allowTest: z.boolean().optional(),
   allowSameProvider: z.boolean().optional(),
   overBudget: z.boolean().optional(),
+  /** One git worktree per run (R-307, ADR-0021). Omitted over the protocol: isolated
+   * when the workspace is a git working tree, in place otherwise. */
+  isolated: z.boolean().optional(),
+  /** Authorised scope for packs that require one (WI-S1-03). */
+  scope: AuthorisedScopeInputSchema.optional(),
 });
 export type RunOptions = z.infer<typeof RunOptionsSchema>;
 
@@ -42,11 +65,31 @@ const Routing = {
 };
 
 /** Kernel objects are lenient on extra fields: a newer kernel does not break a client. */
+/** What a node hands back (core `Deliverable`, ADR-0022). */
+const DeliverableSchema = z.enum([
+  'answer',
+  'report',
+  'patch',
+  'notebook',
+  'design',
+  'build',
+  'checklist',
+  'model3d',
+  'map',
+  'config',
+  'asset',
+]);
+
 export const GraphSchema = z.looseObject({
   id: z.string(),
   request: z.string(),
   nodes: z.array(
-    z.looseObject({ id: z.string(), title: z.string(), dependsOn: z.array(z.string()) }),
+    z.looseObject({
+      id: z.string(),
+      title: z.string(),
+      dependsOn: z.array(z.string()),
+      deliverable: DeliverableSchema.optional(),
+    }),
   ),
   createdBy: z.string(),
   reason: z.string(),
@@ -87,7 +130,13 @@ export const EstimateSchema = z.looseObject({
  */
 export const EditedGraphSchema = z.looseObject({
   nodes: z
-    .array(z.looseObject({ id: z.string().min(1).max(100), model: Ref.optional() }))
+    .array(
+      z.looseObject({
+        id: z.string().min(1).max(100),
+        model: Ref.optional(),
+        deliverable: DeliverableSchema.optional(),
+      }),
+    )
     .min(1)
     .max(100),
 });
@@ -152,7 +201,17 @@ export const Methods = {
       request: z.string().min(1).max(100_000),
       options: RunOptionsSchema.optional(),
     }),
-    result: z.object({ planId: Id, graph: GraphSchema, estimate: EstimateSchema }),
+    result: z.object({
+      planId: Id,
+      graph: GraphSchema,
+      estimate: EstimateSchema,
+      /** Repository rule files every node will get as untrusted context (R-306). */
+      rules: RulesSchema.optional(),
+      /** Selected domain packs, why, and the forbidden zones with origin (D-020). */
+      packs: PacksSchema.optional(),
+      /** Authorised scope status; a run is refused while it has problems. */
+      scope: ScopeStatusSchema.optional(),
+    }),
   },
   /** Checks an edited plan and re-estimates it; runs nothing (R-301). */
   'plan.validate': {
@@ -213,6 +272,7 @@ export const Methods = {
     params: z.object({}).optional(),
     result: z.looseObject({ ok: z.boolean(), checked: z.number() }),
   },
+  ...WorkspaceMethods,
 } as const;
 export type MethodName = keyof typeof Methods;
 export type MethodResult<M extends MethodName> = z.infer<(typeof Methods)[M]['result']>;
@@ -228,16 +288,37 @@ export const Notifications = {
     state: z.enum(['running', 'paused', 'cancelling', 'done', 'failed', 'cancelled']),
   }),
   'run.control': z.object({ runId: Id, event: ControlEventSchema }),
-  'run.done': z.object({ runId: Id, result: z.unknown(), patches: z.array(PatchSchema) }),
+  'run.done': z.object({
+    runId: Id,
+    result: z.unknown(),
+    patches: z.array(PatchSchema),
+    /** Non-code outputs of approved nodes (D-019, ADR-0022). */
+    artifacts: z.array(ArtifactSchema).optional(),
+    /** The run's worktree when it ran isolated (R-307): merge or discard it. */
+    worktree: z.string().optional(),
+  }),
   /** The client must answer with `confirm.answer`; silence for `timeoutMs` means "no". */
   'confirm.request': z.object({
     confirmId: Id,
     runId: Id.optional(),
-    kind: z.enum(['budget', 'tool', 'patch']),
+    /** `restore` is destructive (ADR-0021); `artifact` writes `content` (ADR-0022). */
+    kind: z.enum(['budget', 'tool', 'patch', 'restore', 'artifact']),
     question: z.string().max(10_000),
     risk: z.enum(['read', 'write', 'destructive']).optional(),
     /** For `patch`: the exact diff that would be written, apart from the question. */
     patch: z.string().max(2_000_000).optional(),
+    /** For `artifact`: the exact text that would be written, and what it is. */
+    content: z.string().max(2_000_000).optional(),
+    artifact: z
+      .object({
+        path: z.string(),
+        kind: z.string(),
+        mime: z.string(),
+        bytes: z.number().int(),
+        nodeId: Id,
+        reviewed: z.boolean(),
+      })
+      .optional(),
     timeoutMs: z.number().int().positive(),
   }),
   log: z.object({ level: z.enum(['info', 'warn', 'error']), message: z.string().max(10_000) }),

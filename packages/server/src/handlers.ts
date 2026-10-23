@@ -1,6 +1,14 @@
 /** Protocol methods → kernel service calls. Params arrive validated; results are checked later. */
 import { ProviderError } from '@kernelpai/core';
-import { KernelError, type Kernel, type KernelErrorCode, type RunHandle } from '@kernelpai/kernel';
+import {
+  KernelError,
+  packSummary,
+  scopeSummary,
+  summarizeRules,
+  type Kernel,
+  type KernelErrorCode,
+  type RunHandle,
+} from '@kernelpai/kernel';
 import {
   ErrorCodes,
   PROTOCOL_VERSION,
@@ -49,20 +57,32 @@ export interface HandlerDeps {
   watch(handle: RunHandle): void;
 }
 
+const hello: Handler<'kernel.hello'> = (p) => {
+  if (p.protocol !== PROTOCOL_VERSION)
+    throw new RpcError(ErrorCodes.invalidRequest, `protocol ${p.protocol} not supported`);
+  return { protocol: PROTOCOL_VERSION, server: 'kernelpai' };
+};
+
+/** A plan as the console sees it: graph, estimate, rules, packs, zones, scope. */
+async function planResult(kernel: Kernel, p: ParamsOf<'plan'>) {
+  const plan = await kernel.plan(p.request, p.options ?? {});
+  return {
+    planId: plan.planId,
+    graph: plan.graph,
+    estimate: plan.estimate,
+    rules: summarizeRules(plan.rules.rules),
+    packs: packSummary(plan.packs),
+    scope: scopeSummary(plan.scope),
+  };
+}
+
 export function handlers(d: HandlerDeps): Handlers {
   const { kernel } = d;
   return {
-    'kernel.hello': (p) => {
-      if (p.protocol !== PROTOCOL_VERSION)
-        throw new RpcError(ErrorCodes.invalidRequest, `protocol ${p.protocol} not supported`);
-      return { protocol: PROTOCOL_VERSION, server: 'kernelpai' };
-    },
+    'kernel.hello': hello,
     'providers.list': async () => ({ providers: await kernel.providers() }),
     'tools.list': () => kernel.tools(),
-    plan: async (p) => {
-      const plan = await kernel.plan(p.request, p.options ?? {});
-      return { planId: plan.planId, graph: plan.graph, estimate: plan.estimate };
-    },
+    plan: (p) => planResult(kernel, p),
     'plan.validate': (p) => {
       const c = kernel.validatePlan(p.planId, p.graph);
       return {
@@ -78,7 +98,8 @@ export function handlers(d: HandlerDeps): Handlers {
         request: p.request,
         ...(p.planId ? { planId: p.planId } : {}),
         ...(p.graph ? { graph: p.graph } : {}),
-        ...(p.options ? { options: p.options } : {}),
+        // ADR-0021: console runs are isolated by default when the workspace is a git tree.
+        options: { ...p.options, isolated: p.options?.isolated ?? 'auto' },
       });
       d.watch(handle);
       return { runId: handle.runId };
@@ -92,10 +113,28 @@ export function handlers(d: HandlerDeps): Handlers {
       // A console never pre-approves writes: each patch is confirmed with its diff.
       results: await kernel.applyPatches(p.runId, p.nodeIds ? { nodeIds: p.nodeIds } : {}),
     }),
+    ...workspaceHandlers(kernel),
     'confirm.answer': (p) => ({ accepted: d.broker.answer(p.confirmId, p.ok) }),
     'sessions.list': (p) => ({ sessions: kernel.sessions(p.limit ?? 20) }),
     'sessions.events': (p) => ({ events: kernel.events(p.sessionId, p.limit ?? 1000) }),
     stats: (p) => kernel.stats(p?.sessionId),
     'journal.verify': () => kernel.verify(),
+  };
+}
+
+type WorkspaceMethod =
+  'artifacts.apply' | 'run.checkpoints' | 'run.restore' | 'run.merge' | 'run.discard' | 'runs.list';
+
+/** Checkpoints, restore, worktrees, artifacts (ADR-0021, ADR-0022). Writes are always asked. */
+function workspaceHandlers(kernel: Kernel): Pick<Handlers, WorkspaceMethod> {
+  return {
+    'artifacts.apply': async (p) => ({
+      results: await kernel.applyArtifacts(p.runId, p.paths ? { paths: p.paths } : {}),
+    }),
+    'run.checkpoints': async (p) => ({ checkpoints: await kernel.checkpoints(p.runId) }),
+    'run.restore': (p) => kernel.restore(p.ref, p.runId),
+    'run.merge': (p) => kernel.merge(p.runId),
+    'run.discard': (p) => kernel.discard(p.runId),
+    'runs.list': async () => ({ runs: await kernel.runList() }),
   };
 }

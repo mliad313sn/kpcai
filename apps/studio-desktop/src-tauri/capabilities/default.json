@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "KP Studio's window gets no Tauri command: it talks only to the local kernel over WebSocket.",
+  "windows": ["main"],
+  "permissions": []
+}

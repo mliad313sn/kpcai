@@ -1,5 +1,5 @@
 import { fileURLToPath } from 'node:url';
-import { workspaceProblem } from '@kernelpai/kernel';
+import { workspaceVerdict } from '@kernelpai/kernel';
 import { startServer } from '@kernelpai/server';
 import type { Io } from '../io.js';
 
@@ -19,8 +19,8 @@ function defaultStaticDir(): string {
  * desktop shell) come from KPAI_STUDIO_ORIGINS, comma-separated.
  */
 export async function studioCommand(io: Io, o: StudioOptions): Promise<number> {
-  const problem = workspaceProblem(io.cwd);
-  if (problem) io.err(`note: runs will be refused here — ${problem}\n`);
+  const verdict = await workspaceVerdict(io.cwd, io.env);
+  if (!verdict.ok) io.err(`note: runs will be refused here — ${verdict.problem ?? ''}\n`);
   const origins = (io.env['KPAI_STUDIO_ORIGINS'] ?? '')
     .split(',')
     .map((s) => s.trim())

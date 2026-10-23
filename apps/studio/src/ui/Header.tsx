@@ -1,18 +1,48 @@
 import { useState } from 'react';
 import { connect } from '../connection';
+import { t, type Key, type LocalePref } from '../i18n/core';
 import { isValidToken } from '../rpc/token';
 import { patch, setPrefs, useStudio } from '../store/store';
 import { Modal } from './Modal';
 import { nextTheme } from './Palette';
 
-const CONN: Record<string, { icon: string; text: string }> = {
-  idle: { icon: '○', text: 'Not connected' },
-  connecting: { icon: '◌', text: 'Connecting…' },
-  open: { icon: '●', text: 'Connected to KernelPAI kernel' },
-  reconnecting: { icon: '◌', text: 'Reconnecting…' },
-  closed: { icon: '○', text: 'Disconnected' },
-  unauthorized: { icon: '⚠', text: 'Token refused' },
+const CONN: Record<string, { icon: string; key: Key }> = {
+  idle: { icon: '○', key: 'conn.idle' },
+  connecting: { icon: '◌', key: 'conn.connecting' },
+  open: { icon: '●', key: 'conn.open' },
+  reconnecting: { icon: '◌', key: 'conn.reconnecting' },
+  closed: { icon: '○', key: 'conn.closed' },
+  unauthorized: { icon: '⚠', key: 'conn.unauthorized' },
 };
+
+const THEME: Record<string, Key> = {
+  system: 'theme.system',
+  dark: 'theme.dark',
+  light: 'theme.light',
+};
+
+/** Language switch; each language is named in itself so anyone can find theirs. */
+export function LanguageSelect() {
+  const locale = useStudio((s) => s.prefs.locale);
+  return (
+    <span className="lang">
+      <label htmlFor="lang-select">{t('header.language')}</label>
+      <select
+        id="lang-select"
+        value={locale}
+        onChange={(e) => setPrefs((p) => ({ ...p, locale: e.target.value as LocalePref }))}
+      >
+        <option value="system">{t('lang.system')}</option>
+        <option value="en" lang="en">
+          English
+        </option>
+        <option value="fr" lang="fr">
+          Français
+        </option>
+      </select>
+    </span>
+  );
+}
 
 export function Header({ url }: { url: string }) {
   const conn = useStudio((s) => s.conn);
@@ -24,15 +54,15 @@ export function Header({ url }: { url: string }) {
       <h1 className="brand">KP Studio</h1>
       <p className={`conn conn-${conn}`} title={detail}>
         <span aria-hidden="true">{c.icon} </span>
-        {c.text}
+        {t(c.key)}
         {detail && conn !== 'open' ? <span className="muted small"> ({detail})</span> : null}
       </p>
       <span className="spacer" />
       <button type="button" onClick={() => patch({ paletteOpen: true })}>
-        Commands <kbd>Ctrl K</kbd>
+        {t('header.commands')} <kbd>Ctrl K</kbd>
       </button>
       <button type="button" onClick={() => setPrefs((p) => ({ ...p, theme: nextTheme(p.theme) }))}>
-        Theme: {prefs.theme}
+        {t('header.theme', { theme: t(THEME[prefs.theme]!) })}
       </button>
       <button
         type="button"
@@ -41,8 +71,9 @@ export function Header({ url }: { url: string }) {
           setPrefs((p) => ({ ...p, density: p.density === 'compact' ? 'comfortable' : 'compact' }))
         }
       >
-        Compact
+        {t('header.compact')}
       </button>
+      <LanguageSelect />
       {(conn === 'unauthorized' || conn === 'idle') && <TokenPrompt url={url} />}
     </header>
   );
@@ -55,7 +86,7 @@ export function TokenPrompt({ url }: { url: string }) {
   if (!open)
     return (
       <button type="button" onClick={() => setOpen(true)}>
-        Enter token
+        {t('token.enter')}
       </button>
     );
   const valid = isValidToken(token.trim());
@@ -69,12 +100,11 @@ export function TokenPrompt({ url }: { url: string }) {
           connect(url, token.trim());
         }}
       >
-        <h2 id="token-title">Connect to the KernelPAI kernel</h2>
+        <h2 id="token-title">{t('token.title')}</h2>
         <p id="token-help" className="muted">
-          Paste the token printed by <span className="mono">kpai serve</span> (also in{' '}
-          <span className="mono">$KPAI_HOME/server.json</span>). It stays in this tab.
+          {t('token.help', { command: 'kpai studio', file: '$KPAI_HOME/server.json' })}
         </p>
-        <label htmlFor="token-input">Token</label>
+        <label htmlFor="token-input">{t('token.label')}</label>
         <input
           id="token-input"
           type="password"
@@ -84,10 +114,10 @@ export function TokenPrompt({ url }: { url: string }) {
         />
         <div className="row end">
           <button type="button" onClick={() => setOpen(false)}>
-            Cancel
+            {t('common.cancel')}
           </button>
           <button type="submit" className="primary" disabled={!valid}>
-            Connect
+            {t('token.connect')}
           </button>
         </div>
       </form>

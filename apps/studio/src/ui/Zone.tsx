@@ -1,12 +1,13 @@
 import type { ReactNode } from 'react';
+import { t, type Key } from '../i18n/core';
 import { clampSize, SIZE_LIMITS } from '../store/prefs';
 import { setPrefs, useStudio } from '../store/store';
 import type { Zone as ZoneName } from '../store/types';
 
-const LABELS: Record<ZoneName, string> = {
-  explorer: 'Explorer',
-  agents: 'Agents',
-  thread: 'Execution thread',
+const LABELS: Record<ZoneName, Key> = {
+  explorer: 'zone.explorer',
+  agents: 'zone.agents',
+  thread: 'zone.thread',
 };
 
 export function toggleZone(zone: ZoneName): void {
@@ -23,7 +24,8 @@ export function Zone(props: {
   const { zone } = props;
   const collapsed = useStudio((s) => s.prefs.collapsed[zone]);
   const size = useStudio((s) => s.prefs.sizes[zone]);
-  const label = LABELS[zone];
+  const label = t(LABELS[zone]);
+  const toggle = t(collapsed ? 'zone.show' : 'zone.hide', { zone: label });
   const style = collapsed ? undefined : zone === 'thread' ? { height: size } : { width: size };
   return (
     <section
@@ -42,12 +44,10 @@ export function Zone(props: {
           aria-expanded={!collapsed}
           aria-controls={`zone-${zone}-body`}
           onClick={() => toggleZone(zone)}
-          title={`${collapsed ? 'Show' : 'Hide'} ${label}`}
+          title={toggle}
         >
           <span aria-hidden="true">{collapsed ? '+' : '−'}</span>
-          <span className="sr-only">
-            {collapsed ? 'Show' : 'Hide'} {label}
-          </span>
+          <span className="sr-only">{toggle}</span>
         </button>
       </header>
       <div id={`zone-${zone}-body`} className="zone-body" hidden={collapsed}>
@@ -97,7 +97,7 @@ export function Splitter(props: { zone: ZoneName; invert?: boolean }) {
     <div
       role="separator"
       tabIndex={0}
-      aria-label={`Resize ${LABELS[zone]}`}
+      aria-label={t('zone.resize', { zone: t(LABELS[zone]) })}
       aria-controls={`zone-${zone}-body`}
       aria-orientation={vertical ? 'vertical' : 'horizontal'}
       aria-valuenow={size}

@@ -1,4 +1,10 @@
-import type { ModelCard, RoutingWeights, ScoreParts, TaskType } from '@kernelpai/core';
+import {
+  TASK_TYPE_BASE,
+  type ModelCard,
+  type RoutingWeights,
+  type ScoreParts,
+  type TaskType,
+} from '@kernelpai/core';
 
 /** Neutral prior when a card says nothing about a task type. */
 export const NEUTRAL_COMPETENCE = 0.5;
@@ -13,10 +19,17 @@ export const UNKNOWN_LATENCY_PENALTY = 0.5;
 
 const clamp = (x: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, x));
 
-/** `card.competence[type]` if set, else 0.5 shifted by declared strengths/weaknesses. */
+/**
+ * `card.competence[type]` if set, else 0.5 shifted by declared strengths/weaknesses. A
+ * domain type the card says nothing about is scored on its base type (ADR-0024), so
+ * adding a task type never makes routing worse than the type it refines.
+ */
 export function staticCompetence(card: ModelCard, type: TaskType): number {
   const prior = card.competence?.[type];
   if (prior !== undefined) return clamp(prior, 0, 1);
+  const base = TASK_TYPE_BASE[type];
+  const silent = !card.strengths?.includes(type) && !card.weaknesses?.includes(type);
+  if (base !== type && silent) return staticCompetence(card, base);
   let c = NEUTRAL_COMPETENCE;
   if (card.strengths?.includes(type)) c += STRENGTH_SHIFT;
   if (card.weaknesses?.includes(type)) c -= STRENGTH_SHIFT;

@@ -1,0 +1,63 @@
+name: Desktop (KP Studio)
+
+# Compiles the Tauri 2 shell of KP Studio on Windows, macOS and Linux (phase 3, WP5).
+# Nothing is signed, notarized or published: signing and releases are reserved to the
+# Sponsor (CHARTER §5). The build is a check that the shell compiles everywhere.
+
+on:
+  push:
+    branches: [main, 'claude/**']
+    paths:
+      - 'apps/studio/**'
+      - 'apps/studio-desktop/**'
+      - 'packages/kernel/src/protocol*.ts'
+      - '.github/workflows/desktop.yml'
+  pull_request:
+    paths:
+      - 'apps/studio/**'
+      - 'apps/studio-desktop/**'
+      - '.github/workflows/desktop.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: desktop / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-22.04, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Linux system libraries for WebKitGTK
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libayatana-appindicator3-dev patchelf
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/studio-desktop/src-tauri
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Unit tests of the shell (sidecar URL parsing)
+        working-directory: apps/studio-desktop/src-tauri
+        run: cargo test --locked
+      - name: Build the web console and compile the shell (no bundle, no signing)
+        run: pnpm --filter @kernelpai/studio-desktop build
+      - name: Keep the unsigned binary for inspection
+        uses: actions/upload-artifact@v4
+        with:
+          name: kp-studio-desktop-${{ matrix.os }}-unsigned
+          path: |
+            apps/studio-desktop/src-tauri/target/release/kp-studio-desktop
+            apps/studio-desktop/src-tauri/target/release/kp-studio-desktop.exe
+          if-no-files-found: error
+          retention-days: 7

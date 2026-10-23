@@ -1,7 +1,8 @@
 import { useState } from 'react';
+import { t } from '../i18n/core';
 import type { GraphNode } from '../rpc/schemas';
 import { submit } from '../store/actions';
-import { COMMANDS, tokenAtCaret } from '../store/commands';
+import { COMMANDS, commandHint, tokenAtCaret } from '../store/commands';
 import { useStudio } from '../store/store';
 import { graphView } from './view';
 
@@ -17,16 +18,16 @@ export function suggestionsFor(
   caret: number,
   nodes: readonly GraphNode[],
 ): Suggestion[] {
-  const t = tokenAtCaret(text, caret);
-  if (!t) return [];
-  const prefix = t.prefix.toLowerCase();
-  if (t.sigil === '/')
+  const tok = tokenAtCaret(text, caret);
+  if (!tok) return [];
+  const prefix = tok.prefix.toLowerCase();
+  if (tok.sigil === '/')
     return COMMANDS.filter((c) => c.name.startsWith(prefix)).map((c) => ({
       insert: `/${c.name} `,
       label: `/${c.name}`,
-      hint: c.hint,
+      hint: commandHint(c.name),
     }));
-  if (t.sigil === '#')
+  if (tok.sigil === '#')
     return nodes
       .filter((n) => n.id.toLowerCase().startsWith(prefix))
       .map((n) => ({ insert: `#${n.id} `, label: `#${n.id}`, hint: n.title }));
@@ -43,8 +44,8 @@ function useCommandInput() {
   const nodes = useStudio((s) => graphView(s)?.graph.nodes ?? NO_NODES);
   const list = dismissed ? [] : suggestionsFor(text, caret, nodes);
   const choose = (sug: Suggestion) => {
-    const t = tokenAtCaret(text, caret);
-    const next = t ? text.slice(0, t.start) + sug.insert + text.slice(caret) : text;
+    const tok = tokenAtCaret(text, caret);
+    const next = tok ? text.slice(0, tok.start) + sug.insert + text.slice(caret) : text;
     setText(next);
     setCaret(next.length);
     setActive(0);
@@ -104,9 +105,9 @@ export function CommandBar() {
     if (await submit(c.text)) c.setText('');
   };
   return (
-    <form className="command-bar" role="search" aria-label="Command bar" onSubmit={onSubmit}>
+    <form className="command-bar" role="search" aria-label={t('command.bar')} onSubmit={onSubmit}>
       <label htmlFor="command-input" className="sr-only">
-        Ask KP Studio, or type / for commands, @ for files, # for nodes, ! for the terminal
+        {t('command.label')}
       </label>
       <input
         id="command-input"
@@ -119,18 +120,17 @@ export function CommandBar() {
         aria-autocomplete="list"
         aria-activedescendant={open ? `sug-${c.active}` : undefined}
         aria-describedby="command-help"
-        placeholder="Describe a task…  / commands · @ files · # nodes · ! terminal · Ctrl+K palette"
+        placeholder={t('command.placeholder')}
         value={c.text}
         onChange={c.onChange}
         onSelect={(e) => c.setCaret(e.currentTarget.selectionStart ?? 0)}
         onKeyDown={c.onKeyDown}
       />
       <button type="submit" disabled={planning || conn !== 'open' || !c.text.trim()}>
-        {planning ? 'Planning…' : 'Plan'}
+        {planning ? t('command.planning') : t('command.plan')}
       </button>
       <span id="command-help" className="sr-only">
-        Enter plans the request; nothing runs before you press Run.
-        {c.text.trim().startsWith('!') ? ' Terminal request: sent to the planner in phase 3.' : ''}
+        {t(c.text.trim().startsWith('!') ? 'command.helpTerminal' : 'command.help')}
       </span>
       <Suggestions list={c.list} active={c.active} choose={c.choose} />
     </form>

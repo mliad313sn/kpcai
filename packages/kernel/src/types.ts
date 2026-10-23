@@ -2,7 +2,11 @@ import type { GraphResult, TaskGraph } from '@kernelpai/core';
 import type { RunControlEvent } from '@kernelpai/orchestrator';
 import type { Confirm } from './confirm.js';
 import type { Env, Money } from './env.js';
+import type { Artifact, RefusedArtifact } from './artifacts.js';
 import type { Patch } from './patches.js';
+import type { SelectedPacks } from './packs.js';
+import type { LoadedRules } from './rules.js';
+import type { ScopeCheck } from './scope.js';
 import type { ExplainedEstimate, KernelEvent } from './routing-info.js';
 import type { GraphOptions, GraphSetup } from './setup.js';
 
@@ -39,6 +43,12 @@ export interface Plan {
   edits?: string[];
   setup: GraphSetup;
   m: Money;
+  /** Repository rule files given to every node as untrusted context (R-306). */
+  rules: LoadedRules;
+  /** Domain packs for the workspace, why, and the zones in force with origin (D-020). */
+  packs: SelectedPacks;
+  /** The authorised scope selected packs require (WI-S1-03). */
+  scope: ScopeCheck;
 }
 
 export type RunOutcome =
@@ -53,6 +63,11 @@ export type RunOutcome =
       patches: Patch[];
       /** Patches refused for hidden control characters (never applied). */
       refused: Patch[];
+      /** Non-code outputs of approved nodes (D-019, ADR-0022). */
+      artifacts: Artifact[];
+      refusedArtifacts: RefusedArtifact[];
+      /** The run's worktree when it ran isolated (R-307), to merge or discard. */
+      worktree?: string;
     };
 
 export interface RunHandle {
@@ -78,4 +93,31 @@ export interface ApplyResult {
   ok: boolean;
   /** What the tool reported (first 300 characters). */
   message: string;
+}
+
+export interface ArtifactApplyResult {
+  path: string;
+  nodeId: string;
+  ok: boolean;
+  message: string;
+}
+
+/** One line of the runs manager view (R-307). */
+export interface RunSummary {
+  runId: string;
+  planId: string;
+  sessionId: string;
+  request: string;
+  state: RunState | 'starting';
+  startedAt: string;
+  /** Spent so far (live) or in total (finished), USD. */
+  costUsd: number;
+  isolated: boolean;
+  /** The run's worktree (isolated runs, until discarded). */
+  worktree?: string;
+  diff?: { files: number; additions: number; deletions: number };
+  /** Critic verdicts so far: all approved, some changes requested, or none yet. */
+  verdict?: 'approved' | 'changes_requested';
+  patches: number;
+  artifacts: number;
 }

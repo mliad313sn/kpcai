@@ -9,13 +9,15 @@ import {
   Notifications,
   PROTOCOL_VERSION,
   parseParams,
+  parseResult,
   type MethodName,
+  type MethodResult,
   type NotificationName,
 } from '@kernelpai/kernel/protocol';
 import type { z } from 'zod';
 import { authProtocols } from './token';
 
-export type { MethodName, NotificationName };
+export type { MethodName, MethodResult, NotificationName };
 
 export type ConnState = 'idle' | 'connecting' | 'open' | 'reconnecting' | 'closed' | 'unauthorized';
 
@@ -28,7 +30,7 @@ export type NotificationHandler = <N extends NotificationName>(
 
 export class RpcError extends Error {
   constructor(
-    readonly code: number | 'timeout' | 'disconnected' | 'invalid_params',
+    readonly code: number | 'timeout' | 'disconnected' | 'invalid_params' | 'invalid_result',
     message: string,
     readonly data?: unknown,
   ) {
@@ -88,11 +90,25 @@ export class RpcClient {
     this.setState('closed');
   }
 
-  /** Sends a request; rejects on invalid params, error reply, timeout or disconnect. */
-  call<M extends MethodName>(
+  /**
+   * Sends a request; rejects on invalid params, error reply, timeout or disconnect. The
+   * result is checked against the protocol's result schema before it reaches the caller.
+   */
+  async call<M extends MethodName>(
     method: M,
     params: Params<M>,
     timeoutMs = this.opts.requestTimeoutMs ?? 30_000,
+  ): Promise<MethodResult<M>> {
+    const raw = await this.send(method, params, timeoutMs);
+    const checked = parseResult(method, raw);
+    if (!checked.ok) throw new RpcError('invalid_result', `${method}: ${checked.error}`);
+    return checked.value;
+  }
+
+  private send<M extends MethodName>(
+    method: M,
+    params: Params<M>,
+    timeoutMs: number,
   ): Promise<unknown> {
     const checked = parseParams(method, params);
     if (!checked.ok) return Promise.reject(new RpcError('invalid_params', checked.error));

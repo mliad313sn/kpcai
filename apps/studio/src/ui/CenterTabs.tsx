@@ -1,23 +1,23 @@
 import { useRef } from 'react';
+import { t, type Key } from '../i18n/core';
 import { patch, useStudio } from '../store/store';
 import type { Tab } from '../store/types';
 import { Conversation } from './Conversation';
 import { DiffView } from './DiffView';
+import { ArtifactsView } from './ArtifactsView';
+import { RunsView } from './RunsView';
 
-const TABS: Array<{ id: Tab; label: string }> = [
-  { id: 'conversation', label: 'Conversation' },
-  { id: 'diff', label: 'Diff' },
-  { id: 'terminal', label: 'Terminal' },
-  { id: 'files', label: 'Files' },
+export const TABS: Array<{ id: Tab; label: Key }> = [
+  { id: 'conversation', label: 'tab.conversation' },
+  { id: 'diff', label: 'tab.diff' },
+  { id: 'artifacts', label: 'tab.artifacts' },
+  { id: 'runs', label: 'tab.runs' },
+  { id: 'terminal', label: 'tab.terminal' },
+  { id: 'files', label: 'tab.files' },
 ];
 
-function Placeholder({ what }: { what: string }) {
-  return (
-    <p className="muted empty">
-      {what} arrives in phase 5, through the tool bus. Until then use{' '}
-      <span className="mono">!</span> in the command bar to send a terminal request to the planner.
-    </p>
-  );
+function Placeholder({ what }: { what: Key }) {
+  return <p className="muted empty">{t(what)}</p>;
 }
 
 /** WAI-ARIA tabs with automatic activation: arrows, Home and End move between tabs. */
@@ -27,7 +27,7 @@ export function CenterTabs() {
   return (
     <section className="zone zone-center" aria-labelledby="zone-center-heading">
       <h2 id="zone-center-heading" className="sr-only" tabIndex={-1}>
-        Workspace
+        {t('zone.workspace')}
       </h2>
       <TabList tab={tab} patches={patches ?? 0} />
       <TabPanel tab={tab} />
@@ -35,7 +35,7 @@ export function CenterTabs() {
   );
 }
 
-function TabList({ tab, patches }: { tab: Tab; patches: number }) {
+function TabList({ tab: current, patches }: { tab: Tab; patches: number }) {
   const refs = useRef<Array<HTMLButtonElement | null>>([]);
   const onKeyDown = (e: React.KeyboardEvent, i: number) => {
     const n = TABS.length;
@@ -52,24 +52,23 @@ function TabList({ tab, patches }: { tab: Tab; patches: number }) {
     refs.current[to]?.focus();
   };
   return (
-    <div role="tablist" aria-label="Workspace views" className="tabs">
-      {TABS.map((t, i) => (
+    <div role="tablist" aria-label={t('tab.list')} className="tabs">
+      {TABS.map((tab, i) => (
         <button
-          key={t.id}
+          key={tab.id}
           ref={(el) => {
             refs.current[i] = el;
           }}
           type="button"
           role="tab"
-          id={`tab-${t.id}`}
-          aria-selected={tab === t.id}
-          aria-controls={`panel-${t.id}`}
-          tabIndex={tab === t.id ? 0 : -1}
-          onClick={() => patch({ tab: t.id })}
+          id={`tab-${tab.id}`}
+          aria-selected={current === tab.id}
+          aria-controls={`panel-${tab.id}`}
+          tabIndex={current === tab.id ? 0 : -1}
+          onClick={() => patch({ tab: tab.id })}
           onKeyDown={(e) => onKeyDown(e, i)}
         >
-          {t.label}
-          {t.id === 'diff' && patches ? ` (${patches})` : ''}
+          {tab.id === 'diff' && patches ? t('tab.diffCount', { count: patches }) : t(tab.label)}
         </button>
       ))}
     </div>
@@ -87,8 +86,10 @@ function TabPanel({ tab }: { tab: Tab }) {
     >
       {tab === 'conversation' && <Conversation />}
       {tab === 'diff' && <DiffView />}
-      {tab === 'terminal' && <Placeholder what="The terminal" />}
-      {tab === 'files' && <Placeholder what="The file viewer" />}
+      {tab === 'runs' && <RunsView />}
+      {tab === 'artifacts' && <ArtifactsView />}
+      {tab === 'terminal' && <Placeholder what="tab.terminalLater" />}
+      {tab === 'files' && <Placeholder what="tab.filesLater" />}
     </div>
   );
 }

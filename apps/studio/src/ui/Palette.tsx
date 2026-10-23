@@ -1,8 +1,10 @@
 import { useState } from 'react';
+import { resolveLocale, t, type Key } from '../i18n/core';
 import { control, startRun, submit } from '../store/actions';
-import { COMMANDS } from '../store/commands';
+import { COMMANDS, commandHint } from '../store/commands';
 import { patch, setPrefs, studio, useStudio } from '../store/store';
 import type { StudioState, Tab } from '../store/types';
+import { TABS } from './CenterTabs';
 import { Modal } from './Modal';
 import { toggleZone } from './Zone';
 import { activeRun } from './view';
@@ -24,22 +26,35 @@ function fillCommandBar(text: string): void {
   input.focus();
 }
 
-const tab = (t: Tab, label: string): PaletteItem => ({
-  id: `tab-${t}`,
-  label: `Go to ${label}`,
-  run: () => patch({ tab: t }),
+const goTo = (tab: Tab, label: Key): PaletteItem => ({
+  id: `tab-${tab}`,
+  label: t('palette.goTo', { tab: t(label) }),
+  run: () => patch({ tab }),
 });
 
 function runItems(s: StudioState): PaletteItem[] {
   const items: PaletteItem[] = [];
-  if (s.plan) items.push({ id: 'run-plan', label: 'Run the plan', run: () => void startRun() });
+  if (s.plan)
+    items.push({ id: 'run-plan', label: t('palette.runPlan'), run: () => void startRun() });
   const run = activeRun(s);
   if (run && (run.state === 'running' || run.state === 'starting'))
-    items.push({ id: 'pause', label: 'Pause run', run: () => void control('pause', run.runId) });
+    items.push({
+      id: 'pause',
+      label: t('palette.pause'),
+      run: () => void control('pause', run.runId),
+    });
   if (run?.state === 'paused')
-    items.push({ id: 'resume', label: 'Resume run', run: () => void control('resume', run.runId) });
+    items.push({
+      id: 'resume',
+      label: t('palette.resume'),
+      run: () => void control('resume', run.runId),
+    });
   if (run && ['starting', 'running', 'paused'].includes(run.state))
-    items.push({ id: 'cancel', label: 'Cancel run', run: () => void control('cancel', run.runId) });
+    items.push({
+      id: 'cancel',
+      label: t('palette.cancel'),
+      run: () => void control('cancel', run.runId),
+    });
   return items;
 }
 
@@ -50,31 +65,37 @@ export function paletteItems(s: StudioState): PaletteItem[] {
     ...COMMANDS.map((c) => ({
       id: `cmd-${c.name}`,
       label: `/${c.name}`,
-      hint: c.hint,
+      hint: commandHint(c.name),
       run: () =>
         c.name === 'plan' || c.name === 'run'
           ? fillCommandBar(`/${c.name} `)
           : void submit(`/${c.name}`),
     })),
-    tab('conversation', 'Conversation'),
-    tab('diff', 'Diff'),
-    tab('terminal', 'Terminal'),
-    tab('files', 'Files'),
-    { id: 'toggle-explorer', label: 'Show or hide Explorer', run: () => toggleZone('explorer') },
-    { id: 'toggle-agents', label: 'Show or hide Agents', run: () => toggleZone('agents') },
+    ...TABS.map((x) => goTo(x.id, x.label)),
+    ...(['explorer', 'agents', 'thread'] as const).map((z) => ({
+      id: `toggle-${z}`,
+      label: t('palette.toggle', { zone: t(`zone.${z}`) }),
+      run: () => toggleZone(z),
+    })),
     {
-      id: 'toggle-thread',
-      label: 'Show or hide Execution thread',
-      run: () => toggleZone('thread'),
+      id: 'language',
+      label: t('palette.language'),
+      run: () =>
+        setPrefs((p) => ({ ...p, locale: resolveLocale(p.locale) === 'fr' ? 'en' : 'fr' })),
+    },
+    {
+      id: 'onboarding',
+      label: t('palette.onboarding'),
+      run: () => patch({ onboardingOpen: true }),
     },
     {
       id: 'theme',
-      label: 'Switch theme (system → dark → light)',
+      label: t('palette.theme'),
       run: () => setPrefs((p) => ({ ...p, theme: nextTheme(p.theme) })),
     },
     {
       id: 'density',
-      label: 'Switch density (comfortable / compact)',
+      label: t('palette.density'),
       run: () =>
         setPrefs((p) => ({ ...p, density: p.density === 'compact' ? 'comfortable' : 'compact' })),
     },
@@ -99,7 +120,7 @@ function PaletteList(props: {
   pick: (i: PaletteItem) => void;
 }) {
   return (
-    <ul id="palette-list" role="listbox" aria-label="Commands">
+    <ul id="palette-list" role="listbox" aria-label={t('palette.list')}>
       {props.items.map((item, i) => (
         <li
           key={item.id}
@@ -112,7 +133,7 @@ function PaletteList(props: {
           {item.hint && <span className="muted"> — {item.hint}</span>}
         </li>
       ))}
-      {props.items.length === 0 && <li className="muted">No match</li>}
+      {props.items.length === 0 && <li className="muted">{t('palette.noMatch')}</li>}
     </ul>
   );
 }
@@ -142,12 +163,12 @@ function PaletteDialog() {
   return (
     <Modal labelledBy="palette-title" onClose={close} className="palette" initialFocus="input">
       <h2 id="palette-title" className="sr-only">
-        Command palette
+        {t('palette.title')}
       </h2>
       <input
         type="text"
         role="combobox"
-        aria-label="Search commands"
+        aria-label={t('palette.search')}
         aria-expanded="true"
         aria-controls="palette-list"
         aria-activedescendant={items.length ? `pal-${items[active]?.id}` : undefined}

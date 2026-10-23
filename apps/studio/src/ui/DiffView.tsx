@@ -1,3 +1,4 @@
+import { t } from '../i18n/core';
 import { applyPatches } from '../store/actions';
 import { useStudio } from '../store/store';
 import type { Patch } from '../store/types';
@@ -34,7 +35,7 @@ function PatchCard(props: { runId: string; p: Patch; applied: boolean }) {
     <article className="patch" aria-labelledby={`patch-${p.nodeId}`}>
       <div className="row">
         <h3 id={`patch-${p.nodeId}`}>
-          <span className="mono">#{p.nodeId}</span> · {p.files.length} file(s)
+          <span className="mono">#{p.nodeId}</span> · {t('diff.files', { count: p.files.length })}
         </h3>
         <button
           type="button"
@@ -42,7 +43,7 @@ function PatchCard(props: { runId: string; p: Patch; applied: boolean }) {
           disabled={applied}
           onClick={() => void applyPatches(runId, [p.nodeId])}
         >
-          {applied ? '✓ Applied' : 'Apply'}
+          {applied ? t('diff.applied') : t('diff.apply')}
         </button>
       </div>
       {p.files.length > 0 && (
@@ -59,15 +60,12 @@ function PatchCard(props: { runId: string; p: Patch; applied: boolean }) {
 
 export function DiffView() {
   const run = useStudio(activeRun);
-  if (!run || run.patches.length === 0)
-    return <p className="muted empty">No patch yet. Patches appear here when a run finishes.</p>;
+  if (!run || run.patches.length === 0) return <p className="muted empty">{t('diff.empty')}</p>;
   const pending = run.patches.filter((p) => !run.applied.includes(p.nodeId));
   return (
     <div className="diffs">
       <div className="row">
-        <p>
-          {run.patches.length} patch(es) from this run. Applying writes them to your working tree.
-        </p>
+        <p>{t('diff.summary', { count: run.patches.length })}</p>
         {pending.length > 1 && (
           <button
             type="button"
@@ -78,7 +76,7 @@ export function DiffView() {
               )
             }
           >
-            Apply all ({pending.length})
+            {t('diff.applyAll', { count: pending.length })}
           </button>
         )}
       </div>

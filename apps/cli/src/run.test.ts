@@ -72,6 +72,10 @@ describe('kpai route / run / stats', () => {
     await main(['route', '--allow-test', '--exclude', 'mock-beta', '--verbose', CODE], io);
     expect(io.stdout).toMatch(/✗ mock-beta\/m1: .*denied/);
     expect(await main(['route', '--type', 'poetry', 'x'], io)).toBe(2);
+    io.stdout = '';
+    // A pack domain type is accepted and routed on its base type (ADR-0024).
+    expect(await main(['route', '--allow-test', '--type', 'reverse_engineering', 'x'], io)).toBe(0);
+    expect(io.stdout).toMatch(/reverse_engineering \(100 %: set with --type\)/);
     expect(await main(['route', '--criticality', 'huge', 'x'], io)).toBe(2);
     expect(await main(['route'], io)).toBe(2);
   });

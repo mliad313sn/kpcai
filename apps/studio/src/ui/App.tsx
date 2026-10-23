@@ -1,3 +1,5 @@
+import { useEffect } from 'react';
+import { resolveLocale, t } from '../i18n/core';
 import { useStudio } from '../store/store';
 import { AgentsBoard } from './AgentsBoard';
 import { CenterTabs } from './CenterTabs';
@@ -6,6 +8,7 @@ import { ConfirmModal } from './ConfirmModal';
 import { Explorer } from './Explorer';
 import { Header } from './Header';
 import { useDocumentTitle, useGlobalKeys, useThemeEffect } from './hooks';
+import { Onboarding } from './Onboarding';
 import { Palette } from './Palette';
 import { Thread } from './Thread';
 import { Splitter } from './Zone';
@@ -26,10 +29,18 @@ function LastLog() {
   return (
     <p className={`status-line log-${last.level}`}>
       <span aria-hidden="true">{last.level === 'error' ? '✕ ' : '⚠ '}</span>
-      {last.level === 'error' ? 'Error: ' : 'Warning: '}
-      {last.message}
+      {t(last.level === 'error' ? 'log.error' : 'log.warning', { message: last.message })}
     </p>
   );
+}
+
+/** The display language: `<html lang>` follows it, and the tree re-renders when it changes. */
+function useLocale(): string {
+  const locale = resolveLocale(useStudio((s) => s.prefs.locale));
+  useEffect(() => {
+    document.documentElement.lang = locale;
+  }, [locale]);
+  return locale;
 }
 
 /**
@@ -40,10 +51,11 @@ export function App({ url }: { url: string }) {
   useThemeEffect();
   useGlobalKeys();
   useDocumentTitle();
+  const locale = useLocale();
   return (
-    <div className="studio">
+    <div className="studio" key={locale}>
       <a className="skip-link" href="#command-input">
-        Skip to command bar
+        {t('app.skip')}
       </a>
       <Header url={url} />
       <CommandBar />
@@ -60,6 +72,7 @@ export function App({ url }: { url: string }) {
       <LiveRegion />
       <Palette />
       <ConfirmModal />
+      <Onboarding />
     </div>
   );
 }

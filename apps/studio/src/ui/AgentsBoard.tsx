@@ -1,3 +1,4 @@
+import { t } from '../i18n/core';
 import { formatDuration, formatScore, formatUsd } from '../store/format';
 import { patch, useStudio } from '../store/store';
 import { useNow } from './hooks';
@@ -8,17 +9,15 @@ import { Zone } from './Zone';
 function AgentTable({ rows, now }: { rows: AgentRow[]; now: number }) {
   return (
     <table className="agents">
-      <caption className="sr-only">Models currently working</caption>
+      <caption className="sr-only">{t('agents.caption')}</caption>
       <thead>
         <tr>
-          <th scope="col">Model</th>
-          <th scope="col">Node · role</th>
-          <th scope="col">Elapsed</th>
-          <th scope="col">Cost</th>
+          <th scope="col">{t('agents.model')}</th>
+          <th scope="col">{t('agents.node')}</th>
+          <th scope="col">{t('agents.elapsed')}</th>
+          <th scope="col">{t('agents.cost')}</th>
           <th scope="col">
-            <abbr title="Router score for this model on this node, when the kernel reports it">
-              Conf.
-            </abbr>
+            <abbr title={t('agents.confTitle')}>{t('agents.conf')}</abbr>
           </th>
         </tr>
       </thead>
@@ -58,14 +57,12 @@ export function AgentsBoard() {
   return (
     <Zone zone="agents">
       {rows.length === 0 ? (
-        <p className="muted empty">No model is working right now.</p>
+        <p className="muted empty">{t('agents.empty')}</p>
       ) : (
         <AgentTable rows={rows} now={now} />
       )}
       {run && (
-        <p className="small muted total">
-          Run total so far: <strong>{formatUsd(run.costUsd)}</strong>
-        </p>
+        <p className="small muted total">{t('agents.total', { cost: formatUsd(run.costUsd) })}</p>
       )}
     </Zone>
   );

@@ -210,28 +210,29 @@ describe('criticality keywords (WI-S4-03)', () => {
 });
 
 describe('pack-proposed task types', () => {
-  it('maps proposed ids onto core types through mapsTo', () => {
-    const packs = [pack('reverse-engineering'), pack('game-dev'), pack('cad-3d-printing')];
+  it('maps proposed ids onto core types through mapsTo; core types pass through (ADR-0024)', () => {
+    const re = pack('reverse-engineering');
+    const custom: Pack = {
+      ...re,
+      id: 'firmware',
+      proposedTaskTypes: [
+        { id: 'firmware_triage', description: 'Triage a firmware image', mapsTo: 'analysis' },
+      ],
+    };
+    const packs = [re, pack('game-dev'), pack('cad-3d-printing'), custom];
     expect(resolveTaskType(packs, 'analysis')).toEqual({ type: 'analysis' });
-    expect(resolveTaskType(packs, 'reverse_engineering')).toEqual({
+    expect(resolveTaskType(packs, 'firmware_triage')).toEqual({
       type: 'analysis',
-      proposed: 'reverse_engineering',
-      pack: 'reverse-engineering',
+      proposed: 'firmware_triage',
+      pack: 'firmware',
     });
-    expect(resolveTaskType(packs, 'game_design')?.type).toBe('writing');
-    expect(resolveTaskType(packs, 'cad_modelling')?.type).toBe('code_generation');
+    // Since ADR-0024 these are core task types: kept as they are.
+    expect(resolveTaskType(packs, 'reverse_engineering')?.type).toBe('reverse_engineering');
+    expect(resolveTaskType(packs, 'game_design')?.type).toBe('game_design');
     expect(resolveTaskType(packs, 'astrology')).toBeUndefined();
-    expect([...proposedTypeAliases(all).keys()].sort()).toEqual([
-      'cad_modelling',
-      'creative_writing',
-      'data_analysis',
-      'design',
-      'game_design',
-      'geospatial_analysis',
-      'reverse_engineering',
-      'security_assessment',
-      'translation',
-    ]);
+    // Every built-in proposal is a core type now; only third-party ids need an alias.
+    expect([...proposedTypeAliases(all).keys()]).toEqual([]);
+    expect([...proposedTypeAliases([custom]).entries()]).toEqual([['firmware_triage', 'analysis']]);
     expect(proposedTypeFor(pack('cad-3d-printing'), 'code_generation')).toBe('cad_modelling');
     expect(proposedTypeFor(pack('smart-home'), 'analysis')).toBeUndefined();
   });

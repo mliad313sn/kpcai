@@ -57,6 +57,9 @@ export const TEXT_PAIRS: Array<[Token, Token]> = [
   ['ok', 'raised'],
   ['warn', 'raised'],
   ['danger', 'raised'],
+  ['ok', 'bg'],
+  ['warn', 'bg'],
+  ['danger', 'bg'],
   ['text', 'added'],
   ['text', 'removed'],
 ];

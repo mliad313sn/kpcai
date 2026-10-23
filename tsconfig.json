@@ -39,6 +39,9 @@
     },
     {
       "path": "apps/studio"
+    },
+    {
+      "path": "apps/studio-tui"
     }
   ]
 }

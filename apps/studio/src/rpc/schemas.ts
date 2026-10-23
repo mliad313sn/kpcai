@@ -1,11 +1,16 @@
 /**
- * Client-side schemas for the kernel objects that `@kernelpai/kernel/protocol` carries as
- * `unknown` (graph, estimate, GraphEvent, method results). They mirror `packages/core`
- * (graph.ts, routing.ts) and `packages/orchestrator` (estimate.ts) but are lenient: unknown
- * extra fields pass through, so a newer kernel does not break an older console. Anything
- * that does not match is dropped, never rendered.
+ * Client-side refinements of the protocol's schemas. Every result is first checked by
+ * `@kernelpai/kernel/protocol` (in `RpcClient.call`); these schemas then read the fields
+ * the protocol leaves open (node type and protocol, estimate steps, GraphEvent variants).
+ * They mirror `packages/core` and `packages/orchestrator` but stay lenient: unknown extra
+ * fields pass through, so a newer kernel does not break an older console. Anything that
+ * does not match is dropped, never rendered.
  */
+import { BandSchema, ControlEventSchema } from '@kernelpai/kernel/protocol';
 import { z } from 'zod';
+
+export type Band = z.infer<typeof BandSchema>;
+export type ControlEvent = z.infer<typeof ControlEventSchema>;
 
 export const RefSchema = z.object({ provider: z.string(), model: z.string() });
 export type Ref = z.infer<typeof RefSchema>;
@@ -43,6 +48,9 @@ export const GraphNodeSchema = z.looseObject({
   criticality: z.string().optional(),
   messages: z.array(MessageSchema).optional(),
   tools: z.array(z.string()).optional(),
+  /** Pinned model of the node's first step (R-301, ADR-0020). */
+  model: RefSchema.optional(),
+  budgetUsd: z.number().optional(),
 });
 export type GraphNode = z.infer<typeof GraphNodeSchema>;
 
@@ -73,9 +81,12 @@ export const NodeEstimateSchema = z.looseObject({
   expectedUsd: z.number(),
   steps: z.array(StepSchema).default([]),
   error: z.string().optional(),
-  /** Not in the phase-3 contract; shown when a kernel provides them. */
+  band: BandSchema.optional(),
+  /** Routing explanation (R-303), present when the router agrees with the estimate. */
   reason: z.string().optional(),
   score: z.number().optional(),
+  parts: z.record(z.string(), z.number().nullable()).optional(),
+  runnerUp: z.object({ ref: RefSchema, score: z.number() }).optional(),
 });
 export type NodeEstimate = z.infer<typeof NodeEstimateSchema>;
 
@@ -85,6 +96,7 @@ export const GraphEstimateSchema = z.looseObject({
   totalUsd: z.number(),
   complete: z.boolean(),
   problems: z.array(z.string()).default([]),
+  band: BandSchema.optional(),
 });
 export type GraphEstimate = z.infer<typeof GraphEstimateSchema>;
 
@@ -111,7 +123,7 @@ export const GraphEventSchema = z.discriminatedUnion('type', [
     state: NodeStateSchema,
     ref: RefSchema.optional(),
     role: RoleSchema.optional(),
-    /** Optional extensions (routing reason, router score), not in the phase-3 contract. */
+    /** Kernel extras (R-303): the router's reason and score for this model. */
     reason: z.string().optional(),
     score: z.number().optional(),
   }),
@@ -126,12 +138,13 @@ export const GraphEventSchema = z.discriminatedUnion('type', [
     type: z.literal('contribution'),
     nodeId: z.string(),
     contribution: ContributionSchema,
+    usage: z.object({ inputTokens: z.number(), outputTokens: z.number() }).optional(),
   }),
   z.looseObject({ type: z.literal('graph_done'), costUsd: z.number(), ok: z.boolean() }),
 ]);
 export type GraphEvent = z.infer<typeof GraphEventSchema>;
 
-/** Result of `plan`. The protocol leaves it untyped; this is the shape of `run.planned`. */
+/** Result of `plan`, also the shape of `run.planned`, with the client's refinements. */
 export const PlanResultSchema = z.looseObject({
   planId: z.string(),
   graph: TaskGraphSchema,
@@ -165,12 +178,25 @@ export function parseSessions(raw: unknown): Session[] {
 
 const ProviderSchema = z.looseObject({
   id: z.string(),
+  name: z.string().optional(),
+  kind: z.string().optional(),
   available: z.boolean().optional(),
+  reason: z.string().optional(),
   models: z.array(z.union([z.string(), z.looseObject({ id: z.string() })])).default([]),
 });
 
-/** Models offered by `providers.list` (array or `{ providers }`), as provider/model refs. */
-export function parseModels(raw: unknown): Ref[] {
+export interface ProviderView {
+  id: string;
+  name: string;
+  /** `cloud`, `local` or `test` (descriptor kind); `local` costs nothing. */
+  kind: string;
+  available: boolean;
+  reason: string;
+  models: string[];
+}
+
+/** `providers.list` (array or `{ providers }`) as display rows; invalid rows are dropped. */
+export function parseProviders(raw: unknown): ProviderView[] {
   const list = Array.isArray(raw)
     ? raw
     : Array.isArray((raw as { providers?: unknown } | null)?.providers)
@@ -178,10 +204,77 @@ export function parseModels(raw: unknown): Ref[] {
       : [];
   return list.flatMap((r) => {
     const p = ProviderSchema.safeParse(r);
-    if (!p.success || p.data.available === false) return [];
-    return p.data.models.map((m) => ({
-      provider: p.data.id,
-      model: typeof m === 'string' ? m : m.id,
-    }));
+    if (!p.success) return [];
+    const d = p.data;
+    const models = d.models.map((m) => (typeof m === 'string' ? m : m.id));
+    return [
+      {
+        id: d.id,
+        name: d.name ?? d.id,
+        kind: d.kind ?? 'cloud',
+        available: d.available !== false,
+        reason: d.reason ?? '',
+        models,
+      },
+    ];
+  });
+}
+
+/** Models of the available providers, as provider/model refs (model suggestions). */
+export function parseModels(raw: unknown): Ref[] {
+  return parseProviders(raw).flatMap((p) =>
+    p.available ? p.models.map((model) => ({ provider: p.id, model })) : [],
+  );
+}
+
+const ArtifactSchema = z.looseObject({
+  path: z.string().min(1).max(1000),
+  kind: z.string().min(1).max(50),
+  nodeId: z.string().optional(),
+  content: z.string().optional(),
+  text: z.string().optional(),
+  provenance: z.unknown().optional(),
+  reviewed: z.boolean().optional(),
+});
+
+function provenanceLines(p: unknown): string[] {
+  if (typeof p === 'string') return [p];
+  if (!p || typeof p !== 'object') return [];
+  return Object.entries(p as Record<string, unknown>).map(([k, v]) => {
+    const r = v as Partial<Ref> | null;
+    const value =
+      r && typeof r === 'object' && typeof r.provider === 'string' && typeof r.model === 'string'
+        ? `${r.provider}/${r.model}`
+        : typeof v === 'object'
+          ? JSON.stringify(v)
+          : String(v);
+    return `${k}: ${value}`;
+  });
+}
+
+/** `run.done` artifacts (WI-S6-01), leniently: rows that do not parse are dropped. */
+export function parseArtifacts(raw: unknown): Array<{
+  nodeId?: string;
+  path: string;
+  kind: string;
+  text: string;
+  provenance: string[];
+  reviewed?: boolean;
+}> {
+  if (!Array.isArray(raw)) return [];
+  return raw.flatMap((r) => {
+    const a = ArtifactSchema.safeParse(r);
+    if (!a.success) return [];
+    const d = a.data;
+    return [
+      {
+        ...(d.nodeId ? { nodeId: d.nodeId } : {}),
+        path: d.path,
+        kind: d.kind,
+        text: d.content ?? d.text ?? '',
+        provenance: provenanceLines(d.provenance),
+        ...(d.reviewed !== undefined ? { reviewed: d.reviewed } : {}),
+      },
+    ];
   });
 }

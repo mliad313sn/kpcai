@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { HELP_TEXT, parseInput, tokenAtCaret, tokens } from './commands';
+import { helpText, parseInput, tokenAtCaret, tokens } from './commands';
 import { formatDuration, formatRange, formatScore, formatUsd } from './format';
 
 describe('command bar grammar', () => {
@@ -40,7 +40,7 @@ describe('command bar grammar', () => {
 
   it('documents every command', () => {
     for (const c of ['/plan', '/run', '/stats', '/sessions', '/tools', '/help', 'Ctrl+K'])
-      expect(HELP_TEXT).toContain(c);
+      expect(helpText()).toContain(c);
   });
 });
 

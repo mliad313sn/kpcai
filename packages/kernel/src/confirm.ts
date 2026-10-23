@@ -1,6 +1,7 @@
 /** Human confirmations the kernel asks for, and how they are serialized. */
 
-export type ConfirmKind = 'budget' | 'tool' | 'patch';
+/** `restore` (ADR-0021) and `artifact` (ADR-0022) are destructive / write confirmations. */
+export type ConfirmKind = 'budget' | 'tool' | 'patch' | 'restore' | 'artifact';
 
 export interface ConfirmRequest {
   kind: ConfirmKind;
@@ -10,6 +11,17 @@ export interface ConfirmRequest {
   risk?: 'read' | 'write' | 'destructive';
   /** For `patch`: the exact diff that would be applied (shown apart from the question). */
   patch?: string;
+  /** For `artifact`: the exact text that would be written, and what it is. */
+  content?: string;
+  artifact?: {
+    path: string;
+    kind: string;
+    mime: string;
+    bytes: number;
+    nodeId: string;
+    /** False: no critic reviewed it; shown as "not reviewed" (D-020 ruling). */
+    reviewed: boolean;
+  };
 }
 
 /** Resolves true only on an explicit yes; anything else (silence, error) is a no. */

@@ -1,13 +1,20 @@
 import { parseArgs } from 'node:util';
-import { ProviderError } from '@kernelpai/core';
+import { ProviderError, TaskTypeSchema } from '@kernelpai/core';
 import { askCommand } from './commands/ask.js';
 import { exportCommand, logCommand, verifyCommand } from './commands/log.js';
+import { packCommand } from './commands/pack.js';
 import { providersCommand } from './commands/providers.js';
 import { routeCommand, runCommand, type RunOptions } from './commands/run.js';
 import { statsCommand } from './commands/stats.js';
 import { doCommand, planCommand } from './commands/graph.js';
 import { studioCommand } from './commands/studio.js';
 import { toolsCommand } from './commands/tools.js';
+import {
+  checkpointsCommand,
+  discardCommand,
+  mergeCommand,
+  restoreCommand,
+} from './commands/workspace.js';
 import type { GraphCliOptions as GraphOptions } from './commands/graph.js';
 import type { Io } from './io.js';
 
@@ -18,7 +25,14 @@ Usage:
                                        run it with cross-provider review, show patches
   kpai plan <request>                  The same plan and estimate, dry run
       [--planner template|model] [--apply] [--yes-apply] [--allow-same-provider]
+      [--isolated]  run in its own git worktree, merged back on confirmation
+      [--scope <file>]  authorised scope (YAML/JSON) for packs that require one
       --yes accepts cost prompts only; writes need --yes-apply or a y at the prompt
+  kpai checkpoints [--session <id>]   Checkpoints taken before writes, by run
+  kpai restore <ref>                   Restore a checkpoint (always asks; undo printed)
+  kpai merge <run-id>                  Merge an isolated run's worktree (asks with the diff)
+  kpai discard <run-id>                Remove an isolated run's worktree
+  kpai pack list|show|detect|check|init  Domain packs (see kpai pack help)
   kpai tools                           Tools models can use, their risk and source
   kpai studio [--port N]               Start KP Studio's local kernel server, print its URL
   kpai run <request>                   Classify, route by competence, budget-check,
@@ -62,6 +76,8 @@ const OPTIONS = {
   'allow-same-provider': { type: 'boolean' },
   verbose: { type: 'boolean', short: 'v' },
   port: { type: 'string' },
+  isolated: { type: 'boolean' },
+  scope: { type: 'string' },
 } as const;
 
 function positiveInt(name: string, raw: string | undefined): number | undefined {
@@ -81,15 +97,8 @@ function portNumber(raw: string | undefined): number | undefined {
   return n;
 }
 
-const TASK_TYPES = [
-  'analysis',
-  'code_generation',
-  'writing',
-  'research',
-  'test',
-  'critique',
-  'decision',
-];
+/** Every core task type, the pack domain types included (ADR-0024). */
+const TASK_TYPES: readonly string[] = TaskTypeSchema.options;
 const CRITICALITIES = ['low', 'normal', 'critical'];
 
 function oneOf<T extends string>(
@@ -127,6 +136,8 @@ function graphOptions(v: Values, rest: string[]): GraphOptions {
     newSession: v['new-session'],
     verbose: v.verbose,
     db: v.db,
+    ...(v.isolated ? { isolated: true } : {}),
+    ...(v.scope ? { scopeFile: v.scope } : {}),
   };
 }
 
@@ -183,7 +194,18 @@ const COMMANDS: Readonly<Record<string, Handler>> = {
     return exportCommand(io, { db: v.db, session: rest[0], out: v.out });
   },
   verify: (io, v) => verifyCommand(io, { db: v.db }),
+  pack: (io, v, rest) => packCommand(io, rest, { out: v.out }),
+  checkpoints: (io, v) => checkpointsCommand(io, { db: v.db, session: v.session }),
+  restore: (io, v, rest) => restoreCommand(io, { db: v.db, ref: one('restore', 'a ref', rest) }),
+  merge: (io, v, rest) => mergeCommand(io, { db: v.db, runId: one('merge', 'a run id', rest) }),
+  discard: (io, v, rest) =>
+    discardCommand(io, { db: v.db, runId: one('discard', 'a run id', rest) }),
 };
+
+function one(command: string, what: string, rest: string[]): string {
+  if (rest.length !== 1 || !rest[0]) throw new UsageError(`${command} needs ${what}`);
+  return rest[0];
+}
 
 export async function main(argv: readonly string[], io: Io): Promise<number> {
   try {

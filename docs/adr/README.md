@@ -1,7 +1,6 @@
 # Architecture Decision Records
 
 One page per decision. Format: Context, Decision, Consequences, Revisit when.
-Status values: Accepted, Superseded by ADR-NNNN.
 
 | #                                                    | Title                                                           | Status   |
 | ---------------------------------------------------- | --------------------------------------------------------------- | -------- |
@@ -25,3 +24,8 @@ Status values: Accepted, Superseded by ADR-NNNN.
 | [0018](0018-graph-cli.md)                            | `kpai plan` / `kpai do`: planning, gating and patches           | Accepted |
 | [0019](0019-kernel-service-and-console-server.md)    | Kernel service layer and console server protocol                | Accepted |
 | [0020](0020-run-control-and-pinned-models.md)        | Run control and user-chosen models                              | Accepted |
+| [0021](0021-checkpoints-rules-and-run-worktrees.md)  | Checkpoints, repository rules and run worktrees in the kernel   | Accepted |
+| [0022](0022-non-code-artifacts.md)                   | Non-code artifacts next to patches                              | Accepted |
+| [0023](0023-two-tier-forbidden-zones.md)             | Two-tier forbidden zones and pack relaxations                   | Accepted |
+| [0024](0024-domain-task-types.md)                    | Domain task types in core, scored on a base type                | Accepted |
+| [0025](0025-packs-at-the-kernel-boundary.md)         | Domain packs at the kernel boundary                             | Accepted |

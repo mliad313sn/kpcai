@@ -9,8 +9,66 @@ export const TaskTypeSchema = z.enum([
   'test',
   'critique',
   'decision',
+  // Domain types proposed by the packs (D-020, ADR-0024); each has a base type below.
+  'reverse_engineering',
+  'security_assessment',
+  'data_analysis',
+  'design',
+  'game_design',
+  'cad_modelling',
+  'geospatial_analysis',
+  'creative_writing',
+  'translation',
 ]);
 export type TaskType = z.infer<typeof TaskTypeSchema>;
+
+/** The seven types of spec §3.1, which every capability sheet can score. */
+export type BaseTaskType =
+  'analysis' | 'code_generation' | 'writing' | 'research' | 'test' | 'critique' | 'decision';
+
+/**
+ * Base type of each domain type (ADR-0024): a card that does not score a domain type is
+ * scored on its base, so routing never breaks when a type is added. Mirrors the packs'
+ * `mapsTo`.
+ */
+export const TASK_TYPE_BASE: Readonly<Record<TaskType, BaseTaskType>> = {
+  analysis: 'analysis',
+  code_generation: 'code_generation',
+  writing: 'writing',
+  research: 'research',
+  test: 'test',
+  critique: 'critique',
+  decision: 'decision',
+  reverse_engineering: 'analysis',
+  security_assessment: 'analysis',
+  data_analysis: 'analysis',
+  design: 'writing',
+  game_design: 'writing',
+  cad_modelling: 'code_generation',
+  geospatial_analysis: 'analysis',
+  creative_writing: 'writing',
+  translation: 'code_generation',
+};
+
+/**
+ * What a task node hands back (D-019, D-020 WI-S1-02, ADR-0022). Mirrors the pack schema's
+ * `deliverable` enum; absent means `patch` for code and test nodes, else `answer`. Only
+ * `patch` goes through the diff path; the other kinds (but `answer`) are artifacts.
+ */
+export const DeliverableSchema = z.enum([
+  'answer',
+  'report',
+  'patch',
+  'notebook',
+  'design',
+  'build',
+  'checklist',
+  'model3d',
+  'map',
+  'config',
+  'asset',
+]);
+export type Deliverable = z.infer<typeof DeliverableSchema>;
 
 export const ModalitySchema = z.enum(['text', 'image', 'audio', 'video', 'code']);
 export type Modality = z.infer<typeof ModalitySchema>;

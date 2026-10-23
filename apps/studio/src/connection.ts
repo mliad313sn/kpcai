@@ -1,16 +1,17 @@
 /** Boot wiring: one RpcClient per page, feeding the store and serving the actions. */
+import { t, type Key } from './i18n/core';
 import { RpcClient, type RpcClientOptions } from './rpc/client';
 import { forgetToken, rememberToken } from './rpc/token';
 import { loadModels, loadSessions, setClient } from './store/actions';
-import { announce, handleNotification, log, patch } from './store/store';
+import { announce, handleNotification, log, patch, studio } from './store/store';
 
 let current: RpcClient | undefined;
 
-const CONN_TEXT: Record<string, string> = {
-  open: 'Connected to the KernelPAI kernel',
-  reconnecting: 'Connection lost, reconnecting',
-  unauthorized: 'The kernel refused the token',
-  closed: 'Disconnected',
+const CONN_TEXT: Record<string, Key> = {
+  open: 'conn.announce.open',
+  reconnecting: 'conn.announce.reconnecting',
+  unauthorized: 'conn.announce.unauthorized',
+  closed: 'conn.announce.closed',
 };
 
 export function connect(
@@ -23,13 +24,15 @@ export function connect(
     url,
     token,
     onNotification: handleNotification,
-    onInvalid: (reason) => log('warn', `Ignored a message from the kernel: ${reason}`),
+    onInvalid: (reason) => log('warn', t('conn.invalid', { reason })),
     onState: (state, detail) => {
       patch({ conn: state, connDetail: detail });
-      if (CONN_TEXT[state]) announce(CONN_TEXT[state]!);
+      if (CONN_TEXT[state]) announce(t(CONN_TEXT[state]!));
       if (state === 'unauthorized') forgetToken();
       if (state === 'open') {
         rememberToken(token);
+        // First run (R-308): the onboarding screen opens once providers are being detected.
+        if (!studio.getState().prefs.onboarded) patch({ onboardingOpen: true });
         void loadSessions();
         void loadModels();
       }

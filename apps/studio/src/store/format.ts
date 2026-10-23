@@ -1,11 +1,27 @@
+import { getLocale } from '../i18n/core';
+
 /** Display helpers. Costs are stored and shown in USD in phase 3 (ADR-0013 display currency
  * comes with the settings screen). */
 
+const money = new Map<string, Intl.NumberFormat>();
+
+/** USD in the display language's notation: `$0.42` in English, `0,42 $` in French. */
 export function formatUsd(usd: number): string {
   if (!Number.isFinite(usd)) return '$?';
-  if (usd === 0) return '$0';
-  if (Math.abs(usd) < 0.01) return `$${usd.toFixed(4)}`;
-  return `$${usd.toFixed(2)}`;
+  const digits = usd === 0 ? 0 : Math.abs(usd) < 0.01 ? 4 : 2;
+  const tag = `${getLocale() === 'fr' ? 'fr-FR' : 'en-US'} ${digits}`;
+  let f = money.get(tag);
+  if (!f) {
+    f = new Intl.NumberFormat(tag.split(' ')[0], {
+      style: 'currency',
+      currency: 'USD',
+      currencyDisplay: 'narrowSymbol',
+      minimumFractionDigits: digits,
+      maximumFractionDigits: digits,
+    });
+    money.set(tag, f);
+  }
+  return f.format(usd);
 }
 
 export function formatRange(min: number, max: number): string {

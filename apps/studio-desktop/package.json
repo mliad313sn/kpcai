@@ -1,0 +1,16 @@
+{
+  "name": "@kernelpai/studio-desktop",
+  "version": "0.0.1",
+  "private": true,
+  "license": "UNLICENSED",
+  "type": "module",
+  "scripts": {
+    "tauri": "tauri",
+    "build:web": "pnpm --filter @kernelpai/studio build",
+    "build": "tauri build --no-bundle",
+    "dev": "tauri dev"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "2.12.1"
+  }
+}

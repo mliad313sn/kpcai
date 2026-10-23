@@ -12,7 +12,7 @@ afterEach(() => teardown(kernel));
 
 async function planAndRun(user: ReturnType<typeof userEvent.setup>) {
   await user.type(screen.getByRole('combobox', { name: /Ask KP Studio/ }), 'add OAuth{Enter}');
-  const run = await screen.findByRole('button', { name: 'Run (≤ $0.40)' });
+  const run = await screen.findByRole('button', { name: 'Run (cap $0.40)' });
   await user.click(run);
   await until(() => studio.getState().activeRunId === 'r1');
 }
@@ -38,11 +38,11 @@ describe('KP Studio layout', () => {
     const thread = screen.getByRole('region', { name: 'Execution thread' });
     await within(thread).findByText('Design the OAuth flow');
     expect(within(thread).getAllByText('planned').length).toBeGreaterThanOrEqual(3);
-    expect(within(thread).getByText('$0.15–$0.40')).toBeTruthy();
-    expect(within(thread).getByText('est. $0.10–$0.25')).toBeTruthy();
+    expect(within(thread).getByText(/Estimate \$0\.12–\$0\.35/)).toBeTruthy();
+    expect(within(thread).getByText('est. $0.09–$0.30')).toBeTruthy();
     expect(kernel.calls('run.start')).toEqual([]);
     expect(screen.getByRole('status').textContent).toMatch(/Plan ready/);
-    await user.click(screen.getByRole('button', { name: 'Run (≤ $0.40)' }));
+    await user.click(screen.getByRole('button', { name: 'Run (cap $0.40)' }));
     await until(() => kernel!.calls('run.start').length === 1);
   });
 
@@ -108,7 +108,7 @@ describe('KP Studio layout', () => {
     const detail = screen.getByRole('complementary');
     expect(within(detail).getByText(/Design <b>OAuth<\/b>/)).toBeTruthy();
     expect(detail.querySelector('b')).toBeNull();
-    expect(within(detail).getByText(/does not report a per-node routing reason/)).toBeTruthy();
+    expect(within(detail).getByText(/No routing reason for this node/)).toBeTruthy();
     // Arrow keys move between nodes.
     screen.getByRole('button', { name: /#arch/ }).focus();
     await user.keyboard('{ArrowRight}');

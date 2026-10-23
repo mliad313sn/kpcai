@@ -1,5 +1,6 @@
 import type { Kernel, RunOutcome } from '@kernelpai/kernel';
 import type { Io } from '../io.js';
+import { sanitizeForTerminal } from '../sanitize.js';
 
 type Finished = Extract<RunOutcome, { status: 'finished' }>;
 
@@ -33,4 +34,65 @@ export async function showAndApply(
   const results = await kernel.applyPatches(runId, o.yesApply ? { yesApply: true } : {});
   for (const r of results) io.err(`${r.ok ? '✓' : '✗'} ${r.nodeId}: ${r.message}\n`);
   return `${results.filter((r) => r.ok).length}/${patches.length} patch(es) applied`;
+}
+
+/**
+ * Shows the run's approved artifacts (D-019), then writes them with `--apply`, each
+ * confirmed with its content unless `--yes-apply`. Empty string when there is none.
+ */
+export async function showAndApplyArtifacts(
+  io: Io,
+  kernel: Kernel,
+  runId: string,
+  outcome: Finished,
+  o: { apply?: boolean; yesApply?: boolean },
+): Promise<string> {
+  for (const r of outcome.refusedArtifacts) {
+    io.err(`\n✗ artifact ${sanitizeForTerminal(r.path)} from ${r.nodeId} refused: ${r.reason}\n`);
+  }
+  const list = outcome.artifacts;
+  if (list.length === 0) return '';
+  for (const a of list) {
+    const review = a.reviewed
+      ? ''
+      : ', NOT REVIEWED: asked on its own, --yes-apply does not cover it';
+    io.err(
+      `\n--- artifact ${a.path} (${a.kind}, ${a.mime}, ${a.bytes} bytes${review}) from ${a.nodeId}\n`,
+    );
+    io.err(a.content);
+  }
+  if (outcome.cancelled || !o.apply) return `${list.length} artifact(s) shown, not written`;
+  const results = await kernel.applyArtifacts(runId, o.yesApply ? { yesApply: true } : {});
+  for (const r of results) io.err(`${r.ok ? '✓' : '✗'} ${r.path}: ${r.message}\n`);
+  return `${results.filter((r) => r.ok).length}/${list.length} artifact(s) written`;
+}
+
+/**
+ * `--isolated` (R-307): the run worked in its own worktree. With `--apply`, offer to
+ * merge it back (confirmed with the whole diff, after a checkpoint) and remove it once
+ * merged; otherwise keep it and say how to merge or discard it later.
+ */
+export async function finishIsolated(
+  io: Io,
+  kernel: Kernel,
+  runId: string,
+  outcome: Finished,
+  o: { apply?: boolean },
+): Promise<string> {
+  if (!outcome.worktree) return '';
+  const d = await kernel.workspace.diff(runId);
+  if (!d || d.diff.trim() === '') {
+    await kernel.discard(runId);
+    return 'worktree empty, removed';
+  }
+  if (o.apply && !outcome.cancelled) {
+    io.err(`\n--- merge of run ${runId} into the workspace\n${d.diff}`);
+    const m = await kernel.merge(runId);
+    if (m.merged) {
+      await kernel.discard(runId);
+      return `merged ${m.files.length} file(s)${m.checkpoint ? ` (undo: kpai restore ${m.checkpoint})` : ''}`;
+    }
+  }
+  io.err(`worktree kept: ${outcome.worktree}\n  kpai merge ${runId}  ·  kpai discard ${runId}\n`);
+  return 'worktree kept';
 }

@@ -44,12 +44,16 @@ describe('actions against a fake kernel', () => {
   it('plans first, then runs the plan the user saw (zéro surprise)', async () => {
     await boot();
     await submit('add OAuth with tests');
-    expect(kernel.calls('plan')).toEqual([{ request: 'add OAuth with tests' }]);
+    expect(kernel.calls('plan')).toEqual([
+      { request: 'add OAuth with tests', options: { profile: 'balanced' } },
+    ]);
     expect(kernel.calls('run.start')).toEqual([]);
     expect(s().plan?.estimate.totalUsd).toBe(0.4);
-    expect(s().announcement.text).toMatch(/Plan ready: 3 node\(s\), \$0.15 to \$0.40/);
+    expect(s().announcement.text).toMatch(/Plan ready: 3 nodes, \$0.12 to \$0.35/);
     await startRun();
-    expect(kernel.calls('run.start')).toEqual([{ request: 'add OAuth with tests', planId: 'p1' }]);
+    expect(kernel.calls('run.start')).toEqual([
+      { request: 'add OAuth with tests', planId: 'p1', options: { profile: 'balanced' } },
+    ]);
     expect(s().plan).toBeUndefined();
     expect(s().activeRunId).toBe('r1');
     expect(s().runs.r1?.graph?.nodes).toHaveLength(3);
@@ -188,7 +192,7 @@ describe('actions against a fake kernel', () => {
     await requestPlan('x');
     expect(s().plan).toBeUndefined();
     expect(s().planning).toBe(false);
-    expect(s().logs.at(-1)?.message).toMatch(/Planning failed: .*cannot read/);
+    expect(s().logs.at(-1)?.message).toMatch(/Planning failed: plan: /);
     await control('cancel', 'r1');
     expect(s().logs.at(-1)?.message).toBe('Cancel failed: boom');
     await redirectNode('r1', 'n', { provider: 'p', model: 'm' });
@@ -206,11 +210,11 @@ describe('actions against a fake kernel', () => {
     expect(s().logs.at(-1)?.message).toBe('Answering the confirmation failed: boom');
   });
 
-  it('fails cleanly when not connected or when run.start returns no id', async () => {
+  it('fails cleanly when not connected or when a result breaks the protocol', async () => {
     await boot({ 'run.start': () => ({}), 'sessions.list': () => [] });
     await requestPlan('x');
     await startRun();
-    expect(s().logs.at(-1)?.message).toMatch(/did not return a run id/);
+    expect(s().logs.at(-1)?.message).toMatch(/Starting the run failed: run.start: runId/);
     disconnect();
     await requestPlan('y');
     expect(s().logs.at(-1)?.message).toBe('Planning failed: not connected to the kernel');

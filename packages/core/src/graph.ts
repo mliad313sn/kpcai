@@ -1,4 +1,5 @@
 import type { ModelRef, TaskNode } from './routing.js';
+import type { Deliverable } from './schemas.js';
 
 /** Collaboration protocols of spec §3.1 (Relay and Swarm come later). */
 export type ProtocolName = 'solo' | 'author_critic' | 'debate' | 'vote';
@@ -10,6 +11,8 @@ export interface GraphNode extends TaskNode {
   protocol: ProtocolName;
   /** Tool names this node's models may call; none by default. */
   tools?: string[];
+  /** What the node hands back (ADR-0022); default `patch` for code and tests, else `answer`. */
+  deliverable?: Deliverable;
 }
 
 export interface TaskGraph {

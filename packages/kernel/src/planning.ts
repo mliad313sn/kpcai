@@ -6,6 +6,7 @@ import {
   estimateGraph,
   outputSpread,
   validatePlan,
+  type BudgetHook,
   type EstimateDeps,
   type PlanCheck,
 } from '@kernelpai/orchestrator';
@@ -13,6 +14,10 @@ import { BudgetGate, type GateHost } from './budget-gate.js';
 import { money } from './env.js';
 import { KernelError } from './errors.js';
 import { explainEstimate } from './routing-info.js';
+import type { Env } from './env.js';
+import { busPacks, noPacks, policyFor, selectPacks, type SelectedPacks } from './packs.js';
+import { loadRules, withNodeContext, type LoadedRules } from './rules.js';
+import { checkScope } from './scope.js';
 import { graphSetup, plannerFor, type GraphOptions, type GraphSetup } from './setup.js';
 import type { Plan } from './types.js';
 
@@ -43,12 +48,40 @@ export async function makePlan(
   const m = money(host.env);
   if (options.planner === 'model')
     host.say('planning with a model: this is a paid call, budget-checked\n');
+  const packs = await packsFor(host.env, host.cwd, host.say);
+  // R-306: rule files read inside the jail, forbidden zones skipped, before any model call.
+  // Without a journal yet, pack relaxations are not applied to this read (fail closed).
+  const { policy } = await policyFor(host.env, busPacks(packs, sessionId));
+  const rules = await loadRules(host.cwd, policy.zoneSet(), host.say);
   const gate = new BudgetGate(host, journal, { sessionId, nodeId: 'planner', m }, options);
-  const planner = plannerFor(options, setup, journal, sessionId, (x, l) => gate.allow(x, l));
+  const allow: BudgetHook = (x, l) => gate.allow(x, l);
+  const planner = plannerFor(options, setup, journal, sessionId, allow, {
+    rulesText: rules.text,
+    packs: packs.selected,
+  });
   const graph = await planner.plan(request, { root: host.cwd });
-  const est = estimateGraph(graph, estimateDeps(setup, options, journal));
+  const scope = await checkScope(packs.selected, host.cwd, options.scope, graph.nodes);
+  // Estimated as it will run: with the rules in front of each node.
+  const est = estimateGraph(runnable(graph, rules), estimateDeps(setup, options, journal));
   const estimate = explainEstimate(graph, est, setup);
-  return { planId: randomUUID(), sessionId, request, graph, estimate, options, setup, m };
+  const base = { planId: randomUUID(), sessionId, request, graph, estimate, options, setup, m };
+  return { ...base, rules, packs, scope };
+}
+
+/** Packs and zones of the workspace; a pack failure leaves the policy's zones alone. */
+async function packsFor(env: Env, cwd: string, say: (t: string) => void): Promise<SelectedPacks> {
+  try {
+    return await selectPacks(env, cwd);
+  } catch (err) {
+    const why = `domain packs not read: ${err instanceof Error ? err.message : String(err)}`;
+    say(`  – ${why}\n`);
+    return noPacks(env, why);
+  }
+}
+
+/** The graph the runner is given: each node with the repository rules in front. */
+export function runnable(graph: TaskGraph, rules: LoadedRules): TaskGraph {
+  return withNodeContext(graph, { rules: rules.text });
 }
 
 /**
@@ -67,9 +100,9 @@ export function checkEdit(
     id: plan.graph.id,
     request: plan.request,
   };
-  const check = validatePlan(graph, {
+  const check = validatePlan(runnable(graph, plan.rules), {
     ...estimateDeps(plan.setup, plan.options, journal),
-    original: plan.graph,
+    original: runnable(plan.graph, plan.rules),
   });
   return { check, graph };
 }

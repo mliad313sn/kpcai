@@ -11,6 +11,7 @@
     { "path": "../budget" },
     { "path": "../executor" },
     { "path": "../tools" },
-    { "path": "../orchestrator" }
+    { "path": "../orchestrator" },
+    { "path": "../packs" }
   ]
 }

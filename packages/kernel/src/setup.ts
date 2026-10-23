@@ -10,6 +10,8 @@ import { ModelPlanner, TemplatePlanner, type BudgetHook } from '@kernelpai/orche
 import { candidates as scanCandidates, type ProviderRegistry } from '@kernelpai/providers';
 import { CompetenceRouter } from '@kernelpai/router';
 import { buildRegistry, routingProfile, type Env } from './env.js';
+import { rulesResolver } from './rules.js';
+import type { Pack } from '@kernelpai/packs';
 
 /** Planning and routing choices of one request (the protocol's `RunOptions`, plus `yes`). */
 export interface GraphOptions {
@@ -24,6 +26,13 @@ export interface GraphOptions {
   overBudget?: boolean;
   /** Report unavailable providers while planning. */
   verbose?: boolean;
+  /**
+   * One git worktree per run (R-307, ADR-0021). `auto` isolates when the workspace is a
+   * git working tree and runs in place otherwise; `true` requires git. Default false.
+   */
+  isolated?: boolean | 'auto';
+  /** Authorised scope for packs that require one (WI-S1-03); validated by the kernel. */
+  scope?: unknown;
 }
 
 export interface GraphSetup {
@@ -68,15 +77,20 @@ export function plannerFor(
   journal: Journal,
   sessionId: string,
   budget: BudgetHook,
+  extra: { rulesText?: string; packs?: readonly Pack[] } = {},
 ): Planner {
-  if (o.planner !== 'model') return new TemplatePlanner();
+  // Domain packs shape the plan (WI-S4-01); their text stays untrusted data there.
+  const packs = extra.packs?.length ? { packs: extra.packs } : {};
+  if (o.planner !== 'model') return new TemplatePlanner(packs);
   // A model plan is a paid call: it goes through the budget gate like any step (P2-F8).
   return new ModelPlanner({
     budget,
     router: s.router,
     candidates: s.candidates,
     constraints: s.constraints,
-    resolve: (ref) => s.registry.get(ref.provider),
+    // The planner sees the repository rules too, as untrusted context (R-306).
+    resolve: rulesResolver((ref) => s.registry.get(ref.provider), extra.rulesText ?? ''),
+    ...packs,
     journal,
     sessionId,
   });

@@ -1,0 +1,128 @@
+/* Phase 3 additions: editable plan, cost band and meter, routing panel, steering log,
+   runs manager, artifacts, onboarding, language switch. Colours only from theme tokens
+   (each pair checked for WCAG 2.2 AA in ui/theme.ts). */
+.thread-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap);
+  overflow: auto;
+}
+.plan-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+.plan-check ul {
+  margin: 0.2rem 0;
+  padding-left: 1.2rem;
+}
+.warn-text {
+  color: var(--warn);
+}
+.cost-meter {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--gap);
+  flex-wrap: wrap;
+}
+.cost-meter meter {
+  width: 10rem;
+  height: 0.9rem;
+}
+.form-grid {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: var(--gap);
+  align-items: center;
+  margin: var(--gap) 0;
+}
+.form-grid > .muted {
+  grid-column: 2;
+}
+select,
+textarea {
+  font: inherit;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.25rem 0.4rem;
+  max-width: 100%;
+}
+.instruct {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap);
+  margin-top: var(--pad);
+}
+.kv {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.15rem var(--pad);
+  margin: var(--gap) 0;
+}
+.kv > div {
+  display: contents;
+}
+.kv dd {
+  margin: 0;
+}
+.control-log ol,
+.checkpoints,
+.cells {
+  margin: 0;
+  padding-left: 1.2rem;
+}
+.runs {
+  border-collapse: collapse;
+  width: 100%;
+}
+.runs th,
+.runs td {
+  border-bottom: 1px solid var(--border);
+  padding: 0.25rem 0.4rem;
+  text-align: left;
+  vertical-align: top;
+}
+.runs tr[aria-current='true'] th {
+  font-weight: 700;
+}
+.artifact {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: var(--pad);
+  margin-bottom: var(--pad);
+  background: var(--surface);
+}
+.provenance {
+  margin: 0.2rem 0;
+  padding-left: 1.2rem;
+}
+.onboarding {
+  max-width: 44rem;
+}
+.onboarding form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pad);
+}
+.onboarding fieldset {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+.radio {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0 var(--gap);
+  align-items: baseline;
+}
+.radio > .muted {
+  grid-column: 2;
+}
+.lang {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}

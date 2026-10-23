@@ -2,13 +2,23 @@ import {
   Kernel,
   KernelError,
   money,
+  readScopeFile,
+  summarizeRules,
   type GraphOptions,
+  type Plan,
   type RunHandle,
   type RunOutcome,
 } from '@kernelpai/kernel';
 import { formatMoney } from '../config.js';
-import { showAndApply } from '../graph/apply.js';
-import { renderEvent, renderGraphPlan, renderOutputs } from '../graph/render.js';
+import { finishIsolated, showAndApply, showAndApplyArtifacts } from '../graph/apply.js';
+import {
+  renderEvent,
+  renderGraphPlan,
+  renderOutputs,
+  renderPacks,
+  renderRules,
+  renderScope,
+} from '../graph/render.js';
 import { kernelHost } from '../host.js';
 import type { Io } from '../io.js';
 
@@ -20,6 +30,15 @@ export interface GraphCliOptions extends GraphOptions {
   yesApply?: boolean;
   newSession?: boolean;
   db?: string;
+  /** `--scope <file>`: authorised scope (YAML or JSON) for packs that need one. */
+  scopeFile?: string;
+}
+
+/** The planning options, with the `--scope` file read (an unreadable one is reported). */
+async function withScope(o: GraphCliOptions): Promise<GraphCliOptions> {
+  if (!o.scopeFile) return o;
+  const scope = (await readScopeFile(o.scopeFile)) ?? { invalid: `${o.scopeFile} not found` };
+  return { ...o, scope };
 }
 
 function open(io: Io, o: GraphCliOptions): Kernel {
@@ -41,6 +60,10 @@ function notRun(io: Io, err: unknown): number {
     io.err(`not run — ${err.message}\n`);
     return 2;
   }
+  if (err instanceof KernelError && err.code === 'refused') {
+    io.err(`not run — ${err.message}\n`);
+    return 4;
+  }
   if (err instanceof KernelError && err.code === 'unroutable') {
     io.err('not run — some nodes cannot be routed (see the plan above)\n');
     return 1;
@@ -53,8 +76,8 @@ export async function planCommand(io: Io, o: GraphCliOptions): Promise<number> {
   const kernel = open(io, o);
   try {
     const sessionId = kernel.openSession(`plan: ${o.request.slice(0, 74)}`, false);
-    const p = await kernel.plan(o.request, o, sessionId);
-    io.out(renderGraphPlan(p.graph, p.estimate, p.m));
+    const p = await kernel.plan(o.request, await withScope(o), sessionId);
+    io.out(planText(p));
     return p.estimate.complete ? 0 : 1;
   } catch (err) {
     return notRun(io, err);
@@ -69,14 +92,18 @@ export async function doCommand(io: Io, o: GraphCliOptions): Promise<number> {
   try {
     const sessionId = kernel.openSession(o.request, !o.newSession);
     // Before planning: a --planner model call is already a paid call (review N6).
-    kernel.checkWorkspace();
-    const p = await kernel.plan(o.request, o, sessionId);
-    io.err(renderGraphPlan(p.graph, p.estimate, p.m));
-    const handle = await kernel.startRun({ request: o.request, planId: p.planId, options: o });
+    await kernel.checkWorkspace();
+    const opts = await withScope(o);
+    const p = await kernel.plan(o.request, opts, sessionId);
+    io.err(planText(p));
+    const handle = await kernel.startRun({ request: o.request, planId: p.planId, options: opts });
     const outcome = await untilDone(io, kernel, handle);
     if (outcome.status === 'not_run') return 4;
     io.out(renderOutputs(p.graph, outcome.result));
-    const applied = await showAndApply(io, kernel, handle.runId, outcome, o);
+    const patches = await showAndApply(io, kernel, handle.runId, outcome, o);
+    const artifacts = await showAndApplyArtifacts(io, kernel, handle.runId, outcome, o);
+    const merged = await finishIsolated(io, kernel, handle.runId, outcome, o);
+    const applied = [patches, artifacts, merged].filter(Boolean).join(' · ');
     io.err(
       `session ${sessionId.slice(0, 8)} · ${formatMoney(outcome.result.costUsd, p.m)} · ${applied}\n`,
     );
@@ -86,6 +113,15 @@ export async function doCommand(io: Io, o: GraphCliOptions): Promise<number> {
   } finally {
     await kernel.close();
   }
+}
+
+function planText(p: Plan): string {
+  return (
+    renderGraphPlan(p.graph, p.estimate, p.m) +
+    renderRules(summarizeRules(p.rules.rules)) +
+    renderPacks(p.packs) +
+    renderScope(p.scope)
+  );
 }
 
 /** Ctrl+C cancels the run (running steps keep their partial output). */

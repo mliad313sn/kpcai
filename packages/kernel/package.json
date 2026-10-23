@@ -22,9 +22,11 @@
     "@kernelpai/executor": "workspace:*",
     "@kernelpai/journal": "workspace:*",
     "@kernelpai/orchestrator": "workspace:*",
+    "@kernelpai/packs": "workspace:*",
     "@kernelpai/providers": "workspace:*",
     "@kernelpai/router": "workspace:*",
     "@kernelpai/tools": "workspace:*",
-    "zod": "^4.1.0"
+    "zod": "^4.1.0",
+    "yaml": "^2.8.0"
   }
 }

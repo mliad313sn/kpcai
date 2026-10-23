@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Methods, Notifications, isMethod, parseParams } from './protocol.js';
+import { Methods, Notifications, isMethod, parseParams, parseResult } from './protocol.js';
 
 describe('console protocol', () => {
   it('knows its methods and rejects others', () => {
@@ -104,5 +104,18 @@ describe('protocol results and extensions (ADR-0019)', () => {
         graph: { nodes: [{ id: 'a', model: { provider: 'p', model: 'm' } }] },
       }).ok,
     ).toBe(true);
+  });
+});
+
+describe('protocol: deliverables (WI-S1-02)', () => {
+  it('round-trips a node deliverable in plans and edited graphs; refuses unknown kinds', () => {
+    const node = { id: 'n', title: 'T', dependsOn: [], deliverable: 'checklist' };
+    const graph = { id: 'g', request: 'r', nodes: [node], createdBy: 'template', reason: '' };
+    const est = { nodes: [], minUsd: 0, totalUsd: 0, complete: true, problems: [] };
+    const plan = parseResult('plan', { planId: 'p', graph, estimate: est });
+    expect(plan.ok && plan.value.graph.nodes[0]?.deliverable).toBe('checklist');
+    expect(parseParams('plan.validate', { planId: 'p', graph: { nodes: [node] } }).ok).toBe(true);
+    const bad = { planId: 'p', graph: { nodes: [{ ...node, deliverable: 'movie' }] } };
+    expect(parseParams('plan.validate', bad).ok).toBe(false);
   });
 });

@@ -63,7 +63,8 @@ describe('kernel server: runs', () => {
       seen.push(n);
       void c.call('confirm.answer', { confirmId: n.params.confirmId, ok: true });
     };
-    const { runId } = (await c.call('run.start', { request: REQ, options: OPTIONS })).result as {
+    const options = { ...OPTIONS, isolated: false };
+    const { runId } = (await c.call('run.start', { request: REQ, options })).result as {
       runId: string;
     };
     await c.waitFor(isRun('run.done', runId), 8000);

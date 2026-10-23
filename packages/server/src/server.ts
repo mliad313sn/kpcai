@@ -153,7 +153,13 @@ function watchRun(handle: RunHandle, broadcast: Broadcast): void {
         broadcast('log', { level: 'warn', message: `not run — ${o.reason}`.slice(0, 10_000) });
         return;
       }
-      broadcast('run.done', { runId: handle.runId, result: o.result, patches: o.patches });
+      broadcast('run.done', {
+        runId: handle.runId,
+        result: o.result,
+        patches: o.patches,
+        artifacts: o.artifacts,
+        ...(o.worktree ? { worktree: o.worktree } : {}),
+      });
     },
     (err: unknown) => {
       const message = `run ${handle.runId} failed: ${err instanceof Error ? err.message : String(err)}`;

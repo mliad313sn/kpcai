@@ -15,8 +15,14 @@ export function defaultPrefs(): Prefs {
     density: 'comfortable',
     collapsed: { explorer: false, agents: false, thread: false },
     sizes: { explorer: 220, agents: 320, thread: 260 },
+    profile: 'balanced',
+    localOnly: false,
+    onboarded: false,
+    locale: 'system',
   };
 }
+
+const PROFILES: ReadonlySet<string> = new Set(['economy', 'balanced', 'performance']);
 
 export const clampSize = (zone: Zone, px: number): number =>
   Math.round(Math.min(SIZE_LIMITS[zone].max, Math.max(SIZE_LIMITS[zone].min, px)));
@@ -40,6 +46,10 @@ export function loadPrefs(): Prefs {
           return [z, typeof v === 'number' && Number.isFinite(v) ? clampSize(z, v) : d.sizes[z]];
         }),
       ) as Prefs['sizes'],
+      profile: PROFILES.has(p.profile ?? '') ? p.profile! : d.profile,
+      localOnly: p.localOnly === true,
+      onboarded: p.onboarded === true,
+      locale: p.locale === 'en' || p.locale === 'fr' ? p.locale : 'system',
     };
   } catch {
     return d;

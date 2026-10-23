@@ -1,3 +1,4 @@
+import { t } from '../i18n/core';
 import { loadSessions } from '../store/actions';
 import { formatUsd } from '../store/format';
 import { useStudio } from '../store/store';
@@ -23,31 +24,33 @@ export function Explorer() {
           onClick={() => void loadSessions()}
         >
           <span aria-hidden="true">↻</span>
-          <span className="sr-only">Refresh sessions</span>
+          <span className="sr-only">{t('explorer.refresh')}</span>
         </button>
       }
     >
-      <h3 className="sub">Sessions</h3>
+      <h3 className="sub">{t('explorer.sessions')}</h3>
       {sessions.length === 0 ? (
-        <p className="muted empty">No sessions yet. Your first KP Studio run will appear here.</p>
+        <p className="muted empty">{t('explorer.noSessions')}</p>
       ) : (
         <ul className="sessions">
           {sessions.map((s) => (
             <li key={s.id}>
               <span className="session-title" title={s.title}>
-                {s.title || '(untitled)'}
+                {s.title || t('explorer.untitled')}
               </span>
               <span className="muted small">
                 {when(s.createdAt)}
                 {s.costUsd !== undefined ? ` · ${formatUsd(s.costUsd)}` : ''}
-                {s.eventCount !== undefined ? ` · ${s.eventCount} events` : ''}
+                {s.eventCount !== undefined
+                  ? ` · ${t('explorer.events', { count: s.eventCount })}`
+                  : ''}
               </span>
             </li>
           ))}
         </ul>
       )}
-      <h3 className="sub">Files</h3>
-      <p className="muted empty">File tree arrives in phase 5.</p>
+      <h3 className="sub">{t('explorer.files')}</h3>
+      <p className="muted empty">{t('explorer.filesLater')}</p>
     </Zone>
   );
 }

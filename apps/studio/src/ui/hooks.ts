@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
 import { patch, setPrefs, studio, useStudio } from '../store/store';
+import { t } from '../i18n/core';
+import { stateLabel } from './StateBadge';
 import { activeRun } from './view';
 import { applyTheme, resolveTheme } from './theme';
 
@@ -37,8 +39,8 @@ export function useDocumentTitle(): void {
   const state = useStudio((s) => activeRun(s)?.state);
   const planning = useStudio((s) => s.planning);
   useEffect(() => {
-    const what = planning ? 'planning' : state;
-    document.title = what ? `KP Studio — ${what}` : 'KP Studio';
+    const what = planning ? t('state.planning') : state ? stateLabel(state) : undefined;
+    document.title = what ? t('app.titleState', { state: what }) : 'KP Studio';
   }, [state, planning]);
 }
 

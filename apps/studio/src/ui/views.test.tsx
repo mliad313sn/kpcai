@@ -140,7 +140,8 @@ describe('explorer and planning blockers', () => {
     await user.click(screen.getByRole('button', { name: 'Refresh sessions' }));
     await until(() => kernel!.calls('sessions.list').length === 2);
     await user.type(screen.getByRole('combobox', { name: /Ask KP Studio/ }), 'x{Enter}');
-    expect(await screen.findByText(/Cannot run as planned: arch: no provider/)).toBeTruthy();
+    expect(await screen.findByText('Cannot run as planned:')).toBeTruthy();
+    expect(screen.getByText('arch: no provider')).toBeTruthy();
     expect(screen.getByRole('button', { name: /^Run/ })).toHaveProperty('disabled', true);
     expect(screen.getByText('unroutable')).toBeTruthy();
   });

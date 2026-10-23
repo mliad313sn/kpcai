@@ -12,6 +12,16 @@ import { PROFILE_WEIGHTS, weightsFor } from './weights.js';
 import { card } from './test-helpers/fixtures.js';
 
 describe('staticCompetence', () => {
+  it('scores a domain type on its base type when the card is silent about it (ADR-0024)', () => {
+    const c = card({ competence: { analysis: 0.9 } });
+    expect(staticCompetence(c, 'reverse_engineering')).toBe(0.9);
+    expect(
+      staticCompetence(card({ competence: { reverse_engineering: 0.2 } }), 'reverse_engineering'),
+    ).toBe(0.2);
+    expect(staticCompetence(card({ strengths: ['data_analysis'] }), 'data_analysis')).toBe(0.75);
+    expect(staticCompetence(card({ strengths: ['writing'] }), 'creative_writing')).toBe(0.75);
+  });
+
   it('uses the prior when the card sets one', () => {
     expect(staticCompetence(card({ competence: { writing: 0.9 } }), 'writing')).toBe(0.9);
   });

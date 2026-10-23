@@ -97,7 +97,7 @@ describe('ModelPlanner with pack-proposed types', () => {
       {
         id: 'triage',
         title: 'Triage',
-        type: 'reverse_engineering',
+        type: 'firmware_triage',
         protocol: 'solo',
         prompt: 'look',
       },
@@ -113,29 +113,37 @@ describe('ModelPlanner with pack-proposed types', () => {
   };
 
   it('maps proposed types via mapsTo and journals the proposed name on routing', async () => {
-    const aliases = new Map([['reverse_engineering', 'analysis' as const]]);
+    const aliases = new Map([['firmware_triage', 'analysis' as const]]);
     const p = parsePlan(JSON.stringify(PLAN), 'req', [], aliases);
     expect(p.ok && p.nodes.map((n) => [n.type, (n as PlannedNode).proposedType])).toEqual([
-      ['analysis', 'reverse_engineering'],
+      ['analysis', 'firmware_triage'],
       ['writing', undefined],
     ]);
     expect(parsePlan(JSON.stringify(PLAN), 'req', []).ok).toBe(false);
-    expect(plannerPrompt('r', ['reverse_engineering'])).toContain('|decision|reverse_engineering"');
+    expect(plannerPrompt('r', ['firmware_triage'])).toContain('firmware_triage');
 
     const a = new RoleAdapter('a', () => JSON.stringify(PLAN));
     const s = setup([a]);
-    const re = [pack('reverse-engineering')];
+    const base = pack('reverse-engineering');
+    const re: Pack[] = [
+      {
+        ...base,
+        proposedTaskTypes: [
+          { id: 'firmware_triage', description: 'Triage a firmware image', mapsTo: 'analysis' },
+        ],
+      },
+    ];
     const planner = new ModelPlanner({ ...s.options, budget: () => true }, { packs: re });
     const g = await planner.plan('triage this crackme', { root: '/w' });
     expect(g.createdBy).toBe('model');
-    expect(a.seen[0]?.prompt).toContain('reverse_engineering');
+    expect(a.seen[0]?.prompt).toContain('firmware_triage');
     await new GraphRunner(s.options).run(g);
     const routing = s.journal
       .events()
       .find((e) => e.type === 'routing' && e.nodeId === 'triage' && e.payload['role'] === 'solo');
     expect(routing?.payload).toMatchObject({
       taskType: 'analysis',
-      proposedType: 'reverse_engineering',
+      proposedType: 'firmware_triage',
     });
   });
 

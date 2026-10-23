@@ -9,6 +9,7 @@ import {
 import { createToolBus } from '@kernelpai/tools';
 import { buildRegistry, kpaiHome, openJournal } from './env.js';
 import { KernelError } from './errors.js';
+import { busPacks, selectPacks } from './packs.js';
 import type { KernelHost } from './types.js';
 
 export interface ProviderInfo {
@@ -82,9 +83,13 @@ export class Queries {
     tools: ToolInfo[];
     errors: Array<{ server: string; message: string }>;
   }> {
+    // The workspace's packs, for a listing that matches what a run gets. No journal: a
+    // listing never creates one, so pack relaxations are not applied here (fail closed).
+    const packs = await selectPacks(this.host.env, this.host.cwd).catch(() => undefined);
     const { bus, mcpErrors } = await createToolBus({
       kpaiHome: kpaiHome(this.host.env),
       env: this.host.env,
+      ...(packs ? { packs: busPacks(packs, 'tools') } : {}),
     });
     try {
       const tools = bus.list().map((t) => ({

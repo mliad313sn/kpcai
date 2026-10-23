@@ -4,6 +4,7 @@ import { connect } from './connection';
 import { readConnectionSettings } from './rpc/token';
 import { App } from './ui/App';
 import './styles.css';
+import './console.css';
 
 const settings = readConnectionSettings(window.location, window.history);
 // Connect first so the first render already says "connecting" instead of asking for a token.

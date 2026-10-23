@@ -63,7 +63,11 @@ export const ESTIMATE = {
       rounds: { min: 2, max: 7 },
       minUsd: 0.1,
       expectedUsd: 0.25,
+      band: { lowUsd: 0.09, highUsd: 0.3, basis: 'calibrated' },
       score: 0.82,
+      reason: 'best code score within budget',
+      parts: { competence: 0.95, cost: 0.4, latency: null },
+      runnerUp: { ref: { provider: 'mistral', model: 'model-d' }, score: 0.71 },
       steps: [step('author', 'openai', 'model-b', 0.05), step('critic', 'google', 'model-c', 0.05)],
     },
     {
@@ -81,6 +85,7 @@ export const ESTIMATE = {
   totalUsd: 0.4,
   complete: true,
   problems: [],
+  band: { lowUsd: 0.12, highUsd: 0.35, basis: 'mixed' },
 };
 
 export const PLAN = { planId: 'p1', graph: GRAPH, estimate: ESTIMATE };
@@ -97,8 +102,22 @@ export const PATCH = [
 ].join('\n');
 
 export const PROVIDERS = [
-  { id: 'anthropic', available: true, models: [{ id: 'model-a' }, 'model-e'] },
-  { id: 'offline', available: false, models: ['nope'] },
+  {
+    id: 'anthropic',
+    name: 'Anthropic',
+    kind: 'cloud',
+    available: true,
+    reason: 'key found',
+    models: [{ id: 'model-a' }, { id: 'model-e' }],
+  },
+  {
+    id: 'ollama',
+    name: 'Ollama (local)',
+    kind: 'local',
+    available: false,
+    reason: 'not reachable',
+    models: [{ id: 'nope' }],
+  },
 ];
 
 export const SESSIONS = [
@@ -110,7 +129,6 @@ export const SESSIONS = [
     eventCount: 12,
     costUsd: 0.31,
   },
-  { bad: true },
 ];
 
 /** Default handlers for a kernel that plans, runs and lists. */
@@ -120,13 +138,25 @@ export function kernelHandlers(): Record<string, (p: unknown) => unknown> {
     'run.start': () => ({ runId: 'r1' }),
     'run.pause': () => ({ ok: true }),
     'run.resume': () => ({ ok: true }),
-    'run.cancel': () => ({ ok: true }),
+    'run.cancel': () => ({ cancelled: true }),
     'run.redirect': () => ({ ok: true }),
-    'patches.apply': () => ({ applied: 1 }),
-    'confirm.answer': () => ({ ok: true }),
-    'sessions.list': () => SESSIONS,
-    'providers.list': () => PROVIDERS,
+    'run.instruct': () => ({ ok: true }),
+    'runs.list': () => ({ runs: [] }),
+    'plan.validate': () => ({ ok: true, problems: [], warnings: [], changes: [] }),
+    'patches.apply': (p) => ({
+      results: ((p as { nodeIds?: string[] }).nodeIds ?? ['impl']).map((nodeId) => ({
+        nodeId,
+        ok: true,
+        message: 'applied',
+      })),
+    }),
+    'confirm.answer': () => ({ accepted: true }),
+    'sessions.list': () => ({ sessions: SESSIONS }),
+    'providers.list': () => ({ providers: PROVIDERS }),
     stats: () => ({ calls: 3, costUsd: 0.12 }),
-    'tools.list': () => [{ name: 'fs.read' }],
+    'tools.list': () => ({
+      tools: [{ name: 'fs.read', risk: 'read', source: 'builtin' }],
+      errors: [],
+    }),
   };
 }

@@ -28,6 +28,8 @@ export function newRun(runId: string, request: string, now: number): RunView {
     patches: [],
     applied: [],
     startedAt: now,
+    controls: [],
+    artifacts: [],
   };
 }
 
@@ -56,15 +58,22 @@ function onText(n: NodeRun, e: Extract<GraphEvent, { type: 'text' }>): NodeRun {
   return { ...n, streams: { ...n.streams, [key]: text } };
 }
 
-function onContribution(n: NodeRun, c: Contribution): NodeRun {
+type Usage = { inputTokens: number; outputTokens: number };
+
+function onContribution(n: NodeRun, c: Contribution, usage: Usage | undefined): NodeRun {
   const streams = { ...n.streams };
   delete streams[streamKey(c.role, c.ref)];
-  return {
+  const next: NodeRun = {
     ...n,
     streams,
     contributions: [...n.contributions, c],
     costUsd: round6(n.costUsd + c.costUsd),
   };
+  if (usage) {
+    const t = n.tokens ?? { input: 0, output: 0 };
+    next.tokens = { input: t.input + usage.inputTokens, output: t.output + usage.outputTokens };
+  }
+  return next;
 }
 
 export const round6 = (x: number): number => Math.round(x * 1e6) / 1e6;
@@ -79,7 +88,7 @@ export function applyEvent(run: RunView, e: GraphEvent, now: number): RunView {
   if (e.type === 'node_state') next = onNodeState(n, e, now);
   else if (e.type === 'text') next = onText(n, e);
   else {
-    next = onContribution(n, e.contribution);
+    next = onContribution(n, e.contribution, e.usage);
     costUsd = round6(costUsd + e.contribution.costUsd);
   }
   return { ...run, costUsd, nodes: { ...run.nodes, [e.nodeId]: next } };

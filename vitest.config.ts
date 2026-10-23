@@ -31,6 +31,7 @@ export default defineConfig({
         '**/test-helpers/**',
         'apps/cli/src/bin.ts',
         'apps/studio/src/main.tsx',
+        'apps/studio-tui/src/bin.tsx',
         '**/index.ts',
       ],
       thresholds: { lines: 80, functions: 80, branches: 80, statements: 80 },

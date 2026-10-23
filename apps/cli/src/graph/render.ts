@@ -1,5 +1,6 @@
 import { refToString, type GraphEvent, type GraphResult, type TaskGraph } from '@kernelpai/core';
 import type { GraphEstimate } from '@kernelpai/orchestrator';
+import type { PackContext, RulesSummary, ScopeCheck } from '@kernelpai/kernel';
 import { formatMoney, type Money } from '../config.js';
 import { sanitizeForTerminal } from '../sanitize.js';
 
@@ -59,4 +60,50 @@ export function renderOutputs(graph: TaskGraph, r: GraphResult): string {
     parts.push(sanitizeForTerminal(res?.output || (res?.error ? '' : '(no output)')) + '\n');
   }
   return parts.join('');
+}
+
+/** Rule files every node will get as untrusted context (R-306): names, never content. */
+export function renderRules(r: RulesSummary): string {
+  const zone = r.skippedForbidden ? ` · ${r.skippedForbidden} in forbidden zones skipped` : '';
+  if (r.files.length === 0) return zone ? `rules  none read${zone}\n` : '';
+  const files = r.files.map(
+    (f) =>
+      `${sanitizeForTerminal(f.path)} (${f.kind}${f.applies ? '' : ', other folder'}${f.truncated ? ', cut' : ''})`,
+  );
+  const omitted = r.omitted.length ? ` · ${r.omitted.length} left out (size cap)` : '';
+  return `rules  ${files.join(' · ')} — untrusted context for every node${omitted}${zone}\n`;
+}
+
+/** Packs chosen and why, the forbidden zones in force by tier and origin, pack zone changes (D-020). */
+export function renderPacks(c: PackContext): string {
+  const lines: string[] = [];
+  const packs = c.packs.map((p) => `${p.id} (${sanitizeForTerminal(p.reason)})`);
+  if (packs.length) lines.push(`packs  ${packs.join(' · ')}`);
+  for (const p of c.packs) {
+    const flags = [
+      p.preferLocal && 'prefers local models',
+      p.personalData && 'personal data: keep local',
+      p.physicalEffects && 'physical effects: confirm and simulate first',
+    ].filter(Boolean);
+    if (flags.length) lines.push(`       ${p.id}: ${flags.join(' · ')}`);
+  }
+  const byOrigin = new Map<string, string[]>();
+  for (const z of c.zones) {
+    const key = `${z.origin} (${z.tier})`;
+    byOrigin.set(key, [...(byOrigin.get(key) ?? []), z.glob]);
+  }
+  const zones = [...byOrigin].map(([origin, globs]) => `${origin}: ${globs.join(' ')}`);
+  lines.push(`zones  ${c.zones.length} forbidden · ${zones.join(' · ')}`);
+  for (const l of c.lines) lines.push(`       ${sanitizeForTerminal(l)}`);
+  for (const p of c.problems) lines.push(`       pack problem: ${sanitizeForTerminal(p)}`);
+  return lines.join('\n') + '\n';
+}
+
+/** The authorised scope selected packs require (WI-S1-03); empty when none is required. */
+export function renderScope(s: ScopeCheck): string {
+  if (s.required.length === 0) return '';
+  const head = `scope  required by ${s.required.join(', ')}${s.source ? ` · from ${s.source === 'file' ? '.kpstudio/scope.yaml (asked before running)' : '--scope'}` : ''}`;
+  const lines = [head, ...s.lines.map((l) => `       ${sanitizeForTerminal(l)}`)];
+  for (const p of s.problems) lines.push(`       ✗ ${sanitizeForTerminal(p)}`);
+  return lines.join('\n') + '\n';
 }

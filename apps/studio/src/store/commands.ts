@@ -1,13 +1,28 @@
 /** Command-bar grammar (spec §4.3): natural language, `/command`, `@file`, `#node`, `!`. */
 
+import { t, type Key } from '../i18n/core';
+
 export const COMMANDS = [
-  { name: 'plan', hint: 'Plan a request and show its graph and cost before anything runs' },
-  { name: 'run', hint: 'Run the plan on screen (or plan the text first)' },
-  { name: 'stats', hint: 'Journal metrics: cost, fallbacks, latency' },
-  { name: 'sessions', hint: 'Refresh the sessions list in the explorer' },
-  { name: 'tools', hint: 'Tools the models may call' },
-  { name: 'help', hint: 'Keyboard shortcuts and command-bar syntax' },
+  { name: 'plan' },
+  { name: 'run' },
+  { name: 'stats' },
+  { name: 'sessions' },
+  { name: 'tools' },
+  { name: 'help' },
 ] as const;
+
+const HINTS: Record<(typeof COMMANDS)[number]['name'], Key> = {
+  plan: 'command.hint.plan',
+  run: 'command.hint.run',
+  stats: 'command.hint.stats',
+  sessions: 'command.hint.sessions',
+  tools: 'command.hint.tools',
+  help: 'command.hint.help',
+};
+
+export function commandHint(name: (typeof COMMANDS)[number]['name']): string {
+  return t(HINTS[name]);
+}
 export type CommandName = (typeof COMMANDS)[number]['name'];
 
 export type ParsedInput =
@@ -56,18 +71,22 @@ export function tokenAtCaret(
   return { sigil, prefix: m[2]!, start: caret - m[2]!.length - 1 };
 }
 
-export const HELP_TEXT = [
-  'Type a request in plain language and press Enter: KP Studio plans it first and shows',
-  'the graph and the cost range. Nothing runs until you press Run.',
-  '',
-  'Command bar',
-  ...COMMANDS.map((c) => `  /${c.name.padEnd(9)} ${c.hint}`),
-  '  @file     reference a file or folder',
-  '  #node     reference a node of the current graph',
-  '  !text     terminal request (phase 3 sends it to the planner; phase 5 runs it)',
-  '',
-  'Keyboard',
-  '  Ctrl+K    command palette          /         focus the command bar',
-  '  Alt+1..5  focus a zone             Escape    close a dialog (answers No)',
-  '  Arrows    resize a focused splitter, move between tabs and graph nodes',
-].join('\n');
+/** The `/help` text, in the current language; one line per entry. */
+export function helpText(): string {
+  return [
+    t('help.intro'),
+    '',
+    t('help.commandBar'),
+    ...COMMANDS.map((c) => `  /${c.name.padEnd(9)} ${commandHint(c.name)}`),
+    `  @file     ${t('help.file')}`,
+    `  #node     ${t('help.node')}`,
+    `  !text     ${t('help.terminal')}`,
+    '',
+    t('help.keyboard'),
+    `  Ctrl+K    ${t('help.palette')}`,
+    `  /         ${t('help.focusCommand')}`,
+    `  Alt+1..5  ${t('help.focusZone')}`,
+    `  Escape    ${t('help.escape')}`,
+    `  ${t('help.arrowsKey')}    ${t('help.arrows')}`,
+  ].join('\n');
+}

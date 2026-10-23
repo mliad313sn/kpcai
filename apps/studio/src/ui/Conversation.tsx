@@ -1,3 +1,4 @@
+import { t } from '../i18n/core';
 import type { Contribution, GraphNode } from '../rpc/schemas';
 import { formatUsd } from '../store/format';
 import { refKey } from '../store/reducer';
@@ -22,7 +23,9 @@ export function VerdictLine({ c }: { c: Contribution }) {
     <div className="verdict">
       <p>
         <span aria-hidden="true">{v.approve ? '✓ ' : '✕ '}</span>
-        <strong>{v.approve ? 'Approved' : `Changes requested (${v.issues.length})`}</strong>
+        <strong>
+          {v.approve ? t('verdict.approved') : t('verdict.changes', { count: v.issues.length })}
+        </strong>
         {v.summary ? ` — ${v.summary}` : ''}
       </p>
       {v.issues.length > 0 && (
@@ -44,7 +47,7 @@ function NodeConversation({ node, run }: { node: GraphNode; run: NodeRun | undef
       <h3 id={`conv-${node.id}`}>
         <span className="mono">#{node.id}</span> {node.title}{' '}
         <StateBadge state={run?.state ?? 'pending'} />
-        {run?.approved === false && <span className="tag">not approved</span>}
+        {run?.approved === false && <span className="tag">{t('verdict.notApproved')}</span>}
       </h3>
       {run?.contributions.map((c, i) => (
         <div key={i} className="contribution">
@@ -57,15 +60,17 @@ function NodeConversation({ node, run }: { node: GraphNode; run: NodeRun | undef
       ))}
       {Object.entries(run?.streams ?? {}).map(([key, text]) => (
         <div key={key} className="contribution streaming">
-          <p className="meta">{key} · writing…</p>
+          <p className="meta">{t('conversation.writing', { who: key })}</p>
           <OutputText text={text} />
         </div>
       ))}
-      {run?.error && <p className="error-text">Reason: {run.error}</p>}
+      {run?.error && (
+        <p className="error-text">{t('conversation.reason', { reason: run.error })}</p>
+      )}
       {run?.output !== undefined && (
         <>
-          <p className="meta">Final output</p>
-          <OutputText text={run.output || '(no output)'} />
+          <p className="meta">{t('conversation.final')}</p>
+          <OutputText text={run.output || t('conversation.noOutput')} />
         </>
       )}
     </article>
@@ -80,7 +85,7 @@ function Notice() {
       <div className="row">
         <h3 id="notice-title">{notice.title}</h3>
         <button type="button" onClick={() => patch({ notice: undefined })}>
-          Dismiss
+          {t('common.dismiss')}
         </button>
       </div>
       <OutputText text={notice.body} />
@@ -95,26 +100,16 @@ export function Conversation() {
   return (
     <div className="conversation">
       <Notice />
-      {plan && (
-        <p className="muted">
-          Plan for “{plan.request}” is waiting in the execution thread. Review it, then press Run.
-        </p>
-      )}
+      {plan && <p className="muted">{t('conversation.planWaiting', { request: plan.request })}</p>}
       {!run && !plan && (
         <div className="empty">
-          <p>
-            <strong>KP Studio</strong>{' '}
-            {conn === 'open' ? 'is connected to the KernelPAI kernel.' : 'is not connected yet.'}
-          </p>
-          <p className="muted">
-            Describe a task in the command bar. You will see the plan, who would do each step and
-            the cost range before anything runs.
-          </p>
+          <p>{t(conn === 'open' ? 'welcome.connected' : 'welcome.notConnected')}</p>
+          <p className="muted">{t('welcome.help')}</p>
         </div>
       )}
       {run && (
         <>
-          <h3 className="sub">Request</h3>
+          <h3 className="sub">{t('conversation.request')}</h3>
           <OutputText text={run.request} />
           {run.graph?.nodes.map((n) => (
             <NodeConversation key={n.id} node={n} run={run.nodes[n.id]} />
