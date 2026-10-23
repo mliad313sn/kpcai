@@ -92,18 +92,40 @@ export interface ApproveResult {
 const line = (s: string | undefined, max: number): string =>
   stripControls((s ?? '').split(/\r?\n/)[0] ?? '').slice(0, max);
 
+/** A model sees at most 1024 characters of a description (mcp.ts). */
+const MAX_SHOWN = 1024;
+
+/**
+ * Server text exactly as a model would read it, made visible: every line (not only the
+ * first), invisible format characters (bidi, zero-width, tag characters) as `\u{…}`,
+ * capped with the size of what is left out (WP7-F7: a benign first line hid the rest).
+ */
+export function visible(text: string | undefined, max = MAX_SHOWN): string {
+  const t = stripControls(text ?? '').replace(
+    /[\p{Cf}\p{Co}\u2028\u2029]/gu,
+    (c) => `\\u{${(c.codePointAt(0) ?? 0).toString(16)}}`,
+  );
+  const cut = t.length > max ? `… (+${t.length - max} more characters)` : '';
+  return `${t.slice(0, max)}${cut}`.replace(/\n/g, '\n      ');
+}
+
+function toolLines(t: ToolSnapshot): string[] {
+  return [
+    `  ${visible(line(t.name, 64), 64)}: ${visible(t.description ?? t.title)}`,
+    `      input schema: ${visible(JSON.stringify(t.inputSchema ?? null), 600)}`,
+  ];
+}
+
 function question(server: string, now: Inspected, changes: string[], first: boolean): string {
   const head = first
     ? `Approve MCP server "${server}" (version ${line(now.version, 40) || '?'}) with ${now.tools.length} tool(s)?`
     : `Re-approve MCP server "${server}" (version ${line(now.version, 40) || '?'})? It changed:`;
   const diff = first ? [] : changes.slice(0, 20).map((c) => `  - ${c}`);
-  const tools = now.tools
-    .slice(0, 20)
-    .map((t) => `  ${line(t.name, 64)}: ${line(t.description, 100)}`);
-  const more = now.tools.length > 20 ? [`  … and ${now.tools.length - 20} more`] : [];
+  // Every tool is shown: what is approved is pinned, so nothing pinned may go unseen.
+  const tools = now.tools.flatMap(toolLines);
   const note =
     'Tool descriptions are untrusted text from the server; approve only what you expect.';
-  return [head, ...diff, 'Tools:', ...tools, ...more, note].join('\n');
+  return [head, ...diff, 'Tools:', ...tools, note].join('\n');
 }
 
 function record(o: ApproveOptions, payload: Record<string, unknown>): void {

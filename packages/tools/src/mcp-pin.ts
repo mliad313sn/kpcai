@@ -103,6 +103,16 @@ export interface PinCheck {
 
 const short = (h: string): string => h.slice(0, 12);
 
+/**
+ * A server-chosen name or version as it may appear in a block reason. The reason reaches
+ * models as the refused call's result, so a blocked server must not speak through it
+ * (WP7-F3): only a short run of name characters, anything else shown as `?`.
+ */
+export function safeToken(s: string): string {
+  const t = s.replace(/[^A-Za-z0-9_.:@/+-]/g, '?');
+  return t.length > 64 ? `${t.slice(0, 64)}…` : t;
+}
+
 /** Tool-level differences between the approved list and the current one. */
 export function diffTools(before: readonly ToolSnapshot[], now: readonly ToolSnapshot[]): string[] {
   const old = new Map(before.map((t) => [t.name, t]));
@@ -111,17 +121,17 @@ export function diffTools(before: readonly ToolSnapshot[], now: readonly ToolSna
     const o = old.get(t.name);
     old.delete(t.name);
     if (!o) {
-      out.push(`tool "${t.name}" was added`);
+      out.push(`tool "${safeToken(t.name)}" was added`);
       continue;
     }
     for (const key of ['title', 'description', 'inputSchema', 'annotations'] as const) {
       if (canonicalJson(o[key] ?? null) !== canonicalJson(t[key] ?? null)) {
         const what = key === 'inputSchema' ? 'input schema' : key;
-        out.push(`the ${what} of tool "${t.name}" changed`);
+        out.push(`the ${what} of tool "${safeToken(t.name)}" changed`);
       }
     }
   }
-  for (const name of old.keys()) out.push(`tool "${name}" was removed`);
+  for (const name of old.keys()) out.push(`tool "${safeToken(name)}" was removed`);
   return out.map((s) => stripControls(s).slice(0, 200));
 }
 
@@ -142,7 +152,9 @@ export function checkPin(
   }
   const hash = toolsHash(tools);
   const changes = diffTools(pin.tools, tools);
-  if (pin.version !== version) changes.unshift(`version changed from ${pin.version} to ${version}`);
+  if (pin.version !== version) {
+    changes.unshift(`version changed from ${safeToken(pin.version)} to ${safeToken(version)}`);
+  }
   if (hash === pin.hash && pin.version === version) return { status: 'approved', changes: [] };
   const first = changes[0] ?? 'its tool list changed';
   return {

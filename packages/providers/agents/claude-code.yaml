@@ -20,4 +20,6 @@ rateLimit:
   patterns: ['usage limit reached', 'rate limit', '\b429\b', 'quota']
   cooldownMinutes: 60
 timeoutMinutes: 20
+# Its own login when set (a long-lived OAuth token): passed through, never read (ADR-0034 §3).
+keepEnv: [CLAUDE_CODE_OAUTH_TOKEN]
 notes: 'acceptEdits lets it edit files in its working directory (the node worktree) without asking.'

@@ -12,7 +12,7 @@ import type { Env } from '../env.js';
 import { stripControls } from '../text.js';
 import { ok, ToolError, type LocalTool, type ToolOutcome } from '../types.js';
 import type { ZoneSet } from '../zones.js';
-import { BrowserPool, type Tab } from './pool.js';
+import { BrowserPool, requestAllowed, type Tab } from './pool.js';
 import { classifyUrl, fileProblem, normaliseOrigins, type ClassifiedUrl } from './url-policy.js';
 
 export interface BrowserToolOptions {
@@ -35,6 +35,15 @@ const str = (v: unknown): string => (typeof v === 'string' ? v : '');
 
 function opened(tab: Tab): string {
   return stripControls(tab.page.url()).slice(0, 500);
+}
+
+/** A page that ended up off-policy (a redirect hop) is left blank and reported (WP7-F1). */
+async function landed(s: Shared, tab: Tab): Promise<void> {
+  const at = tab.page.url();
+  if (requestAllowed(tab, at, s.o.zones)) return;
+  await tab.page.goto('about:blank').catch(() => undefined);
+  const where = stripControls(at).slice(0, 300);
+  throw new ToolError(`browser: redirected to ${where}, which is not local or confirmed`);
 }
 
 function withBlocked(pool: BrowserPool, tab: Tab, text: string): string {
@@ -71,6 +80,7 @@ async function open(
       `browser: could not open ${c.origin}: ${stripControls(err.message.split('\n')[0] ?? '').slice(0, 300)}`,
     );
   });
+  await landed(s, tab);
   const title = stripControls(await tab.page.title()).slice(0, 200);
   const text = `opened ${opened(tab)} (status ${res?.status() ?? 'n/a'}): ${title}`;
   return ok(withBlocked(s.pool, tab, text), {
@@ -101,6 +111,7 @@ async function act(s: Shared, input: Record<string, unknown>, ctx: ToolContext, 
   else {
     await tab.page.click(selector);
     await tab.page.waitForLoadState('load', { timeout: s.pool.timeoutMs }).catch(() => undefined);
+    await landed(s, tab);
   }
   const what = fill ? `filled ${JSON.stringify(selector)}` : `clicked ${JSON.stringify(selector)}`;
   return ok(withBlocked(s.pool, tab, `${stripControls(what).slice(0, 300)}; page: ${opened(tab)}`));
@@ -186,8 +197,9 @@ function openTool(s: Shared): LocalTool {
 
 /** The `browser.*` tools, sharing one Chromium (closed with the bus). */
 export function browserTools(options: BrowserToolOptions = {}): LocalTool[] {
-  const pool = new BrowserPool(options);
-  const s: Shared = { pool, listed: normaliseOrigins(options.allowOrigins ?? []), o: options };
+  const listed = normaliseOrigins(options.allowOrigins ?? []);
+  const pool = new BrowserPool({ ...options, directOrigins: [...listed] });
+  const s: Shared = { pool, listed, o: options };
   const tool = (
     name: string,
     description: string,

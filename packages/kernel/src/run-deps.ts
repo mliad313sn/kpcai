@@ -24,7 +24,7 @@ import { NO_MEMORY, localTaint, memoryJournal, memoryResolver, taintConstraint }
 import { busPacks } from './packs.js';
 import { RouterTap, UsageTap } from './routing-info.js';
 import type { GraphOptions } from './setup.js';
-import { inWorktree, physicalPacks } from './sources.js';
+import { inWorktree, physicalPacks, toolFacts, trackedBus } from './sources.js';
 import type { Plan } from './types.js';
 
 export interface DepsInput {
@@ -126,16 +126,18 @@ async function runTools(
   bus: LocalToolBus,
   i: DepsInput,
   journal: ToolJournal,
-): Promise<{ tools: ToolBus; facts: { inWorktree: boolean; physical: boolean } }> {
+): Promise<{ tools: ToolBus; facts: () => ReturnType<typeof toolFacts> }> {
   const host = i.gateHost;
   const hooks = await loadHooks(kpaiHome(host.env), host.cwd, busZones(bus));
   for (const x of hooks.problems) host.say(`  – hooks: ${x}\n`);
-  const tools = hookedBus(bus, { hooks, env: host.env, journal, runId: i.runId });
-  const facts = {
+  // Facts per confirmed call: the tool being confirmed, hooks' own shell.run included.
+  const tracked = trackedBus(bus);
+  const tools = hookedBus(tracked.bus, { hooks, env: host.env, journal, runId: i.runId });
+  const run = {
     inWorktree: inWorktree(i.root, host.cwd),
     physical: physicalPacks(i.plan.packs.selected),
   };
-  return { tools, facts };
+  return { tools, facts: () => toolFacts(tracked.current(), run) };
 }
 
 export async function runDeps(i: DepsInput): Promise<RunDeps> {
@@ -187,7 +189,7 @@ export async function runDeps(i: DepsInput): Promise<RunDeps> {
     sessionId,
     budget: (cand, label) => gate.allow(cand, label),
     tools,
-    confirm: (question) => host.confirm({ kind: 'tool', question, runId: i.runId, ...facts }),
+    confirm: (question) => host.confirm({ kind: 'tool', question, runId: i.runId, ...facts() }),
     root: i.root,
     allowSameProvider: i.flags.allowSameProvider === true,
     // R-404 (ADR-0030): the runner sets each node's protocol, journaled per change.

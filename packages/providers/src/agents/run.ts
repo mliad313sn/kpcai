@@ -86,7 +86,7 @@ export const runAgent: AgentRunner = async (req) => {
   if (d.promptVia === 'arg' && req.prompt.length > MAX_ARG_PROMPT_CHARS) {
     return empty('refused', `prompt longer than ${MAX_ARG_PROMPT_CHARS} characters for ${d.id}`);
   }
-  const env = agentEnv(req.env, [...req.scrub, ...d.scrubEnv]);
+  const env = agentEnv(req.env, [...req.scrub, ...d.scrubEnv], {}, d.keepEnv);
   let wt: NodeWorktree;
   try {
     wt = await openWorktree(req.root, env);
@@ -120,8 +120,12 @@ async function inWorktree(
     timeoutMs: req.timeoutMs,
     ...(req.signal ? { signal: req.signal } : {}),
   });
-  const outside = changedSince(before, await snapshot(wt, env));
   const parsed = parseOutput(d, p.stdout, p.stderr, p.exitCode);
+  const stop = stopped(p, parsed.rateLimited, parsed.error, d);
+  // Read before the second snapshot: `git add` runs the checkout's filters, and its config
+  // was the agent's to write, so what they do counts as the agent's (WP7-F8).
+  const diff = stop ? '' : await worktreeDiff(wt, env).catch((e: unknown) => e as Error);
+  const outside = changedSince(before, await snapshot(wt, env));
   const base = {
     summary: parsed.text,
     diff: '',
@@ -140,9 +144,8 @@ async function inWorktree(
       error: `agent wrote outside its worktree: ${shown}`,
     };
   }
-  const stop = stopped(p, parsed.rateLimited, parsed.error, d);
   if (stop) return { ...base, ...stop };
-  const diff = await worktreeDiff(wt, env);
+  if (diff instanceof Error) throw diff;
   const problem = diffProblem(diff);
   if (problem) return { ...base, status: 'refused', error: problem };
   return { ...base, status: 'ok', diff, files: diffFiles(diff) };
@@ -180,7 +183,7 @@ export async function detectAgent(
     binary: d.binary,
     args: d.versionArgs,
     cwd: tmpdir(),
-    env: agentEnv(env, [...scrub, ...d.scrubEnv]),
+    env: agentEnv(env, [...scrub, ...d.scrubEnv], {}, d.keepEnv),
     timeoutMs: 10_000,
   });
   if (p.exitCode === 0) return { available: true, reason: `${d.binary} found` };

@@ -70,6 +70,11 @@ export const AgentDescriptorSchema = z
     timeoutMinutes: z.number().int().min(1).max(240).default(20),
     /** Extra variables removed from the child's environment (beyond KernelPAI's keys). */
     scrubEnv: z.array(SecretName).max(32).default([]),
+    /**
+     * The agent's own login variables, kept although credential-shaped (e.g.
+     * `CLAUDE_CODE_OAUTH_TOKEN`); KernelPAI's keys and `scrubEnv` are removed regardless.
+     */
+    keepEnv: z.array(SecretName).max(8).default([]),
     /** Arguments that print a version without side effects (detection). */
     versionArgs: z.array(z.string().max(40)).max(4).default(['--version']),
     notes: z.string().max(1000).optional(),

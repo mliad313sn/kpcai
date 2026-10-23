@@ -69,13 +69,19 @@ function onRequest(
       { host: url.hostname, port, path: `${url.pathname}${url.search}`, method: req.method },
       (up) => {
         res.writeHead(up.statusCode ?? 502, up.headers);
+        up.on('error', () => res.destroy());
         up.pipe(res);
       },
     );
     for (const [k, v] of Object.entries(req.headers)) {
       if (v !== undefined && !/^proxy-/i.test(k)) upstream.setHeader(k, v);
     }
-    upstream.on('error', () => res.writeHead(502).end('upstream unreachable'));
+    // After the headers went out a 502 can no longer be sent: writing one threw out of the
+    // error handler and took the whole process down (WP7-F6). Cut the response instead.
+    upstream.on('error', () => {
+      if (res.headersSent) res.destroy();
+      else res.writeHead(502).end('upstream unreachable');
+    });
     req.pipe(upstream);
   };
 }

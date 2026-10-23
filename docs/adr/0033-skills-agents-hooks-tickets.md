@@ -26,3 +26,7 @@ R-502 asks for Claude Code–compatible skills, named agents and lifecycle hooks
 ## Revisit when
 
 Content-pinned allow entries for hooks, a per-node skill choice by the planner, or Claude Code's hook JSON output protocol is needed.
+
+## Addendum (D-032, S7 review)
+
+- Confirmation facts describe the tool being confirmed, not the run: `inWorktree` is true only for builtin `fs.write`, `fs.delete` and `git.apply` in an isolated run; `risk` is the tool's risk; an unknown tool counts as destructive.

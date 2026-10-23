@@ -26,3 +26,10 @@ Phase 5 adds tools that reach outside the workspace or judge it: MCP servers (R-
 ## Revisit when
 
 The OS sandbox is wired (egress then enforced for every server), MCP over HTTP is added (its URL host joins the egress check), or R-506 hands screenshots to a vision critic.
+
+## Addendum (D-032, S7 review)
+
+- The approval prompt shows each tool's full model-visible description (up to 1,024 characters, then the count left out), its input schema, every tool, and invisible characters as `\u{…}`.
+- Block reasons keep only safe tokens from server-chosen names and versions.
+- The browser sends every host that is neither loopback nor allow-listed to a refusing loopback proxy, so redirects and sub-resources cannot leave the policy.
+- Writes to `.kpstudio/`, `.claude/` and `.mcp.json` are confirmed on every call.

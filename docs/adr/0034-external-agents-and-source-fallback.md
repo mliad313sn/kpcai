@@ -25,3 +25,8 @@ R-503 lets the user's own agent CLIs (Claude Code, Codex, Gemini CLI, opencode) 
 ## Revisit when
 
 The OS sandbox lands (then the agent runs inside it), a CLI reports its remaining quota (show it, R-5E7), or the Sponsor lists subscriptions allowed unattended (Q-E4).
+
+## Addendum (D-032, S7 review)
+
+- The scrub list covers more credential names (tokens, passwords, private keys, cloud credentials, `SSH_AUTH_SOCK`). A descriptor may keep the agent's own login variable with `keepEnv`; KernelPAI's own keys and `KPAI_*` are removed even if listed.
+- The agent's diff is read before the second escape snapshot, so git filters planted in the clone are detected.

@@ -1,6 +1,7 @@
 import { realpath } from 'node:fs/promises';
 import type { ToolContext } from '@kernelpai/core';
 import { checkLexical, resolveInRoot, touchesGitDir } from '../paths.js';
+import { DEFAULT_ZONES, defaultCaseInsensitive, zoneHit, zoneSetFromGlobs } from '../zones.js';
 import { previewLines, stripControls } from '../text.js';
 import { ok, ToolError, type LocalTool, type ToolOutcome } from '../types.js';
 import { failed, git, outcome, type GitToolOptions } from './git-exec.js';
@@ -89,10 +90,20 @@ export async function inspectPatch(
     throw new ToolError('patches that create or make files executable are refused');
   }
   const files = [...new Set([...sections.flatMap((s) => s.paths), ...fromGit.paths])].sort();
+  // The policy reads paths from the patch text; git's own list is the authority (WP7-F4:
+  // `+++ b/x y/.env` or `copy to .env` named a zone the header parse did not see).
+  const zones =
+    opts.zones ??
+    zoneSetFromGlobs(
+      opts.forbiddenPaths ?? DEFAULT_ZONES,
+      opts.caseInsensitive ?? defaultCaseInsensitive(),
+    );
   for (const f of files) {
     checkLexical(f);
     const j = await resolveInRoot(ctx.root, f, { noFinalSymlink: true });
     if (touchesGitDir(j.rel)) throw new ToolError(`patch may not touch .git: ${f}`);
+    if (zoneHit(j.rel, zones) ?? zoneHit(f, zones))
+      throw new ToolError(`patch touches a forbidden zone: ${f}`);
   }
   const check = await gitApply(opts, ctx, at, ['--check'], patch);
   if (failed(check)) throw gitError('--check', check);

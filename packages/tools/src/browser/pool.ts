@@ -8,6 +8,7 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 import type { ToolContext } from '@kernelpai/core';
 import type { Browser, BrowserContext, Page, Route } from 'playwright-core';
+import { startEgressProxy, type EgressProxy } from '../egress-proxy.js';
 import type { Env } from '../env.js';
 import { stripControls } from '../text.js';
 import { ToolError } from '../types.js';
@@ -45,6 +46,18 @@ export interface BrowserPoolOptions {
   timeoutMs?: number;
   /** Extra Chromium switches (tests map a test host to loopback with `--host-resolver-rules`). */
   launchArgs?: readonly string[];
+  /** Allow-listed origins (`https://docs.example.com`) Chromium may reach directly. */
+  directOrigins?: readonly string[];
+}
+
+/**
+ * Chromium sends every request to a host that is neither loopback nor allow-listed to a
+ * proxy that refuses it. Routes never see the later hops of a redirect (Playwright), so
+ * without this a loopback page's 302 would reach any origin unconfirmed (S7 WP7-F1).
+ */
+export function proxyArgs(proxyUrl: string, direct: readonly string[]): string[] {
+  const bypass = ['localhost', '*.localhost', '127.0.0.0/8', '[::1]', ...direct];
+  return [`--proxy-server=${proxyUrl}`, `--proxy-bypass-list=${bypass.join(';')}`];
 }
 
 const tabKey = (ctx: ToolContext): string => `${ctx.sessionId}\u0000${ctx.nodeId}`;
@@ -86,6 +99,9 @@ function shortOrigin(raw: string): string {
 
 export class BrowserPool {
   private browser: Promise<Browser> | undefined;
+  private proxy: Promise<EgressProxy> | undefined;
+  /** Hosts the refusing proxy saw (redirect hops the routes never see). */
+  private readonly proxied = new Set<string>();
   private readonly tabs = new Map<string, Promise<Tab>>();
   readonly timeoutMs: number;
 
@@ -109,6 +125,8 @@ export class BrowserPool {
 
   /** Requests refused since the last call, as a sentence (empty when none). */
   takeBlocked(tab: Tab): string {
+    for (const h of this.proxied) tab.blocked.add(h);
+    this.proxied.clear();
     if (tab.blocked.size === 0) return '';
     const list = [...tab.blocked].slice(0, 10).join(', ');
     tab.blocked.clear();
@@ -117,20 +135,27 @@ export class BrowserPool {
 
   async close(): Promise<void> {
     const b = this.browser;
+    const p = this.proxy;
     this.browser = undefined;
+    this.proxy = undefined;
     this.tabs.clear();
     if (b) await (await b.catch(() => undefined))?.close().catch(() => undefined);
+    if (p) await (await p.catch(() => undefined))?.close();
   }
 
   private launch(): Promise<Browser> {
     this.browser ??= (async () => {
       const { chromium } = await import('playwright-core');
       const executablePath = chromiumExecutable(this.o.env ?? process.env);
+      this.proxy ??= startEgressProxy('browser', [], (d) =>
+        this.proxied.add(`${d.host}:${d.port}`),
+      );
+      const refuse = proxyArgs((await this.proxy).url, this.o.directOrigins ?? []);
       try {
         return await chromium.launch({
           headless: true,
           timeout: 30_000,
-          args: [...(this.o.launchArgs ?? [])],
+          args: [...(this.o.launchArgs ?? []), ...refuse],
           ...(executablePath ? { executablePath } : {}),
         });
       } catch (err) {

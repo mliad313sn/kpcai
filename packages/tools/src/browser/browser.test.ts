@@ -201,7 +201,7 @@ describe.skipIf(!haveChromium)('driven browser against a local fixture server', 
     const ctx = makeCtx(root, { nodeId: 'n4' });
     const r = await bus.call(call('browser.open', { url: `${base}/redirect` }), ctx);
     expect(r.isError).toBe(true);
-    expect(r.content).toMatch(/could not open/);
+    expect(r.content).toMatch(/could not open|redirected to http:\/\/example\.invalid/);
     const none = await bus.call(call('browser.text', {}), makeCtx(root, { nodeId: 'n5' }));
     expect(none.content).toMatch(/no page is open for this node/);
   });

@@ -10,7 +10,7 @@ import {
   type ToolRisk,
 } from '@kernelpai/core';
 import { keynoteProbe } from './keynote.js';
-import { canonicalSync, toPosixRel } from './paths.js';
+import { canonicalSync, globHits, relParts, toPosixRel } from './paths.js';
 import {
   DEFAULT_ZONES,
   defaultCaseInsensitive,
@@ -80,16 +80,35 @@ export function isConfirmAware(p: PermissionPolicy): p is ConfirmAwarePolicy {
 const PATH_KEYS = new Set(['path', 'paths', 'from', 'to', 'file', 'files', 'target', 'cwd', 'dir']);
 const DIFF_KEYS = new Set(['diff', 'patch']);
 
-/** File paths named in a unified diff's headers (`--- a/x`, `+++ b/x`, `diff --git a/x b/y`). */
+/**
+ * File paths named in a unified diff's headers (`--- a/x`, `+++ b/x`, `diff --git a/x b/y`,
+ * `rename`/`copy from|to`). A name may hold spaces (git ends it at a tab or the line end):
+ * both the first word and the whole name are returned, so `+++ b/x y/.env` is checked as
+ * `x y/.env` too (WP7-F4).
+ */
 export function diffPaths(diff: string): string[] {
   const out: string[] = [];
+  const add = (name: string | undefined): void => {
+    const whole = name?.split('\t')[0]?.trim();
+    if (!whole || whole === '/dev/null') return;
+    out.push(whole);
+    const first = whole.split(/\s/)[0];
+    if (first && first !== whole) out.push(first);
+  };
   for (const line of diff.split(/\r?\n/)) {
-    const m = /^(?:---|\+\+\+) (?:[ab]\/)?(\S+)/.exec(line);
-    if (m && m[1] !== '/dev/null') out.push(m[1] as string);
-    const g = /^diff --git a\/(\S+) b\/(\S+)/.exec(line);
-    if (g) out.push(g[1] as string, g[2] as string);
-    const r = /^rename (?:from|to) (\S+)/.exec(line);
-    if (r) out.push(r[1] as string);
+    add(/^(?:---|\+\+\+) (?:[ab]\/)?(.+)$/.exec(line)?.[1]);
+    const g = /^diff --git a\/(.+) b\/(.+)$/.exec(line);
+    if (g) {
+      add(g[1]);
+      add(g[2]);
+      // `a/x y b/x y`: the same name twice, split in the middle.
+      const both = line.slice('diff --git '.length);
+      const half = (both.length - 1) / 2;
+      if (Number.isInteger(half) && both.slice(2, half) === both.slice(half + 3)) {
+        add(both.slice(2, half));
+      }
+    }
+    add(/^(?:rename|copy) (?:from|to) (.+)$/.exec(line)?.[1]);
   }
   return out;
 }
@@ -156,6 +175,23 @@ function zoneLabel(z: ZoneEntry): string {
   return z.tier === 'heuristic' ? `${from} ${z.glob}; a domain pack can exempt a folder` : from;
 }
 
+/**
+ * Files that configure what later runs (or other agents) execute or read as instructions:
+ * KP Studio's hooks, test command, skills, agents and tickets, Claude Code's settings and
+ * hooks, and project MCP servers. A model may still write them, but each write is confirmed
+ * on its own, never covered by a write batch or session trust (WP7-F5, D-031).
+ */
+export const CONTROL_FILES: readonly string[] = ['.kpstudio', '.claude', '.mcp.json'];
+
+/** True when a call names a control file (any depth, case-insensitive: macOS, Windows). */
+export function touchesControlFile(call: ToolCall, root: string): boolean {
+  return pathsInCall(call).some((p) =>
+    relForms(root, p).some((rel) =>
+      CONTROL_FILES.some((g) => globHits(relParts(rel), g, true).length > 0),
+    ),
+  );
+}
+
 /** Tool-name glob: `*` matches any run of characters, dots included (`mcp.github.*`). */
 function toolGlob(glob: string): RegExp {
   const body = glob.split('*').map((s) => s.replace(/[|{}()[\]^$+?.\\]/g, '\\$&'));
@@ -216,6 +252,8 @@ export class GradedPermissionPolicy implements ConfirmAwarePolicy {
     if (this.reason(def, call, ctx) !== undefined) return 'deny';
     if (def.risk === 'read') return 'allow';
     if (def.risk === 'destructive') return 'confirm';
+    // Files that set up later runs or other agents: never covered by a batch or trust.
+    if (touchesControlFile(call, ctx.root)) return 'confirm';
     if (this.trusted.has(scopeKey(ctx.sessionId, rootKey(ctx.root), 'write'))) return 'allow';
     return this.batches.has(this.batchKey(ctx)) ? 'allow' : 'confirm';
   }

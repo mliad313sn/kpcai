@@ -4,8 +4,9 @@
  * (`local`, `api`, `subscription`). Typed fields only: a program's envelope checker reads
  * these, never the question text or a model's output.
  */
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { resolve } from 'node:path';
-import type { GraphResult } from '@kernelpai/core';
+import type { GraphResult, ToolBus, ToolDefinition } from '@kernelpai/core';
 import type { Pack } from '@kernelpai/packs';
 import type { ConfirmKind, ConfirmRequest } from './confirm.js';
 
@@ -103,5 +104,48 @@ export function confirmFacts(req: ConfirmRequest): {
     ...(req.amountUsd !== undefined ? { amountUsd: req.amountUsd } : {}),
     inWorktree: req.inWorktree === true,
     physical: req.physical === true,
+  };
+}
+
+/** Builtin tools whose writes stay inside the root they are given (jailed file and patch tools). */
+export const CONFINED_TOOLS: ReadonlySet<string> = new Set(['fs.write', 'fs.delete', 'git.apply']);
+
+/**
+ * The D-028 facts of one tool confirmation in a run (WP7-F2): the tool's own risk (unknown
+ * counts as destructive), and `inWorktree` only for a tool confined to the run's root. A
+ * shell, test run, hook, browser or MCP call reaches past the worktree whatever the run's
+ * root is, so a `write-in-worktree` pre-answer must never cover it.
+ */
+export function toolFacts(
+  tool: Pick<ToolDefinition, 'name' | 'risk' | 'source'> | undefined,
+  run: { inWorktree: boolean; physical: boolean },
+): { risk: 'read' | 'write' | 'destructive'; inWorktree: boolean; physical: boolean } {
+  const confined = tool?.source === 'builtin' && CONFINED_TOOLS.has(tool.name);
+  return {
+    risk: tool?.risk ?? 'destructive',
+    inWorktree: run.inWorktree && confined,
+    physical: run.physical,
+  };
+}
+
+/**
+ * The bus with the tool of the call in progress readable from inside it (async-safe, so
+ * parallel nodes and a hook's own `shell.run` each see their own tool).
+ */
+export function trackedBus(inner: ToolBus): {
+  bus: ToolBus;
+  current(): ToolDefinition | undefined;
+} {
+  const calling = new AsyncLocalStorage<string>();
+  return {
+    bus: {
+      list: () => inner.list(),
+      close: () => inner.close(),
+      call: (c, ctx) => calling.run(c.name, () => inner.call(c, ctx)),
+    },
+    current: () => {
+      const name = calling.getStore();
+      return name === undefined ? undefined : inner.list().find((d) => d.name === name);
+    },
   };
 }
