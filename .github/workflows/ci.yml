@@ -32,4 +32,43 @@ jobs:
       - run: node scripts/demo-phase0.mjs
       - run: node scripts/demo-phase1.mjs
       - run: node scripts/demo-phase2.mjs
+      # demo-phase3 serves the built web console through `kpai studio`.
+      - run: pnpm --filter @kernelpai/studio build
+      - run: node scripts/demo-phase3.mjs
       - run: node scripts/bench-router.mjs
+
+  e2e:
+    # KP Studio end to end (phase 3, WP6): the built console in Chromium against a real
+    # kernel server with offline mock providers; axe checks and the 100 ms budget. Kept out
+    # of `pnpm check` so the main gate stays fast.
+    name: e2e / ubuntu-latest
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Playwright's Chromium (version pinned by @playwright/test)
+        id: pw
+        run: echo "version=$(node -p "require('./apps/studio-e2e/node_modules/@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        id: pw-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
+      - if: steps.pw-cache.outputs.cache-hit != 'true'
+        run: pnpm --filter @kernelpai/studio-e2e exec playwright install --with-deps chromium
+      - if: steps.pw-cache.outputs.cache-hit == 'true'
+        run: pnpm --filter @kernelpai/studio-e2e exec playwright install-deps chromium
+      - run: pnpm e2e
+      - name: Keep the report, UI latencies and failure traces
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: studio-e2e-results
+          path: apps/studio-e2e/test-results
+          if-no-files-found: ignore

@@ -1,0 +1,18 @@
+{
+  "name": "@kernelpai/studio-e2e",
+  "version": "0.0.1",
+  "private": true,
+  "license": "UNLICENSED",
+  "type": "module",
+  "description": "End-to-end tests of KP Studio: the built web console against a real kernel server with offline mock providers (phase 3, WP6).",
+  "scripts": {
+    "e2e": "playwright test"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "4.13.0",
+    "@kernelpai/kernel": "workspace:*",
+    "@kernelpai/server": "workspace:*",
+    "@playwright/test": "1.56.1",
+    "@types/node": "^22.20.5"
+  }
+}

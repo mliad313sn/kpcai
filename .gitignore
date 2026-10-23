@@ -10,3 +10,7 @@ coverage/
 .env
 .env.*
 !.env.example
+
+# Playwright output (apps/studio-e2e)
+test-results/
+playwright-report/

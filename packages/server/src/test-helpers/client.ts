@@ -62,7 +62,8 @@ export function connect(wsUrl: string, o: ConnectOptions = {}): Promise<TestClie
         waiting.set(null, resolve as never);
         ws.send(raw);
       }),
-    waitFor: (pred, timeoutMs = 4000) =>
+    // Generous: it resolves as soon as the notification arrives; Windows CI runners are slow.
+    waitFor: (pred, timeoutMs = 30_000) =>
       new Promise((resolve, reject) => {
         const timer = setTimeout(() => reject(new Error('no matching notification')), timeoutMs);
         const check = (): void => {

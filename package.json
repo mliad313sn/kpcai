@@ -22,7 +22,9 @@
     "bench": "pnpm build && node scripts/bench-phase0.mjs && node scripts/bench-router.mjs",
     "kpai": "node apps/cli/dist/bin.js",
     "check": "pnpm format:check && pnpm lint && pnpm build && pnpm test:coverage",
-    "demo:phase2": "pnpm build && node scripts/demo-phase2.mjs"
+    "demo:phase2": "pnpm build && node scripts/demo-phase2.mjs",
+    "demo:phase3": "pnpm build && pnpm --filter @kernelpai/studio build && node scripts/demo-phase3.mjs",
+    "e2e": "pnpm build && pnpm --filter @kernelpai/studio build && pnpm --filter @kernelpai/studio-e2e e2e"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

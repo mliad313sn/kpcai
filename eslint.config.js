@@ -3,7 +3,15 @@ import globals from 'globals';
 import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
-  { ignores: ['**/dist/**', '**/coverage/**', '**/node_modules/**'] },
+  {
+    ignores: [
+      '**/dist/**',
+      '**/coverage/**',
+      '**/node_modules/**',
+      '**/test-results/**',
+      '**/playwright-report/**',
+    ],
+  },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
@@ -29,5 +37,10 @@ export default tseslint.config(
   {
     files: ['**/*.test.{ts,tsx}', '**/test-helpers/**'],
     rules: { 'max-lines-per-function': 'off' },
+  },
+  {
+    // Playwright end-to-end scenarios are long by nature; fixtures need `({}, use)`.
+    files: ['apps/studio-e2e/**/*.ts'],
+    rules: { 'max-lines-per-function': 'off', 'no-empty-pattern': 'off' },
   },
 );

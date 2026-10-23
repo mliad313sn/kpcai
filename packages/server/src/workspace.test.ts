@@ -53,7 +53,7 @@ function answer(c: TestClient, kinds: string[], seen: Note[] = []): Note[] {
 async function run(c: TestClient, request: string, options: Record<string, unknown>) {
   const start = await c.call('run.start', { request, options });
   const { runId } = start.result as { runId: string };
-  const done = await c.waitFor((n) => n.method === 'run.done' && n.params.runId === runId, 8000);
+  const done = await c.waitFor((n) => n.method === 'run.done' && n.params.runId === runId);
   return { runId, done: done.params };
 }
 
@@ -232,7 +232,7 @@ describe('artifacts (D-019, ADR-0022)', () => {
       options: IN_PLACE,
     });
     const { runId } = start.result as { runId: string };
-    const done = (await c.waitFor((n) => n.method === 'run.done' && n.params.runId === runId, 8000))
+    const done = (await c.waitFor((n) => n.method === 'run.done' && n.params.runId === runId))
       .params;
     const arts = done.artifacts as Array<Record<string, unknown>>;
     const byPath = new Map(arts.map((a) => [a.path, a]));

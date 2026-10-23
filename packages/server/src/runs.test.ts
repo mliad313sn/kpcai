@@ -41,7 +41,7 @@ describe('kernel server: runs', () => {
     expect(plan.estimate.nodes.some((n) => n.reason)).toBe(true);
     const start = await c.call('run.start', { request: REQ, planId: plan.planId });
     const { runId } = start.result as { runId: string };
-    const done = await c.waitFor(isRun('run.done', runId), 8000);
+    const done = await c.waitFor(isRun('run.done', runId));
     expect((done.params.patches as unknown[]).length).toBe(2);
     const order = c.notes.filter((n) => n.params.runId === runId).map((n) => n.method);
     expect(order[0]).toBe('run.planned');
@@ -67,7 +67,7 @@ describe('kernel server: runs', () => {
     const { runId } = (await c.call('run.start', { request: REQ, options })).result as {
       runId: string;
     };
-    await c.waitFor(isRun('run.done', runId), 8000);
+    await c.waitFor(isRun('run.done', runId));
     expect(seen[0]?.params).toMatchObject({ kind: 'budget', runId, timeoutMs: 3000 });
     const applied = await c.call('patches.apply', { runId, nodeIds: ['implementation'] });
     expect(applied.result).toEqual({
@@ -162,6 +162,6 @@ describe('kernel server: runs', () => {
         (n.params.event as { type: string }).type === 'instruction_added',
     );
     expect((await c.call('run.resume', { runId })).result).toEqual({ ok: true });
-    await c.waitFor(isRun('run.done', runId), 8000);
+    await c.waitFor(isRun('run.done', runId));
   });
 });

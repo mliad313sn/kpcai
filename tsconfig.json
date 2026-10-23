@@ -42,6 +42,9 @@
     },
     {
       "path": "apps/studio-tui"
+    },
+    {
+      "path": "apps/studio-e2e"
     }
   ]
 }
