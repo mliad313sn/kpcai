@@ -2,6 +2,8 @@ import { parseArgs } from 'node:util';
 import { ProviderError, TaskTypeSchema } from '@kernelpai/core';
 import { askCommand } from './commands/ask.js';
 import { exportCommand, logCommand, verifyCommand } from './commands/log.js';
+import { benchCommand, gradeCommand } from './commands/learning.js';
+import { memoryCommand } from './commands/memory.js';
 import { packCommand } from './commands/pack.js';
 import { providersCommand } from './commands/providers.js';
 import { routeCommand, runCommand, type RunOptions } from './commands/run.js';
@@ -54,6 +56,9 @@ const OPTIONS = {
   isolated: { type: 'boolean' },
   scope: { type: 'string' },
   lang: { type: 'string' },
+  layer: { type: 'string' },
+  author: { type: 'string' },
+  'per-kind': { type: 'string' },
 } as const;
 
 function positiveInt(name: string, raw: string | undefined): number | undefined {
@@ -171,6 +176,31 @@ const COMMANDS: Readonly<Record<string, Handler>> = {
   },
   verify: (io, v) => verifyCommand(io, { db: v.db }),
   pack: (io, v, rest) => packCommand(io, rest, { out: v.out }),
+  grade: (io, v, rest) => {
+    const [runId, nodeId, grade, ...note] = rest;
+    if (!runId || !nodeId || !grade) throw new UsageError(t('error.gradeNeedsArgs'));
+    return gradeCommand(io, {
+      db: v.db,
+      runId,
+      nodeId,
+      grade,
+      note: note.join(' ') || undefined,
+      author: v.author,
+    });
+  },
+  bench: (io, v) =>
+    benchCommand(io, {
+      db: v.db,
+      perKind: positiveInt('per-kind', v['per-kind']),
+      options: { ...(v['allow-test'] ? { allowTest: true } : {}), ...(v.yes ? { yes: true } : {}) },
+    }),
+  memory: (io, v, rest) =>
+    memoryCommand(io, rest, {
+      db: v.db,
+      layer: v.layer,
+      session: v.session,
+      localOnly: v['local-only'],
+    }),
   checkpoints: (io, v) => checkpointsCommand(io, { db: v.db, session: v.session }),
   restore: (io, v, rest) =>
     restoreCommand(io, { db: v.db, ref: one('error.restoreNeedsRef', rest) }),

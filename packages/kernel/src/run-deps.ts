@@ -1,0 +1,127 @@
+/**
+ * The orchestrator options of a run, a replay or a fork: one place for the safety wiring
+ * (budget gate at every spend point, the run's tool bus and jail, local-only memory, tool
+ * confirmations, disputes asked of the human and failing closed).
+ */
+import { refToString } from '@kernelpai/core';
+import { outputCalibration } from '@kernelpai/executor';
+import type { Journal } from '@kernelpai/journal';
+import type {
+  DisputeHook,
+  DisputeQuestion,
+  OrchestratorOptions,
+  RunControlEvent,
+} from '@kernelpai/orchestrator';
+import { createToolBus } from '@kernelpai/tools';
+import { BudgetGate, type GateHost } from './budget-gate.js';
+import type { Choose, DisputeInfo } from './confirm.js';
+import { kpaiHome } from './env.js';
+import { NO_MEMORY, memoryResolver } from './memory.js';
+import { busPacks } from './packs.js';
+import { RouterTap, UsageTap } from './routing-info.js';
+import type { GraphOptions } from './setup.js';
+import type { Plan } from './types.js';
+
+export interface DepsInput {
+  journal: Journal;
+  gateHost: GateHost;
+  choose: Choose;
+  /** What the wiring reads of a plan (a replay builds just this). */
+  plan: Pick<Plan, 'sessionId' | 'graph' | 'setup' | 'm' | 'packs' | 'memory'> & {
+    estimate: { capUsd: number };
+  };
+  flags: GraphOptions;
+  runId: string;
+  /** The jail: the run's worktree when isolated, else the workspace. */
+  root: string;
+  /** The session spends and records are journaled in (default the plan's). */
+  sessionId?: string;
+  onControl?: (e: RunControlEvent) => void;
+}
+
+export interface RunDeps {
+  options: OrchestratorOptions;
+  router: RouterTap;
+  usage: UsageTap;
+  close(): Promise<void>;
+}
+
+const MAX_OPTION_CHARS = 20_000;
+
+/** A dispute as the confirm channel carries it; model text is capped, never interpreted. */
+export function disputeInfo(q: DisputeQuestion): DisputeInfo {
+  return {
+    nodeId: q.nodeId,
+    kind: q.kind,
+    reason: q.reason,
+    options: q.options.map((o) => ({
+      id: o.id,
+      label: o.label,
+      text: o.text.slice(0, MAX_OPTION_CHARS),
+      backers: o.backers.map(refToString),
+    })),
+    positions: q.positions.map((p) => ({
+      ref: refToString(p.ref),
+      role: p.role,
+      says: p.says,
+      ...(p.option ? { option: p.option } : {}),
+    })),
+  };
+}
+
+/** R-405: the human picks an option or rejects; silence, an error or no human rejects. */
+export function disputeHook(choose: Choose): DisputeHook {
+  return async (q) => {
+    const question = `Node ${q.nodeId} is disputed (${q.reason}). Pick one answer or reject them all.`;
+    try {
+      return await choose({
+        kind: 'dispute',
+        question,
+        runId: q.runId,
+        risk: 'write',
+        dispute: disputeInfo(q),
+      });
+    } catch {
+      return null;
+    }
+  };
+}
+
+export async function runDeps(i: DepsInput): Promise<RunDeps> {
+  const { plan: p, gateHost: host } = i;
+  const sessionId = i.sessionId ?? p.sessionId;
+  const { bus, mcpErrors, policyError } = await createToolBus({
+    kpaiHome: kpaiHome(host.env),
+    journal: i.journal,
+    env: host.env,
+    // The run's domain packs: additions always, approved relaxations journaled (D-020).
+    packs: busPacks(p.packs, sessionId),
+  });
+  for (const e of mcpErrors) host.say(`  – mcp ${e.server}: ${e.message}\n`);
+  if (policyError) host.say(`  – policy.json ignored (defaults apply): ${policyError}\n`);
+  const ctx = { sessionId, nodeId: p.graph.id, m: p.m, runId: i.runId };
+  const gate = new BudgetGate(host, i.journal, ctx, i.flags);
+  const router = new RouterTap(p.setup.router);
+  const usage = new UsageTap();
+  const options: OrchestratorOptions = {
+    // The user accepted this cap (the band's top, D-021); going beyond it asks again (P2-F9).
+    maxGraphUsd: p.estimate.capUsd,
+    router,
+    candidates: p.setup.candidates,
+    constraints: p.setup.constraints,
+    // Local providers also get the local-only memory facts (ADR-0027).
+    resolve: memoryResolver((ref) => p.setup.registry.get(ref.provider), p.memory ?? NO_MEMORY),
+    // Per-call estimates use the same calibrated output sizes as routing (S8 finding).
+    executor: { expectedOutput: outputCalibration(i.journal) },
+    journal: usage.wrap(i.journal),
+    sessionId,
+    budget: (cand, label) => gate.allow(cand, label),
+    tools: bus,
+    confirm: (question) => host.confirm({ kind: 'tool', question, runId: i.runId }),
+    root: i.root,
+    allowSameProvider: i.flags.allowSameProvider === true,
+    dispute: disputeHook(i.choose),
+    ...(i.onControl ? { onControl: i.onControl } : {}),
+  };
+  return { options, router, usage, close: () => bus.close() };
+}

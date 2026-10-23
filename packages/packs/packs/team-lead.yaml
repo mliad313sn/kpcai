@@ -5,7 +5,7 @@ description: >-
   Plans produce read-only reviews, cost summaries and decision records from the journal.
 profiles: [team lead, engineering manager, tech lead, product owner]
 markers:
-  - { glob: '.kpstudio/**', why: KP Studio project config }
+  - { glob: '.kpstudio/team.yaml', why: Team settings for KP Studio }
   - { glob: 'ADR*/**', why: Architecture decision records }
   - { glob: 'docs/**', why: Project docs }
   - { glob: CODEOWNERS, why: Ownership map }

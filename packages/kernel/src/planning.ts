@@ -2,6 +2,7 @@
 import { randomUUID } from 'node:crypto';
 import type { TaskGraph } from '@kernelpai/core';
 import type { Journal } from '@kernelpai/journal';
+import { accuracyNote, estimateAccuracy } from '@kernelpai/learning';
 import {
   estimateGraph,
   outputSpread,
@@ -16,6 +17,7 @@ import { KernelError } from './errors.js';
 import { DecisionLog, explainEstimate, type ExplainedEstimate } from './routing-info.js';
 import type { Env } from './env.js';
 import { busPacks, noPacks, policyFor, selectPacks, type SelectedPacks } from './packs.js';
+import { loadMemory, type LoadedMemory } from './memory.js';
 import { loadRules, withNodeContext, type LoadedRules } from './rules.js';
 import { checkScope } from './scope.js';
 import { graphSetup, plannerFor, type GraphOptions, type GraphSetup } from './setup.js';
@@ -30,7 +32,7 @@ export interface PlanningContext {
  * Estimate inputs of a plan; the band uses the output spread learned from this journal.
  * The router records its decisions so the plan is explained with them (R-303).
  */
-function estimateDeps(
+export function estimateDeps(
   s: GraphSetup,
   o: GraphOptions,
   journal: Journal,
@@ -51,7 +53,7 @@ export async function makePlan(
   sessionId: string,
 ): Promise<Plan> {
   const { gateHost: host, journal } = c;
-  const setup = await graphSetup(host.env, host.say, options, journal);
+  const setup = await graphSetup(host.env, host.say, options, journal, host.cwd);
   const m = money(host.env);
   if (options.planner === 'model')
     host.say('planning with a model: this is a paid call, budget-checked\n');
@@ -60,19 +62,30 @@ export async function makePlan(
   // Without a journal yet, pack relaxations are not applied to this read (fail closed).
   const { policy } = await policyFor(host.env, busPacks(packs, sessionId));
   const rules = await loadRules(host.cwd, policy.zoneSet(), host.say);
+  // ADR-0027: user, project and session memory, local-only facts kept for local providers.
+  const memory = await loadMemory(host.env, host.cwd, sessionId, policy.zoneSet(), host.say);
   const gate = new BudgetGate(host, journal, { sessionId, nodeId: 'planner', m }, options);
   const allow: BudgetHook = (x, l) => gate.allow(x, l);
   const planner = plannerFor(options, setup, journal, sessionId, allow, {
-    rulesText: rules.text,
+    rulesText: [rules.text, memory.context].filter(Boolean).join('\n\n'),
     packs: packs.selected,
   });
   const graph = await planner.plan(request, { root: host.cwd });
   const scope = await checkScope(packs.selected, host.cwd, options.scope, graph.nodes);
   // Estimated as it will run: with the rules in front of each node.
   const deps = estimateDeps(setup, options, journal);
-  const estimate = explainEstimate(estimateGraph(runnable(graph, rules), deps), deps.router);
+  const ctx = { rules, memory };
+  const explained = explainEstimate(estimateGraph(runnable(graph, ctx), deps), deps.router);
+  // R-402: how estimates here compared with real costs, shown before launch.
+  const estimate = { ...explained, accuracy: accuracyFor(journal, host.cwd, graph) };
   const base = { planId: randomUUID(), sessionId, request, graph, estimate, options, setup, m };
-  return { ...base, rules, packs, scope };
+  return { ...base, rules, memory, packs, scope };
+}
+
+/** The published estimate accuracy for this workspace and these node types (R-402). */
+function accuracyFor(journal: Journal, project: string, graph: TaskGraph): string {
+  const types = graph.nodes.map((n) => n.type);
+  return accuracyNote(estimateAccuracy(journal, { project }), types);
 }
 
 /** Packs and zones of the workspace; a pack failure leaves the policy's zones alone. */
@@ -86,9 +99,12 @@ async function packsFor(env: Env, cwd: string, say: (t: string) => void): Promis
   }
 }
 
-/** The graph the runner is given: each node with the repository rules in front. */
-export function runnable(graph: TaskGraph, rules: LoadedRules): TaskGraph {
-  return withNodeContext(graph, { rules: rules.text });
+/** The graph the runner is given: each node with the repository rules and memory in front. */
+export function runnable(
+  graph: TaskGraph,
+  ctx: { rules: LoadedRules; memory?: LoadedMemory | undefined },
+): TaskGraph {
+  return withNodeContext(graph, { rules: ctx.rules.text, memory: ctx.memory?.cloud ?? '' });
 }
 
 /** A plan check whose estimate is explained and carries the likely and cap figures. */
@@ -112,9 +128,9 @@ export function checkEdit(
     request: plan.request,
   };
   const deps = estimateDeps(plan.setup, plan.options, journal);
-  const { estimate, ...rest } = validatePlan(runnable(graph, plan.rules), {
+  const { estimate, ...rest } = validatePlan(runnable(graph, plan), {
     ...deps,
-    original: runnable(plan.graph, plan.rules),
+    original: runnable(plan.graph, plan),
   });
   const check = estimate ? { ...rest, estimate: explainEstimate(estimate, deps.router) } : rest;
   return { check, graph };
@@ -126,5 +142,7 @@ export function editedPlan(plan: Plan, edited: unknown, journal: Journal): Plan 
   if (!check.ok || !check.estimate) {
     throw new KernelError('invalid', `the edited plan cannot run: ${check.problems.join('; ')}`);
   }
-  return { ...plan, graph, estimate: check.estimate, edits: check.changes };
+  const accuracy = plan.estimate.accuracy;
+  const estimate = accuracy ? { ...check.estimate, accuracy } : check.estimate;
+  return { ...plan, graph, estimate, edits: check.changes };
 }

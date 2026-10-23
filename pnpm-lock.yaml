@@ -53,6 +53,12 @@ importers:
       '@kernelpai/kernel':
         specifier: workspace:*
         version: link:../../packages/kernel
+      '@kernelpai/learning':
+        specifier: workspace:*
+        version: link:../../packages/learning
+      '@kernelpai/memory':
+        specifier: workspace:*
+        version: link:../../packages/memory
       '@kernelpai/orchestrator':
         specifier: workspace:*
         version: link:../../packages/orchestrator
@@ -233,6 +239,12 @@ importers:
       '@kernelpai/journal':
         specifier: workspace:*
         version: link:../journal
+      '@kernelpai/learning':
+        specifier: workspace:*
+        version: link:../learning
+      '@kernelpai/memory':
+        specifier: workspace:*
+        version: link:../memory
       '@kernelpai/orchestrator':
         specifier: workspace:*
         version: link:../orchestrator
@@ -270,6 +282,15 @@ importers:
       '@kernelpai/router':
         specifier: workspace:*
         version: link:../router
+
+  packages/memory:
+    dependencies:
+      '@kernelpai/tools':
+        specifier: workspace:*
+        version: link:../tools
+      zod:
+        specifier: ^4.1.0
+        version: 4.6.7
 
   packages/orchestrator:
     dependencies:

@@ -1,10 +1,11 @@
 import type { GraphResult, TaskGraph } from '@kernelpai/core';
-import type { RunControlEvent } from '@kernelpai/orchestrator';
-import type { Confirm } from './confirm.js';
+import type { ForkPlan, RunControlEvent } from '@kernelpai/orchestrator';
+import type { Choose, Confirm } from './confirm.js';
 import type { Env, Money } from './env.js';
 import type { Artifact, RefusedArtifact } from './artifacts.js';
 import type { Patch } from './patches.js';
 import type { SelectedPacks } from './packs.js';
+import type { LoadedMemory } from './memory.js';
 import type { LoadedRules } from './rules.js';
 import type { ScopeCheck } from './scope.js';
 import type { ExplainedEstimate, KernelEvent } from './routing-info.js';
@@ -23,6 +24,11 @@ export interface KernelHost {
   say?(text: string): void;
   /** Asks the human. Calls are serialized by the kernel; no confirm means "no". */
   confirm?: Confirm;
+  /**
+   * Asks the human to pick one answer of a disputed node (R-405), on the same queue as
+   * `confirm`. Without it every dispute is rejected and the node fails closed.
+   */
+  choose?: Choose;
   /** A run was accepted for this plan; called before any of its events or states. */
   onRunPlanned?(runId: string, plan: Plan): void;
   onEvent?(runId: string, event: KernelEvent): void;
@@ -50,10 +56,14 @@ export interface Plan {
   m: Money;
   /** Repository rule files given to every node as untrusted context (R-306). */
   rules: LoadedRules;
+  /** Memory every node gets (ADR-0027); absent on plans made without it. */
+  memory?: LoadedMemory;
   /** Domain packs for the workspace, why, and the zones in force with origin (D-020). */
   packs: SelectedPacks;
   /** The authorised scope selected packs require (WI-S1-03). */
   scope: ScopeCheck;
+  /** A fork of a past run (R-403): its graph runs as recorded, reused nodes not re-run. */
+  fork?: ForkPlan;
 }
 
 export type RunOutcome =
@@ -73,6 +83,8 @@ export type RunOutcome =
       refusedArtifacts: RefusedArtifact[];
       /** The run's worktree when it ran isolated (R-307), to merge or discard. */
       worktree?: string;
+      /** Memory proposals of the run, pending until a human confirms them (ADR-0027). */
+      proposals?: string[];
     };
 
 export interface RunHandle {

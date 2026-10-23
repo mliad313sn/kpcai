@@ -135,7 +135,7 @@ export interface PlanView {
 export interface ConfirmView {
   confirmId: string;
   runId?: string;
-  kind: 'budget' | 'tool' | 'patch' | 'restore' | 'artifact';
+  kind: 'budget' | 'tool' | 'patch' | 'restore' | 'artifact' | 'memory' | 'dispute';
   question: string;
   risk?: 'read' | 'write' | 'destructive';
   /** For a patch confirmation: the exact diff, shown apart from the question. */
@@ -149,6 +149,26 @@ export interface ConfirmView {
     bytes: number;
     nodeId: string;
     reviewed?: boolean;
+  };
+  /** For a memory confirmation (ADR-0027): the proposed fact and its provenance. */
+  memory?: {
+    id: string;
+    layer: 'user' | 'project' | 'session';
+    text: string;
+    source: string;
+    evidence: string[];
+    localOnly: boolean;
+  };
+  /**
+   * For a dispute (R-405): options to pick from, untrusted model text shown quoted. Answer
+   * with `confirm.answer {ok: true, choice}`; a plain yes without `choice` rejects.
+   */
+  dispute?: {
+    nodeId: string;
+    kind: string;
+    reason: string;
+    options: Array<{ id: string; label: string; text: string; backers: string[] }>;
+    positions: Array<{ ref: string; role: string; says: string; option?: string }>;
   };
   timeoutMs: number;
   receivedAt: number;

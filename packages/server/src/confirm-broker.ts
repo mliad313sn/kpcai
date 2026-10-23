@@ -17,7 +17,10 @@ const MAX_QUESTION = 10_000;
 const MAX_PATCH = 2_000_000;
 
 export class ConfirmBroker {
-  private readonly pending = new Map<string, { runId?: string; settle: (ok: boolean) => void }>();
+  private readonly pending = new Map<
+    string,
+    { runId?: string; settle: (ok: boolean, choice?: string) => void }
+  >();
 
   constructor(
     private readonly broadcast: Broadcast,
@@ -25,9 +28,23 @@ export class ConfirmBroker {
   ) {}
 
   ask(req: ConfirmRequest): Promise<boolean> {
+    return this.request(req).then((a) => a.ok);
+  }
+
+  /**
+   * A dispute (R-405): resolves with the option the human picked, or null for a rejection,
+   * an unknown option, silence or no client (the node then fails closed).
+   */
+  async choose(req: ConfirmRequest): Promise<string | null> {
+    const a = await this.request(req);
+    const ids = req.dispute?.options.map((o) => o.id) ?? [];
+    return a.ok && a.choice !== undefined && ids.includes(a.choice) ? a.choice : null;
+  }
+
+  private request(req: ConfirmRequest): Promise<{ ok: boolean; choice?: string }> {
     // What cannot be shown in full cannot be approved.
     if ((req.patch?.length ?? 0) > MAX_PATCH || (req.content?.length ?? 0) > MAX_PATCH)
-      return Promise.resolve(false);
+      return Promise.resolve({ ok: false });
     const confirmId = randomUUID();
     const params: ConfirmParams = {
       confirmId,
@@ -42,13 +59,15 @@ export class ConfirmBroker {
       ...(req.patch !== undefined ? { patch: req.patch } : {}),
       ...(req.content !== undefined ? { content: req.content } : {}),
       ...(req.artifact ? { artifact: req.artifact } : {}),
+      ...(req.memory ? { memory: req.memory } : {}),
+      ...(req.dispute ? { dispute: req.dispute } : {}),
     };
     return new Promise((resolve) => {
       const timer = setTimeout(() => settle(false), this.timeoutMs);
-      const settle = (ok: boolean): void => {
+      const settle = (ok: boolean, choice?: string): void => {
         clearTimeout(timer);
         this.pending.delete(confirmId);
-        resolve(ok);
+        resolve(choice !== undefined ? { ok, choice } : { ok });
       };
       this.pending.set(confirmId, { ...(req.runId ? { runId: req.runId } : {}), settle });
       if (this.broadcast('confirm.request', params) === 0) settle(false);
@@ -56,10 +75,10 @@ export class ConfirmBroker {
   }
 
   /** True when the answer settled a pending confirmation. */
-  answer(confirmId: string, ok: boolean): boolean {
+  answer(confirmId: string, ok: boolean, choice?: string): boolean {
     const p = this.pending.get(confirmId);
     if (!p) return false;
-    p.settle(ok === true);
+    p.settle(ok === true, choice);
     return true;
   }
 

@@ -10,7 +10,7 @@ import type { Journal } from '@kernelpai/journal';
 import type { ControlOutcome, RunControl } from '@kernelpai/orchestrator';
 import { applyAll, applyArtifacts, type ApplyContext } from './apply.js';
 import type { GateHost } from './budget-gate.js';
-import { hostConfirm, type Confirm } from './confirm.js';
+import { askQueue, hostChoose, hostConfirm, type Choose, type Confirm } from './confirm.js';
 import { KernelError } from './errors.js';
 import { checkEdit, editedPlan, makePlan, type KernelPlanCheck } from './planning.js';
 import { Queries } from './queries.js';
@@ -34,6 +34,9 @@ import { askZoneRelaxations, gatherScope, guardWorkspace } from './authorise.js'
 import { checkScope } from './scope.js';
 import { CANCEL_ACTION, notWritable, recordedOutcome, runFlags } from './run-record.js';
 import { WT_SUFFIX, WorkspaceOps, type CheckpointInfo } from './workspace-ops.js';
+import { KernelMemory, type ExportResult } from './memory-service.js';
+import { KernelLearning } from './learning.js';
+import { KernelReplays } from './replay.js';
 import type { PackZoneOptions } from '@kernelpai/tools';
 
 const KEEP_PLANS = 32;
@@ -43,20 +46,33 @@ const FINISHED: ReadonlySet<string> = new Set(['done', 'failed', 'cancelled']);
 
 interface StoredRun extends ActiveRun {
   done: Promise<RunOutcome>;
+  /** The human is asked about the run's memory proposals once it is done (ADR-0027). */
+  asked?: Promise<unknown>;
 }
 
 export class Kernel extends Queries {
   private readonly plans = new Map<string, Plan>();
   private readonly runs = new Map<string, StoredRun>();
   private readonly confirm: Confirm;
+  private readonly choose: Choose;
   private readonly gateHost: GateHost;
   /** Checkpoints, restore, worktrees (R-305, R-307). */
   readonly workspace: WorkspaceOps;
+  /** Unified memory: facts, pending proposals, export (ADR-0027). */
+  readonly memory: KernelMemory;
+  /** Grades, measured competence, estimate accuracy, bench (ADR-0028). */
+  readonly learning: KernelLearning;
+  /** Replay a node, plan a fork (R-403); a fork starts with `startFork`. */
+  readonly replays: KernelReplays;
 
   constructor(host: KernelHost, journal?: Journal) {
     super(host, journal);
     // A question of a run cancelled while it waited is declined unasked (review P3-F2).
-    this.confirm = hostConfirm(host.confirm, (req) => this.cancelling(req.runId));
+    const queue = askQueue();
+    const voided = (req: { runId?: string }): boolean => this.cancelling(req.runId);
+    this.confirm = hostConfirm(host.confirm, voided, queue);
+    // Disputes share the confirmations' queue: one question at a time (R-405, P2-F7).
+    this.choose = hostChoose(host.choose, voided, queue);
     this.workspace = new WorkspaceOps({
       env: host.env,
       cwd: host.cwd,
@@ -70,6 +86,68 @@ export class Kernel extends Queries {
       say: (t) => host.say?.(t),
       confirm: this.confirm,
     };
+    this.memory = new KernelMemory({
+      env: host.env,
+      cwd: host.cwd,
+      journal: () => this.journal,
+      session: (action) => this.openSession(action, true),
+      confirm: this.confirm,
+      checkpoint: (label, sid) =>
+        this.workspace.before(host.cwd, `memory-${randomUUID().slice(0, 8)}`, label, sid),
+    });
+    this.learning = new KernelLearning({
+      ...this.gateHost,
+      journal: () => this.journal,
+      plan: (request, options) => this.plan(request, options),
+      startRun: (input) => this.startRun(input),
+    });
+    this.replays = new KernelReplays({
+      gateHost: this.gateHost,
+      choose: this.choose,
+      journal: () => this.journal,
+      session: (title) => this.openSession(title, false),
+    });
+  }
+
+  /** Reruns a finished run's node beside the original (R-403); never while the run is live. */
+  replay(...args: Parameters<KernelReplays['replay']>): ReturnType<KernelReplays['replay']> {
+    this.notLive(args[0], 'replay a node');
+    return this.replays.replay(...args);
+  }
+
+  /** Plans a fork of a past run from a node (R-403); start it with `startFork`. */
+  async forkPlan(...args: Parameters<KernelReplays['forkPlan']>): Promise<Plan> {
+    this.notLive(args[0], 'fork it');
+    const plan = await this.replays.forkPlan(...args);
+    this.keepPlan(plan);
+    return plan;
+  }
+
+  /** Starts a planned fork: budget-checked on its band top (D-021) like any plan. */
+  startFork(planId: string, options: GraphOptions = {}): Promise<RunHandle> {
+    const plan = this.plans.get(planId);
+    if (!plan?.fork) throw new KernelError('not_found', `no fork plan ${planId} (plan it again)`);
+    return this.startRun({ request: plan.request, planId, options });
+  }
+
+  private keepPlan(plan: Plan): void {
+    this.plans.set(plan.planId, plan);
+    while (this.plans.size > KEEP_PLANS) this.plans.delete(this.plans.keys().next().value!);
+  }
+
+  /** Writes the project memory to `.kpstudio/memory.md`; not while a run writes in place. */
+  exportMemory(): Promise<ExportResult> {
+    this.noLiveRunInPlace('export memory');
+    return this.memory.exportToRepo();
+  }
+
+  /** Asks about a finished run's memory proposals; what is not confirmed stays pending. */
+  private async askProposals(runId: string, o: RunOutcome): Promise<void> {
+    if (o.status !== 'finished' || !o.proposals?.length) return;
+    const r = await this.memory.ask(o.proposals, runId);
+    for (const f of r.confirmed) this.host.say?.(`memory: kept ${f.id} (${f.layer})\n`);
+    if (r.pending)
+      this.host.say?.(`memory: ${r.pending} proposal(s) pending (kpai memory pending)\n`);
   }
 
   /** A new session, or the one used in this folder in the last 30 minutes (`resume`). */
@@ -102,8 +180,7 @@ export class Kernel extends Queries {
       options,
       sid,
     );
-    this.plans.set(plan.planId, plan);
-    while (this.plans.size > KEEP_PLANS) this.plans.delete(this.plans.keys().next().value!);
+    this.keepPlan(plan);
     return plan;
   }
 
@@ -137,6 +214,8 @@ export class Kernel extends Queries {
         ...(p.edits ? { edits: p.edits } : {}),
         // Which rule files every node was given (names only, R-306).
         rules: summarizeRules(p.rules.rules),
+        // Which memory facts every node was given: ids and sources only (ADR-0027).
+        ...(p.memory ? { memory: p.memory.summary } : {}),
         packs: p.packs.packs.map((x) => ({ id: x.id, reason: x.reason })),
         zones: p.packs.zones,
       },
@@ -173,12 +252,14 @@ export class Kernel extends Queries {
       host: this.host,
       journal: this.journal,
       gateHost: this.gateHost,
+      choose: this.choose,
       ws: this.workspace,
       setState: (r, s) => this.setState(r, s),
     };
     this.host.onRunPlanned?.(run.runId, p);
     run.done = executeRun(ctx, run).then((o) => (run.outcome = o));
     run.done.catch(() => this.setState(run, 'failed'));
+    run.asked = run.done.then((o) => this.askProposals(run.runId, o)).catch(() => undefined);
     this.runs.set(run.runId, run);
     for (const [id, r] of this.runs) {
       if (this.runs.size <= KEEP_RUNS) break;
@@ -415,7 +496,7 @@ export class Kernel extends Queries {
       run.ctl.abort();
       this.host.cancelConfirmations?.(run.runId);
     }
-    await Promise.allSettled([...this.runs.values()].map((r) => r.done));
+    await Promise.allSettled([...this.runs.values()].flatMap((r) => [r.done, r.asked]));
     this.closeJournal();
   }
 }

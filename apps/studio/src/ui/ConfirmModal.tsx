@@ -20,6 +20,8 @@ const TITLES: Record<ConfirmView['kind'], Key> = {
   patch: 'confirm.title.patch',
   restore: 'confirm.title.restore',
   artifact: 'confirm.title.artifact',
+  memory: 'confirm.title.memory',
+  dispute: 'confirm.title.dispute',
 };
 
 /** What a write would put on disk: the diff, or an artifact's exact text and metadata. */

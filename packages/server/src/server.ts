@@ -143,6 +143,7 @@ function kernelHost(o: ServerOptions, broker: ConfirmBroker, broadcast: Broadcas
     ...o.kernel,
     say: (text) => void broadcast('log', { level: 'info', message: text.trim().slice(0, 10_000) }),
     confirm: (req) => broker.ask(req),
+    choose: (req) => broker.choose(req),
     onEvent: (runId, event) => void broadcast('run.event', { runId, event }),
     onRunState: (runId, state) => void broadcast('run.state', { runId, state }),
     onControl: (runId, event) => void broadcast('run.control', { runId, event }),
@@ -172,6 +173,7 @@ function watchRun(handle: RunHandle, broadcast: Broadcast): void {
         patches: o.patches,
         artifacts: o.artifacts,
         ...(o.worktree ? { worktree: o.worktree } : {}),
+        ...(verificationOf(o.result) ? { verification: verificationOf(o.result) } : {}),
       });
     },
     (err: unknown) => {
@@ -179,6 +181,12 @@ function watchRun(handle: RunHandle, broadcast: Broadcast): void {
       broadcast('log', { level: 'error', message: message.slice(0, 10_000) });
     },
   );
+}
+
+/** The run's review spend against accepted findings (R-404), when the runner gave one. */
+function verificationOf(result: unknown): Record<string, unknown> | undefined {
+  const v = (result as { verification?: unknown } | null)?.verification;
+  return v && typeof v === 'object' ? (v as Record<string, unknown>) : undefined;
 }
 
 function upgradeAllowed(req: IncomingMessage, port: number, origins: Set<string>): boolean {

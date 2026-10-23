@@ -14,6 +14,7 @@ export default defineConfig({
       '@kernelpai/executor': src('./packages/executor/src/index.ts'),
       '@kernelpai/tools': src('./packages/tools/src/index.ts'),
       '@kernelpai/packs': src('./packages/packs/src/index.ts'),
+      '@kernelpai/memory': src('./packages/memory/src/index.ts'),
       '@kernelpai/kernel/protocol': src('./packages/kernel/src/protocol.ts'),
       '@kernelpai/kernel': src('./packages/kernel/src/index.ts'),
       '@kernelpai/orchestrator': src('./packages/orchestrator/src/index.ts'),

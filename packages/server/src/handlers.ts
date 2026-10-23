@@ -7,6 +7,7 @@ import {
   summarizeRules,
   type Kernel,
   type KernelErrorCode,
+  type LayerRef,
   type RunHandle,
 } from '@kernelpai/kernel';
 import {
@@ -76,6 +77,7 @@ async function planResult(kernel: Kernel, p: ParamsOf<'plan'>, defaults: RunOpti
     rules: summarizeRules(plan.rules.rules),
     packs: packSummary(plan.packs),
     scope: scopeSummary(plan.scope),
+    ...(plan.memory ? { memory: plan.memory.summary } : {}),
   };
 }
 
@@ -122,7 +124,9 @@ export function handlers(d: HandlerDeps): Handlers {
       results: await kernel.applyPatches(p.runId, p.nodeIds ? { nodeIds: p.nodeIds } : {}),
     }),
     ...workspaceHandlers(kernel),
-    'confirm.answer': (p) => ({ accepted: d.broker.answer(p.confirmId, p.ok) }),
+    ...memoryHandlers(kernel),
+    ...learningHandlers(kernel, d, defaults),
+    'confirm.answer': (p) => ({ accepted: d.broker.answer(p.confirmId, p.ok, p.choice) }),
     'sessions.list': (p) => ({ sessions: kernel.sessions(p.limit ?? 20) }),
     'sessions.events': (p) => ({ events: kernel.events(p.sessionId, p.limit ?? 1000) }),
     stats: (p) => kernel.stats(p?.sessionId),
@@ -144,5 +148,102 @@ function workspaceHandlers(kernel: Kernel): Pick<Handlers, WorkspaceMethod> {
     'run.merge': (p) => kernel.merge(p.runId),
     'run.discard': (p) => kernel.discard(p.runId),
     'runs.list': async () => ({ runs: await kernel.runList() }),
+  };
+}
+
+type MemoryMethod = Extract<MethodName, `memory.${string}`>;
+type Layer = LayerRef['layer'];
+
+/** `{layer, sessionId?}` of a memory request. */
+function layerRef(p: { layer: Layer; sessionId?: string | undefined }): LayerRef {
+  return p.sessionId ? { layer: p.layer, sessionId: p.sessionId } : { layer: p.layer };
+}
+
+/**
+ * Unified memory (ADR-0027). Only a human at a client calls these: model tools cannot. A
+ * client's `memory.confirm` is the human's yes; proposals are never confirmed otherwise.
+ */
+function memoryHandlers(kernel: Kernel): Pick<Handlers, MemoryMethod> {
+  const m = kernel.memory;
+  return {
+    'memory.list': async (p) => {
+      const l = await m.list(layerRef(p));
+      return {
+        layer: p.layer,
+        file: l.file,
+        exists: l.exists,
+        facts: l.facts,
+        problems: l.problems,
+      };
+    },
+    'memory.add': async (p) => ({ fact: await m.add(layerRef(p), p.text, p.localOnly === true) }),
+    'memory.edit': async (p) => ({
+      fact: await m.edit(layerRef(p), p.id, {
+        ...(p.text !== undefined ? { text: p.text } : {}),
+        ...(p.localOnly !== undefined ? { localOnly: p.localOnly } : {}),
+      }),
+    }),
+    'memory.remove': async (p) => ({ fact: await m.remove(layerRef(p), p.id) }),
+    'memory.pending': async () => ({ pending: await m.pending() }),
+    'memory.confirm': async (p) => ({ fact: await m.confirm(p.id) }),
+    'memory.reject': async (p) => ({ rejected: await m.reject(p.id) }),
+  };
+}
+
+type LearningMethod =
+  'grade' | 'stats.accuracy' | 'competence' | 'run.replay' | 'run.forkPlan' | 'run.fork';
+
+/**
+ * Grades, measured competence, accuracy (ADR-0028); replay and fork (R-403). A replay
+ * spends through the budget gate; a fork starts like a plan (band top checked, D-021).
+ */
+function learningHandlers(
+  kernel: Kernel,
+  d: HandlerDeps,
+  defaults: RunOptions,
+): Pick<Handlers, LearningMethod> {
+  return {
+    grade: (p) =>
+      kernel.learning.grade({
+        runId: p.runId,
+        nodeId: p.nodeId,
+        grade: p.grade,
+        ...(p.note ? { note: p.note } : {}),
+        ...(p.author ? { author: p.author } : {}),
+      }),
+    'stats.accuracy': () => kernel.learning.accuracy(),
+    competence: () => ({ entries: kernel.learning.competence() }),
+    'run.replay': (p) =>
+      kernel.replay(
+        p.runId,
+        p.nodeId,
+        { ...(p.model ? { model: p.model } : {}), ...(p.protocol ? { protocol: p.protocol } : {}) },
+        defaults,
+      ),
+    'run.forkPlan': async (p) => {
+      const e = p.edit ?? {};
+      const edit = {
+        ...(e.model ? { model: e.model } : {}),
+        ...(e.protocol ? { protocol: e.protocol } : {}),
+        ...(e.instruction ? { instruction: e.instruction } : {}),
+      };
+      const plan = await kernel.forkPlan(p.runId, p.nodeId, edit, defaults);
+      const fork = plan.fork!;
+      return {
+        planId: plan.planId,
+        parent: fork.parent,
+        rerun: fork.rerun,
+        reused: Object.keys(fork.reuse),
+        edits: fork.edits,
+        graph: plan.graph,
+        estimate: plan.estimate,
+      };
+    },
+    'run.fork': async (p) => {
+      // Like run.start: isolated when the workspace is a git working tree (ADR-0021).
+      const handle = await kernel.startFork(p.planId, { ...defaults, isolated: 'auto' });
+      d.watch(handle);
+      return { runId: handle.runId };
+    },
   };
 }

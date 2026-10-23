@@ -26,7 +26,9 @@
     "@kernelpai/orchestrator": "workspace:*",
     "@kernelpai/kernel": "workspace:*",
     "@kernelpai/server": "workspace:*",
-    "@kernelpai/packs": "workspace:*"
+    "@kernelpai/packs": "workspace:*",
+    "@kernelpai/memory": "workspace:*",
+    "@kernelpai/learning": "workspace:*"
   },
   "devDependencies": {
     "@types/ws": "^8.18.2",

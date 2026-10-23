@@ -7,7 +7,7 @@ profiles: [anyone, unknown domain]
 markers:
   - { glob: README, weak: true, why: A described folder }
   - { glob: README.md, weak: true, why: A described folder }
-  - { glob: '.kpstudio/**', why: KP Studio project config }
+  - { glob: '.kpstudio/**', weak: true, why: KP Studio project config }
 plans:
   - id: understand
     title: Understand, then propose

@@ -86,17 +86,21 @@ export function summarizeRules(r: RepoRules): RulesSummary {
 export interface NodeContext {
   /** `formatRepoRules` text, or empty. */
   rules: string;
+  /** The cloud-safe memory message (ADR-0027), or empty. */
+  memory?: string;
 }
 
 /**
  * The graph a run executes: each node's messages start with the repository rules (a
- * `user` message, untrusted). The node's own request stays its last user message, so every
+ * `user` message, untrusted), then the memory message (data, ADR-0027). The node's own request stays its last user message, so every
  * protocol step (author, critic, voter…) keeps the rules in front of it. Nodes with
  * malformed messages are left as they are (validation reports them).
  */
 export function withNodeContext(graph: TaskGraph, ctx: NodeContext): TaskGraph {
-  if (!ctx.rules) return graph;
-  const lead: ChatMessage[] = [{ role: 'user', content: ctx.rules }];
+  const lead: ChatMessage[] = [ctx.rules, ctx.memory ?? '']
+    .filter(Boolean)
+    .map((content) => ({ role: 'user', content }));
+  if (lead.length === 0) return graph;
   const nodes = graph.nodes.map((n) => {
     if (!Array.isArray(n.messages)) return n;
     // Without a user message of its own, the rules would become the step prompt's slot.

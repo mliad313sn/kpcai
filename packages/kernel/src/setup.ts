@@ -8,6 +8,7 @@ import { outputCalibration } from '@kernelpai/executor';
 import type { Journal } from '@kernelpai/journal';
 import { ModelPlanner, TemplatePlanner, type BudgetHook } from '@kernelpai/orchestrator';
 import { candidates as scanCandidates, type ProviderRegistry } from '@kernelpai/providers';
+import { CompetenceStore } from '@kernelpai/learning';
 import { CompetenceRouter } from '@kernelpai/router';
 import { buildRegistry, routingProfile, type Env } from './env.js';
 import { rulesResolver } from './rules.js';
@@ -47,6 +48,8 @@ export async function graphSetup(
   say: (text: string) => void,
   o: GraphOptions,
   journal: Journal,
+  /** The workspace whose measured competence routing blends in (ADR-0028). */
+  project?: string,
 ): Promise<GraphSetup> {
   const registry = buildRegistry(env, say);
   const scan = await scanCandidates(registry);
@@ -66,6 +69,10 @@ export async function graphSetup(
   const router = new CompetenceRouter({
     profile: routingProfile(env, o.profile),
     expectedOutput: outputCalibration(journal),
+    // Grades of this repository, read once per plan from the journal (ADR-0028).
+    ...(project !== undefined
+      ? { measured: CompetenceStore.fromJournal(journal, { project }) }
+      : {}),
   });
   return { registry, candidates: scan.candidates, constraints, router };
 }

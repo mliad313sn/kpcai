@@ -12,6 +12,8 @@
     { "path": "../executor" },
     { "path": "../tools" },
     { "path": "../orchestrator" },
-    { "path": "../packs" }
+    { "path": "../packs" },
+    { "path": "../memory" },
+    { "path": "../learning" }
   ]
 }

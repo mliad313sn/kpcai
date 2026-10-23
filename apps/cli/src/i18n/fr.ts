@@ -17,6 +17,10 @@ Utilisation :
   kpai merge <id-exécution>            Fusionne le worktree d'une exécution isolée (demande avec le diff)
   kpai discard <id-exécution>          Supprime le worktree d'une exécution isolée
   kpai pack list|show|detect|check|init  Packs de domaine (voir kpai pack help)
+  kpai grade <exécution> <nœud> good|bad [note] [--author nom]  Noter à la main le travail d'un nœud
+  kpai bench [--per-kind N]            Courte calibration sur ce dépôt (demande avant de dépenser)
+  kpai memory [list|add|edit|rm|pending|confirm|reject|export] [--layer user|project]
+                                       Mémoire avec provenance ; les modèles proposent, vous confirmez
   kpai tools                           Outils utilisables par les modèles, leur risque et leur source
   kpai studio [--port N] [--allow-test] Démarre le serveur noyau local de KP Studio, affiche son URL
                                        (--allow-test : fournisseurs simulés hors ligne par défaut)
@@ -38,6 +42,7 @@ Global : --db <chemin> (par défaut $KPAI_HOME/journal.db, KPAI_HOME=~/.kernelpa
          --lang en|fr (par défaut $KPAI_LANG, puis LC_ALL, LC_MESSAGES, LANG)
 `,
   'error.usage': '{message}\n\n{usage}',
+  'error.gradeNeedsArgs': 'kpai grade attend un id d’exécution, un id de nœud et good ou bad',
   'error.provider': 'erreur ({kind}) : {message}\n',
   'error.generic': 'erreur : {message}\n',
   'error.unknownCommand': 'Commande inconnue « {command} »',

@@ -9,11 +9,13 @@ import {
   type RunHandle,
   type RunOutcome,
 } from '@kernelpai/kernel';
+import type { VerificationRoi } from '@kernelpai/orchestrator';
 import { formatMoney } from '../config.js';
 import { finishIsolated, showAndApply, showAndApplyArtifacts } from '../graph/apply.js';
 import {
   renderEvent,
   renderGraphPlan,
+  renderMemory,
   renderOutputs,
   renderPacks,
   renderRules,
@@ -103,7 +105,8 @@ export async function doCommand(io: Io, o: GraphCliOptions): Promise<number> {
     const patches = await showAndApply(io, kernel, handle.runId, outcome, o);
     const artifacts = await showAndApplyArtifacts(io, kernel, handle.runId, outcome, o);
     const merged = await finishIsolated(io, kernel, handle.runId, outcome, o);
-    const applied = [patches, artifacts, merged].filter(Boolean).join(' · ');
+    const review = verificationLine(outcome.result, p.m);
+    const applied = [review, patches, artifacts, merged].filter(Boolean).join(' · ');
     io.err(
       `session ${sessionId.slice(0, 8)} · ${formatMoney(outcome.result.costUsd, p.m)} · ${applied}\n`,
     );
@@ -119,6 +122,8 @@ function planText(p: Plan): string {
   return (
     renderGraphPlan(p.graph, p.estimate, p.m) +
     renderRules(summarizeRules(p.rules.rules)) +
+    renderMemory(p.memory?.summary) +
+    (p.estimate.accuracy ? `accuracy ${p.estimate.accuracy}\n` : '') +
     renderPacks(p.packs) +
     renderScope(p.scope)
   );
@@ -132,4 +137,13 @@ async function untilDone(io: Io, kernel: Kernel, handle: RunHandle): Promise<Run
   } finally {
     unregister();
   }
+}
+
+/** R-404: what review cost against the findings that were accepted, for the run summary. */
+export function verificationLine(result: unknown, m: Plan['m']): string {
+  const v = (result as { verification?: VerificationRoi } | null)?.verification;
+  if (!v || v.reviewUsd <= 0) return '';
+  const each =
+    v.usdPerAcceptedFinding === null ? '' : `, ${formatMoney(v.usdPerAcceptedFinding, m)} each`;
+  return `review ${formatMoney(v.reviewUsd, m)} (${Math.round(v.share * 100)}%) for ${v.acceptedFindings} accepted finding(s)${each}`;
 }

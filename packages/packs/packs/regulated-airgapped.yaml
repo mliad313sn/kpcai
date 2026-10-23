@@ -5,7 +5,7 @@ description: >-
   sensitive paths kept local, and an emphasis on what the journal can prove.
 profiles: [regulated team, air-gapped team, public sector, healthcare, finance]
 markers:
-  - { glob: '.kpstudio/**', why: KP Studio project config }
+  - { glob: '.kpstudio/airgapped', why: Declared air-gapped project (an empty marker file) }
   - { glob: COMPLIANCE.md, why: Compliance notes }
   - { glob: 'sbom*.json', why: Software bill of materials }
   - { glob: '*.spdx', why: SPDX SBOM }

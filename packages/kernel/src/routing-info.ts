@@ -37,6 +37,8 @@ export type ExplainedEstimate = Omit<GraphEstimate, 'nodes'> & {
    * what the user approves, what the graph budget check uses and the run's `maxGraphUsd`.
    */
   capUsd: number;
+  /** How past estimates here compared with what runs cost (R-402, ADR-0028). */
+  accuracy?: string;
 };
 
 export type ExplainedStep = StepEstimate & RoutingExplained;

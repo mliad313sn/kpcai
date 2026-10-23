@@ -18,6 +18,10 @@ Usage:
   kpai merge <run-id>                  Merge an isolated run's worktree (asks with the diff)
   kpai discard <run-id>                Remove an isolated run's worktree
   kpai pack list|show|detect|check|init  Domain packs (see kpai pack help)
+  kpai grade <run> <node> good|bad [note] [--author name]  Grade a node's work by hand
+  kpai bench [--per-kind N]            Short calibration on this repository (asks before spending)
+  kpai memory [list|add|edit|rm|pending|confirm|reject|export] [--layer user|project]
+                                       Memory with provenance; models only propose, you confirm
   kpai tools                           Tools models can use, their risk and source
   kpai studio [--port N] [--allow-test] Start KP Studio's local kernel server, print its URL
                                        (--allow-test: offline mock providers by default)
@@ -39,6 +43,7 @@ Global: --db <path> (default $KPAI_HOME/journal.db, KPAI_HOME=~/.kernelpai)
         --lang en|fr (default $KPAI_LANG, then LC_ALL, LC_MESSAGES, LANG)
 `,
   'error.usage': '{message}\n\n{usage}',
+  'error.gradeNeedsArgs': 'kpai grade needs a run id, a node id and good or bad',
   'error.provider': 'error ({kind}): {message}\n',
   'error.generic': 'error: {message}\n',
   'error.unknownCommand': 'Unknown command "{command}"',

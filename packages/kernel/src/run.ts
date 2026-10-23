@@ -1,23 +1,24 @@
 /** Running an approved plan: whole-graph budget, GraphRunner, patches collected at the end. */
-import type { GraphEvent } from '@kernelpai/core';
+import type { GraphEvent, GraphResult } from '@kernelpai/core';
 import { Governor, JournalLedger } from '@kernelpai/budget';
 import type { Journal } from '@kernelpai/journal';
 import {
   GraphRunner,
   ScopeError,
+  runFork,
   type RunControlEvent,
   type RunResult,
 } from '@kernelpai/orchestrator';
-import { outputCalibration } from '@kernelpai/executor';
-import { createToolBus } from '@kernelpai/tools';
-import { BudgetGate, type GateHost } from './budget-gate.js';
-import { budgetLimits, formatMoney, kpaiHome } from './env.js';
+import type { GateHost } from './budget-gate.js';
+import type { Choose } from './confirm.js';
+import { budgetLimits, formatMoney } from './env.js';
 import { collectArtifacts } from './artifacts.js';
-import { busPacks } from './packs.js';
+import { queueProposals } from './memory-proposals.js';
 import { collect } from './patches.js';
 import { runnable } from './planning.js';
 import { recordOutcome } from './run-record.js';
-import { RouterTap, UsageTap, annotate } from './routing-info.js';
+import { annotate } from './routing-info.js';
+import { runDeps } from './run-deps.js';
 import type { GraphOptions } from './setup.js';
 import type { KernelHost, Plan, RunOutcome, RunState } from './types.js';
 import { isGitTree, type WorkspaceOps } from './workspace-ops.js';
@@ -48,6 +49,8 @@ export interface RunContext {
   host: KernelHost;
   journal: Journal;
   gateHost: GateHost;
+  /** Disputed nodes: the human picks an answer or rejects (R-405). */
+  choose: Choose;
   ws: WorkspaceOps;
   setState(run: ActiveRun, state: RunState): void;
 }
@@ -87,12 +90,44 @@ async function runToEnd(c: RunContext, run: ActiveRun): Promise<RunOutcome> {
     c.setState(run, 'failed');
     return { status: 'not_run', reason: err.message };
   }
-  return finish(c, run, result);
+  return withProposals(c, run, finish(c, run, result));
+}
+
+/**
+ * ADR-0027: the run's memory proposals go to the pending queue (never into memory). A
+ * cancelled run proposes nothing; a queue failure never fails the run.
+ */
+async function withProposals(c: RunContext, run: ActiveRun, o: RunOutcome): Promise<RunOutcome> {
+  if (o.status !== 'finished' || o.cancelled) return o;
+  try {
+    const ctx = { env: c.host.env, cwd: c.host.cwd, journal: c.journal, runId: run.runId };
+    const ids = await queueProposals({ ...ctx, plan: run.plan }, ranHere(o.result));
+    return ids.length ? { ...o, proposals: ids } : o;
+  } catch (err) {
+    c.gateHost.say(
+      `  – memory proposals not queued: ${err instanceof Error ? err.message : String(err)}\n`,
+    );
+    return o;
+  }
 }
 
 /** Patches and artifacts of a run that ran; refusals journaled. */
-function finish(c: RunContext, run: ActiveRun, result: RunResult): RunOutcome {
-  const cancelled = Object.values(result.states).some((st) => st === 'cancelled');
+/**
+ * A fork's reused nodes were delivered by the parent run: their patches, artifacts and
+ * memory proposals are not offered again.
+ */
+function ranHere<R extends GraphResult>(result: R): R {
+  const r = result as R & Partial<Pick<RunResult, 'reused' | 'deliverables'>>;
+  const reused = new Set(r.reused ?? []);
+  if (reused.size === 0) return result;
+  const keep = <T>(x: Record<string, T> | undefined): Record<string, T> =>
+    Object.fromEntries(Object.entries(x ?? {}).filter(([id]) => !reused.has(id)));
+  return { ...result, results: keep(r.results), deliverables: keep(r.deliverables) };
+}
+
+function finish(c: RunContext, run: ActiveRun, full: RunResult): RunOutcome {
+  const cancelled = Object.values(full.states).some((st) => st === 'cancelled');
+  const result = ranHere(full);
   const { patches, refused } = collect(run.plan.graph, result);
   const sessionId = run.plan.sessionId;
   const ids = { runId: run.runId, sessionId };
@@ -116,7 +151,7 @@ function finish(c: RunContext, run: ActiveRun, result: RunResult): RunOutcome {
   c.setState(run, cancelled ? 'cancelled' : result.ok ? 'done' : 'failed');
   return {
     status: 'finished',
-    result,
+    result: full,
     cancelled,
     patches,
     refused,
@@ -206,57 +241,38 @@ async function graphBudget(c: RunContext, run: ActiveRun): Promise<string | unde
 
 async function runGraph(c: RunContext, run: ActiveRun): Promise<RunResult> {
   const { plan: p, flags: o, runId } = run;
-  const { bus, mcpErrors, policyError } = await createToolBus({
-    kpaiHome: kpaiHome(c.host.env),
+  const deps = await runDeps({
     journal: c.journal,
-    env: c.host.env,
-    // The run's domain packs: additions always, approved relaxations journaled (D-020).
-    packs: busPacks(p.packs, p.sessionId),
+    gateHost: c.gateHost,
+    choose: c.choose,
+    plan: p,
+    flags: o,
+    runId,
+    root: run.workRoot ?? c.host.cwd,
+    onControl: (e) => onControl(c, run, e),
   });
-  for (const e of mcpErrors) c.gateHost.say(`  – mcp ${e.server}: ${e.message}\n`);
-  if (policyError) c.gateHost.say(`  – policy.json ignored (defaults apply): ${policyError}\n`);
-  const gate = new BudgetGate(
-    c.gateHost,
-    c.journal,
-    { sessionId: p.sessionId, nodeId: p.graph.id, m: p.m, runId },
-    o,
-  );
-  const router = new RouterTap(p.setup.router);
-  const usage = new UsageTap();
   try {
     run.runner = new GraphRunner({
-      // The user accepted this cap (the band's top, D-021); going beyond it asks again (P2-F9).
-      maxGraphUsd: p.estimate.capUsd,
-      router,
-      candidates: p.setup.candidates,
-      constraints: p.setup.constraints,
-      resolve: (ref) => p.setup.registry.get(ref.provider),
-      // Per-call estimates use the same calibrated output sizes as routing (S8 finding).
-      executor: { expectedOutput: outputCalibration(c.journal) },
-      journal: usage.wrap(c.journal),
-      sessionId: p.sessionId,
-      budget: (cand, label) => gate.allow(cand, label),
-      tools: bus,
-      confirm: (question) => c.gateHost.confirm({ kind: 'tool', question, runId }),
-      // The run's jail: its worktree when isolated (R-307).
-      root: run.workRoot ?? c.host.cwd,
-      allowSameProvider: o.allowSameProvider === true,
+      ...deps.options,
       onEvent: (e) => {
         track(run, e);
-        c.host.onEvent?.(runId, annotate(e, router, usage));
+        c.host.onEvent?.(runId, annotate(e, deps.router, deps.usage));
       },
-      onControl: (e) => onControl(c, run, e),
     });
-    // Every node gets the repository rules (untrusted) and the output note (R-306, D-019).
-    return await run.runner.run(runnable(p.graph, p.rules), {
+    const opts = {
       signal: run.ctl.signal,
+      runId,
       ...(p.edits?.length ? { edits: p.edits } : {}),
       // Packs and scope: the runner refuses without a valid scope and journals it (S4).
       packs: p.packs.selected,
       ...(run.scope !== undefined ? { scope: run.scope } : {}),
-    });
+    };
+    // A fork's graph already carries the rules and memory it recorded (R-403): as is.
+    if (p.fork) return await runFork(run.runner, p.fork, opts);
+    // Every node gets the repository rules (untrusted) and memory (R-306, ADR-0027).
+    return await run.runner.run(runnable(p.graph, p), opts);
   } finally {
-    await bus.close();
+    await deps.close();
   }
 }
 

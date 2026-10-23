@@ -20,7 +20,22 @@ import {
   ScopeStatusSchema,
   WorkspaceMethods,
 } from './protocol-workspace.js';
+import { MemoryConfirmSchema, MemoryMethods, MemorySummarySchema } from './protocol-memory.js';
+import { DisputeSchema, LearningMethods, NodeEdit } from './protocol-learning.js';
 
+export {
+  AccuracySchema,
+  CompetenceEntrySchema,
+  DisputeSchema,
+  ReplayResultSchema,
+} from './protocol-learning.js';
+export {
+  FactSchema,
+  MemoryConfirmSchema,
+  MemorySummarySchema,
+  PendingFactSchema,
+  ProvenanceSchema,
+} from './protocol-memory.js';
 export {
   ArtifactKindSchema,
   ArtifactSchema,
@@ -142,6 +157,8 @@ export const EstimateSchema = z.looseObject({
    * check uses, and the run's hard cap: going beyond it asks again. Absent from older kernels.
    */
   capUsd: Usd.optional(),
+  /** How past estimates here compared with billed costs (R-402, ADR-0028). */
+  accuracy: z.string().optional(),
 });
 
 /**
@@ -176,6 +193,8 @@ export const ControlEventSchema = z.looseObject({
     'node_redirected',
     'instruction_added',
     'control_refused',
+    'node_disputed',
+    'dispute_resolved',
   ]),
   nodeId: z.string().optional(),
   reason: z.string().optional(),
@@ -243,6 +262,8 @@ export const Methods = {
       packs: PacksSchema.optional(),
       /** Authorised scope status; a run is refused while it has problems. */
       scope: ScopeStatusSchema.optional(),
+      /** Memory every node will get: counts, ids, sources, truncation (ADR-0027). */
+      memory: MemorySummarySchema.optional(),
     }),
   },
   /** Checks an edited plan and re-estimates it; runs nothing (R-301). */
@@ -284,7 +305,13 @@ export const Methods = {
     }),
   },
   'confirm.answer': {
-    params: z.object({ confirmId: Id, ok: z.boolean(), trustSession: z.boolean().optional() }),
+    params: z.object({
+      confirmId: Id,
+      ok: z.boolean(),
+      trustSession: z.boolean().optional(),
+      /** For `dispute`: the chosen option id (with `ok: true`); absent or `ok: false` rejects. */
+      choice: Id.optional(),
+    }),
     /** False when the confirmation was unknown, already answered or expired. */
     result: z.object({ accepted: z.boolean() }),
   },
@@ -305,6 +332,28 @@ export const Methods = {
     result: z.looseObject({ ok: z.boolean(), checked: z.number() }),
   },
   ...WorkspaceMethods,
+  ...MemoryMethods,
+  ...LearningMethods,
+  /** A fork from a node (R-403): reused nodes, nodes that run again, and their estimate. */
+  'run.forkPlan': {
+    params: z.object({
+      runId: Id,
+      nodeId: Id,
+      edit: z
+        .object({ ...NodeEdit, instruction: z.string().min(1).max(10_000).optional() })
+        .optional(),
+    }),
+    result: z.object({
+      planId: Id,
+      parent: z.object({ runId: Id, nodeId: Id }),
+      rerun: z.array(z.string()),
+      reused: z.array(z.string()),
+      edits: z.array(z.string()),
+      graph: GraphSchema,
+      /** Covers only the nodes that run again; the band's top is the cap (D-021). */
+      estimate: EstimateSchema,
+    }),
+  },
 } as const;
 export type MethodName = keyof typeof Methods;
 export type MethodResult<M extends MethodName> = z.infer<(typeof Methods)[M]['result']>;
@@ -328,13 +377,16 @@ export const Notifications = {
     artifacts: z.array(ArtifactSchema).optional(),
     /** The run's worktree when it ran isolated (R-307): merge or discard it. */
     worktree: z.string().optional(),
+    /** Review spend against accepted findings (R-404). */
+    verification: z.looseObject({}).optional(),
   }),
   /** The client must answer with `confirm.answer`; silence for `timeoutMs` means "no". */
   'confirm.request': z.object({
     confirmId: Id,
     runId: Id.optional(),
-    /** `restore` is destructive (ADR-0021); `artifact` writes `content` (ADR-0022). */
-    kind: z.enum(['budget', 'tool', 'patch', 'restore', 'artifact']),
+    /** `restore` is destructive (ADR-0021); `artifact` writes `content` (ADR-0022);
+     * `memory` keeps a model's proposed fact (ADR-0027; no answer keeps it pending). */
+    kind: z.enum(['budget', 'tool', 'patch', 'restore', 'artifact', 'memory', 'dispute']),
     question: z.string().max(10_000),
     risk: z.enum(['read', 'write', 'destructive']).optional(),
     /** For `patch`: the exact diff that would be written, apart from the question. */
@@ -351,6 +403,11 @@ export const Notifications = {
         reviewed: z.boolean(),
       })
       .optional(),
+    /** For `memory`: the proposed fact and where it comes from. */
+    memory: MemoryConfirmSchema.optional(),
+    /** For `dispute` (R-405): the options to pick from, as untrusted quoted text. Answer
+     * with `confirm.answer {ok: true, choice}`; silence or `ok: false` rejects (fail closed). */
+    dispute: DisputeSchema.optional(),
     timeoutMs: z.number().int().positive(),
   }),
   /**

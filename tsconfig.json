@@ -26,6 +26,9 @@
       "path": "packages/packs"
     },
     {
+      "path": "packages/memory"
+    },
+    {
       "path": "packages/orchestrator"
     },
     {

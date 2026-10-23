@@ -1,6 +1,6 @@
 import { refToString, type GraphEvent, type GraphResult, type TaskGraph } from '@kernelpai/core';
 import type { GraphEstimate } from '@kernelpai/orchestrator';
-import type { PackContext, RulesSummary, ScopeCheck } from '@kernelpai/kernel';
+import type { MemorySummary, PackContext, RulesSummary, ScopeCheck } from '@kernelpai/kernel';
 import { formatMoney, type Money } from '../config.js';
 import { t } from '../i18n/core.js';
 import { sanitizeForTerminal } from '../sanitize.js';
@@ -90,6 +90,31 @@ export function renderRules(r: RulesSummary): string {
   );
   const omitted = r.omitted.length ? ` · ${r.omitted.length} left out (size cap)` : '';
   return `rules  ${files.join(' · ')} — untrusted context for every node${omitted}${zone}\n`;
+}
+
+/**
+ * Memory every node gets (ADR-0027), the way rules are listed: counts by origin, how many
+ * are untrusted, the budget, local-only facts kept off cloud providers, and truncation.
+ */
+export function renderMemory(m: MemorySummary | undefined): string {
+  if (!m || (m.layers.length === 0 && m.pending === 0 && m.problems.length === 0)) return '';
+  const layers = m.layers.map((l) => {
+    const marks = [
+      l.untrusted ? `${l.untrusted} untrusted` : '',
+      l.omitted ? `${l.omitted} left out` : '',
+    ].filter(Boolean);
+    return `${l.origin} ${l.included}${marks.length ? ` (${marks.join(', ')})` : ''}`;
+  });
+  const parts = [
+    layers.length ? layers.join(' · ') : 'no fact',
+    `${m.usedTokens}/${m.budgetTokens} tokens`,
+    m.localOnly ? `${m.localOnly} local-only, for local providers only` : '',
+    m.truncated ? `truncated: ${m.omitted} fact(s) left out (budget)` : '',
+    m.distrusted ? 'memory files are inside the workspace: every fact untrusted' : '',
+    m.pending ? `${m.pending} proposal(s) pending` : '',
+    m.problems.length ? `${m.problems.length} problem(s) in memory files` : '',
+  ].filter(Boolean);
+  return `memory ${parts.join(' · ')} — data for every node\n`;
 }
 
 /** Packs chosen and why, the forbidden zones in force by tier and origin, pack zone changes (D-020). */

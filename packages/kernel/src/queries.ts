@@ -6,6 +6,7 @@ import {
   type JournalEvent,
   type SessionRow,
 } from '@kernelpai/journal';
+import { RECORD_ACTIONS } from '@kernelpai/orchestrator';
 import { createToolBus } from '@kernelpai/tools';
 import { buildRegistry, kpaiHome, openJournal } from './env.js';
 import { KernelError } from './errors.js';
@@ -115,8 +116,13 @@ export class Queries {
     return s;
   }
 
+  /**
+   * A session's history for people (`kpai log`, the console's history): the orchestrator's
+   * run records (`RECORD_ACTIONS`: full node inputs and results, kept for replay and fork)
+   * are left out. They are large and already summarized by the events around them.
+   */
   events(sessionIdOrPrefix: string, limit = 1000): JournalEvent[] {
-    return this.journal.events({ sessionId: this.session(sessionIdOrPrefix).id, limit });
+    return forPeople(this.journal.events({ sessionId: this.session(sessionIdOrPrefix).id, limit }));
   }
 
   /** Phase metrics computed from the journal, for one session or all. */
@@ -131,6 +137,13 @@ export class Queries {
 
   exportMarkdown(sessionIdOrPrefix: string): string {
     const s = this.session(sessionIdOrPrefix);
-    return sessionToMarkdown(s, this.journal.events({ sessionId: s.id }));
+    return sessionToMarkdown(s, forPeople(this.journal.events({ sessionId: s.id })));
   }
+}
+
+/** Events without the run records (replay/fork data, not history). */
+export function forPeople(events: readonly JournalEvent[]): JournalEvent[] {
+  return events.filter(
+    (e) => !(e.type === 'intervention' && RECORD_ACTIONS.has(String(e.payload['action']))),
+  );
 }

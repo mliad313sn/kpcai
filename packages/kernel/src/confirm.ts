@@ -1,7 +1,23 @@
 /** Human confirmations the kernel asks for, and how they are serialized. */
 
-/** `restore` (ADR-0021) and `artifact` (ADR-0022) are destructive / write confirmations. */
-export type ConfirmKind = 'budget' | 'tool' | 'patch' | 'restore' | 'artifact';
+import type { MemoryConfirmInfo } from './memory-service.js';
+
+/**
+ * `restore` (ADR-0021) and `artifact` (ADR-0022) are destructive / write confirmations;
+ * `memory` asks to keep a model's memory proposal (ADR-0027); `dispute` asks the human to
+ * pick one answer of a disputed node or reject them all (R-405, through `Choose`).
+ */
+export type ConfirmKind =
+  'budget' | 'tool' | 'patch' | 'restore' | 'artifact' | 'memory' | 'dispute';
+
+/** A disputed node as the human sees it. Option and position text is untrusted model output. */
+export interface DisputeInfo {
+  nodeId: string;
+  kind: string;
+  reason: string;
+  options: Array<{ id: string; label: string; text: string; backers: string[] }>;
+  positions: Array<{ ref: string; role: string; says: string; option?: string }>;
+}
 
 export interface ConfirmRequest {
   kind: ConfirmKind;
@@ -21,6 +37,46 @@ export interface ConfirmRequest {
     nodeId: string;
     /** False: no critic reviewed it; shown as "not reviewed" (D-020 ruling). */
     reviewed: boolean;
+  };
+  /** For `memory`: the proposed fact and its provenance. */
+  memory?: MemoryConfirmInfo;
+  /** For `dispute`: the options and who backs them. */
+  dispute?: DisputeInfo;
+}
+
+/**
+ * Asks the human to pick one option (`dispute`): resolves with an option id, or null for
+ * a rejection, silence or an error. Null fails closed (the node delivers nothing).
+ */
+export type Choose = (req: ConfirmRequest & { dispute: DisputeInfo }) => Promise<string | null>;
+
+/** One queue for every question to the human, whatever its shape (review P2-F7). */
+export type AskQueue = <T>(ask: () => Promise<T>) => Promise<T>;
+
+export function askQueue(): AskQueue {
+  let tail: Promise<unknown> = Promise.resolve();
+  return <T>(ask: () => Promise<T>): Promise<T> => {
+    const next = tail.then(ask);
+    tail = next.catch(() => undefined);
+    return next;
+  };
+}
+
+/**
+ * A host's chooser on the shared queue; without one every dispute is rejected. Only an id
+ * among the options counts; anything else is a rejection.
+ */
+export function hostChoose(
+  choose: Choose | undefined,
+  voided: (req: ConfirmRequest) => boolean,
+  queue: AskQueue,
+): Choose {
+  if (!choose) return () => Promise.resolve(null);
+  return async (req) => {
+    const pick = await queue(() => (voided(req) ? Promise.resolve(null) : choose(req))).catch(
+      () => null,
+    );
+    return typeof pick === 'string' && req.dispute.options.some((o) => o.id === pick) ? pick : null;
   };
 }
 
@@ -49,10 +105,9 @@ export function serialized<Q>(ask: (q: Q) => Promise<boolean>): (q: Q) => Promis
 export function hostConfirm(
   confirm: Confirm | undefined,
   voided: (req: ConfirmRequest) => boolean = () => false,
+  queue: AskQueue = askQueue(),
 ): Confirm {
   if (!confirm) return () => Promise.resolve(false);
-  const one = serialized((req: ConfirmRequest) =>
-    voided(req) ? Promise.resolve(false) : confirm(req),
-  );
-  return async (req) => (await one(req)) === true;
+  return async (req) =>
+    (await queue(() => (voided(req) ? Promise.resolve(false) : confirm(req)))) === true;
 }

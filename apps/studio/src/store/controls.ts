@@ -55,5 +55,15 @@ export function controlText(e: ControlEvent): string {
         node: nodeName(e),
         reason: clip(e.reason ?? t('control.noReason')),
       });
+    case 'node_disputed':
+      return t('control.disputed', {
+        node: nodeName(e),
+        reason: clip(e.reason ?? t('control.noReason')),
+      });
+    case 'dispute_resolved':
+      return t('control.disputeResolved', {
+        node: nodeName(e),
+        choice: typeof x.choice === 'string' ? clip(x.choice) : '—',
+      });
   }
 }

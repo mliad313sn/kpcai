@@ -2,8 +2,13 @@ export * from './protocol.js';
 export { Kernel } from './kernel.js';
 export { KernelError, type KernelErrorCode } from './errors.js';
 export {
+  askQueue,
+  hostChoose,
   hostConfirm,
   serialized,
+  type AskQueue,
+  type Choose,
+  type DisputeInfo,
   type Confirm,
   type ConfirmKind,
   type ConfirmRequest,
@@ -52,6 +57,35 @@ export {
   type RefusedArtifact,
 } from './artifacts.js';
 export { summarizeRules, withNodeContext, type LoadedRules, type RulesSummary } from './rules.js';
+export {
+  NO_MEMORY,
+  PROPOSAL_HINT,
+  REPO_MEMORY_FILE,
+  loadMemory,
+  memoryBudget,
+  memoryResolver,
+  memoryStore,
+  type LoadedMemory,
+  type MemorySummary,
+} from './memory.js';
+export {
+  KernelMemory,
+  memoryInfo,
+  type ExportResult,
+  type LayerRef,
+  type MemoryConfirmInfo,
+  type MemoryHost,
+} from './memory-service.js';
+export { MAX_PROPOSALS_PER_RUN, queueProposals } from './memory-proposals.js';
+export {
+  KernelLearning,
+  type GradeInput,
+  type GradeResult,
+  type LearningHost,
+} from './learning.js';
+export { KernelReplays, type NodeEdit, type ReplayHost } from './replay.js';
+export { disputeHook, disputeInfo, runDeps, type DepsInput, type RunDeps } from './run-deps.js';
+export { forPeople } from './queries.js';
 export {
   WT_SUFFIX,
   WorkspaceOps,
