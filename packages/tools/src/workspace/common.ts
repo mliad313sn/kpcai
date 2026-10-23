@@ -10,8 +10,13 @@ import {
   type GitToolOptions,
 } from '../builtins/git-exec.js';
 import type { ZoneFilter } from '../builtins/git-filter.js';
-import { matchesForbidden } from '../paths.js';
-import { DEFAULT_FORBIDDEN_PATHS } from '../policy.js';
+import {
+  DEFAULT_ZONES,
+  defaultCaseInsensitive,
+  inForbiddenZone,
+  zoneSetFromGlobs,
+  type ZoneSet,
+} from '../zones.js';
 import { stripControls } from '../text.js';
 import { ToolError } from '../types.js';
 
@@ -21,8 +26,10 @@ export interface WorkspaceOptions {
   git?: GitToolOptions;
   /** `$KPAI_HOME` (default: env KPAI_HOME, else ~/.kernelpai). */
   home?: string;
-  /** Forbidden globs (default: DEFAULT_FORBIDDEN_PATHS; pass the active policy's list). */
+  /** Forbidden globs (default: DEFAULT_FORBIDDEN_PATHS; the credential tier is always added). */
   forbiddenPaths?: readonly string[];
+  /** The effective zone set (the active policy's `zoneSet()`); wins over `forbiddenPaths`. */
+  zones?: ZoneSet;
   /** Case-insensitive zone matching (default: on Windows only). */
   caseInsensitive?: boolean;
   signal?: AbortSignal;
@@ -50,14 +57,13 @@ export function checkRunId(run: string): string {
 }
 
 export function zonesOf(opts: WorkspaceOptions): ZoneFilter {
-  return {
-    globs: opts.forbiddenPaths ?? DEFAULT_FORBIDDEN_PATHS,
-    caseInsensitive: opts.caseInsensitive ?? process.platform === 'win32',
-  };
+  if (opts.zones) return opts.zones;
+  const ci = opts.caseInsensitive ?? defaultCaseInsensitive();
+  return zoneSetFromGlobs(opts.forbiddenPaths ?? DEFAULT_ZONES, ci);
 }
 
 export function inZone(rel: string, zones: ZoneFilter): boolean {
-  return matchesForbidden(rel, zones.globs, zones.caseInsensitive);
+  return inForbiddenZone(rel, zones);
 }
 
 export function kpaiHome(opts: WorkspaceOptions): string {

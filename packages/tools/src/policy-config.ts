@@ -39,7 +39,7 @@ export async function loadPolicyConfig(kpaiHome: string): Promise<LoadedPolicy> 
   }
 }
 
-/** Defaults + policy.json + caller extras, as one graded policy. */
+/** Defaults + policy.json + caller extras (and pack zones), as one graded policy. */
 export function buildPolicy(
   config: PolicyConfig,
   extra: GradedPolicyOptions = {},
@@ -51,8 +51,8 @@ export function buildPolicy(
     }
   }
   return new GradedPermissionPolicy({
-    forbiddenPaths: [...config.forbiddenPaths, ...(extra.forbiddenPaths ?? [])],
+    ...extra,
+    policyForbiddenPaths: [...config.forbiddenPaths, ...(extra.policyForbiddenPaths ?? [])],
     denyByModel,
-    defaultForbiddenPaths: extra.defaultForbiddenPaths,
   });
 }

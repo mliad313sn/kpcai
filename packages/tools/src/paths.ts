@@ -167,6 +167,38 @@ export function globToRegExp(glob: string, caseInsensitive = false): RegExp {
   return new RegExp(`^${out}$`, caseInsensitive ? 'i' : '');
 }
 
+/** Segments of a root-relative path (`/` or `\\` separated), without empty and `.` parts. */
+export function relParts(rel: string): string[] {
+  return rel
+    .replace(/\\/g, '/')
+    .split('/')
+    .filter((s) => s !== '' && s !== '.');
+}
+
+/**
+ * Indices `i` at which a glob hits a path: segment `i` for a glob without `/`, else the
+ * prefix `parts[0..i]` (`x/**` also hits the folder `x` itself, so it cannot be listed).
+ */
+export function globHits(
+  parts: readonly string[],
+  glob: string,
+  caseInsensitive = process.platform === 'win32',
+): number[] {
+  const g = glob.replace(/\/+$/, '');
+  const re = globToRegExp(g, caseInsensitive);
+  const out: number[] = [];
+  if (!g.includes('/')) {
+    parts.forEach((s, i) => re.test(s) && out.push(i));
+    return out;
+  }
+  const base = g.endsWith('/**') ? globToRegExp(g.slice(0, -3), caseInsensitive) : undefined;
+  for (let i = 0; i < parts.length; i++) {
+    const p = parts.slice(0, i + 1).join('/');
+    if (re.test(p) || base?.test(p) === true) out.push(i);
+  }
+  return out;
+}
+
 /**
  * True when the root-relative path (or one of its parent directories) matches a
  * forbidden glob. A glob without `/` matches a single segment at any depth.
@@ -177,17 +209,6 @@ export function matchesForbidden(
   caseInsensitive = process.platform === 'win32',
 ): boolean {
   if (globs.length === 0) return false;
-  const parts = rel
-    .replace(/\\/g, '/')
-    .split('/')
-    .filter((s) => s !== '' && s !== '.');
-  const prefixes = parts.map((_, i) => parts.slice(0, i + 1).join('/'));
-  return globs.some((glob) => {
-    const g = glob.replace(/\/+$/, '');
-    const re = globToRegExp(g, caseInsensitive);
-    if (!g.includes('/')) return parts.some((s) => re.test(s));
-    // `x/**` also covers the folder `x` itself (so it cannot even be listed).
-    const base = g.endsWith('/**') ? globToRegExp(g.slice(0, -3), caseInsensitive) : undefined;
-    return prefixes.some((p) => re.test(p) || base?.test(p) === true);
-  });
+  const parts = relParts(rel);
+  return globs.some((glob) => globHits(parts, glob, caseInsensitive).length > 0);
 }

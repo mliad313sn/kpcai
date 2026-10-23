@@ -159,7 +159,7 @@ export async function mergeBack(
 ): Promise<MergeResult> {
   const d = await diffRunWorktree(root, runId, opts);
   if (d.diff.trim() === '') return { applied: false, files: [], omitted: d.omitted };
-  const tool = gitApplyTool({ ...opts.git, forbiddenPaths: zonesOf(opts).globs });
+  const tool = gitApplyTool({ ...opts.git, zones: zonesOf(opts) });
   const ctx = { ...gate.ctx, root, signal: opts.signal ?? gate.ctx.signal };
   const input = { patch: d.diff };
   const prepared = await (tool.prepare as NonNullable<typeof tool.prepare>)(input, ctx);

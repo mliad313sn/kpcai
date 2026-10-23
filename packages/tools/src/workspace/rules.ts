@@ -39,7 +39,10 @@ export interface RepoRules {
   totalBytes: number;
 }
 
-export interface RulesOptions extends Pick<WorkspaceOptions, 'forbiddenPaths' | 'caseInsensitive'> {
+export interface RulesOptions extends Pick<
+  WorkspaceOptions,
+  'forbiddenPaths' | 'caseInsensitive' | 'zones'
+> {
   /** Directory the run works in, for nearest-first order (default: the root). */
   dir?: string;
   maxFileBytes?: number;

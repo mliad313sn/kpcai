@@ -234,6 +234,8 @@ export class LocalToolBus implements ToolBus {
       result: summarize(redact(outcome.content, this.secrets)),
     };
     if (trace.reason) payload.reason = stripControls(trace.reason).slice(0, 500);
+    const relaxed = this.relaxedZones(trace);
+    if (relaxed.length > 0) payload.relaxedZones = relaxed;
     if (outcome.meta) payload.meta = outcome.meta;
     try {
       this.journal.append({
@@ -246,6 +248,17 @@ export class LocalToolBus implements ToolBus {
       });
     } catch {
       // A journal failure must not turn into a thrown tool call.
+    }
+  }
+
+  /** Paths this permitted call reached only through an approved pack relaxation. */
+  private relaxedZones(trace: Trace): unknown[] {
+    if (trace.decision !== 'allow' && trace.decision !== 'confirmed') return [];
+    if (!isConfirmAware(this.policy) || !this.policy.relaxedPaths) return [];
+    try {
+      return redactDeep(this.policy.relaxedPaths(trace.call, trace.ctx), this.secrets) as unknown[];
+    } catch {
+      return [];
     }
   }
 }

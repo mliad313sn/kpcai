@@ -5,7 +5,10 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { LocalToolBus } from '../bus.js';
 import { createToolBus } from '../create.js';
 import { call, makeCtx, tempDir } from '../test-helpers/ctx.js';
-import { excludePathspecs, filterDiff, filterStatus } from './git-filter.js';
+import type { ZoneSet } from '../zones.js';
+import { zoneSetFromGlobs } from '../zones.js';
+import { DEFAULT_ZONES, inForbiddenZone } from '../zones.js';
+import { envCredentialGlobs, excludePathspecs, filterDiff, filterStatus } from './git-filter.js';
 import { gitTools } from './git.js';
 
 function git(cwd: string, ...args: string[]): string {
@@ -48,7 +51,7 @@ describe('forbidden zones stay out of git output (N2)', () => {
     expect(status.content).not.toMatch(/secrets\.yml|\.env/);
   });
 
-  it('uses the active policy (policy.json) and can be turned off explicitly', async () => {
+  it('uses the active policy (policy.json); an empty list still hides credentials', async () => {
     const { dir: home, cleanup: rmHome } = await tempDir();
     try {
       await writeFile(
@@ -63,11 +66,12 @@ describe('forbidden zones stay out of git output (N2)', () => {
     }
     const open = new LocalToolBus({ tools: gitTools({ forbiddenPaths: [] }) });
     const r = await open.call(call('git.diff', {}), makeCtx(root));
-    expect(r.content).toContain('hunter2-prod');
+    expect(r.content).toContain('+port: 2');
+    expect(r.content).not.toMatch(/hunter2-prod|supersecret/);
   });
 
   it('defence in depth: drops forbidden sections and status lines from raw output', () => {
-    const zones = { globs: ['.env', '**/*secret*'], caseInsensitive: false };
+    const zones = zoneSetFromGlobs(['.env', '**/*secret*'], false);
     const diff = [
       'diff --git a/.env b/.env',
       '+X=supersecret',
@@ -85,8 +89,9 @@ describe('forbidden zones stay out of git output (N2)', () => {
     expect(filterStatus(status, zones)).toBe(
       '## main\n M src/a.ts\n[2 entries in forbidden zones omitted]\n',
     );
-    expect(filterDiff(diff, { globs: [], caseInsensitive: false })).toBe(diff);
-    expect(filterStatus(status, { globs: [], caseInsensitive: false })).toBe(status);
+    const none: ZoneSet = { entries: [], relaxed: [], caseInsensitive: false };
+    expect(filterDiff(diff, none)).toBe(diff);
+    expect(filterStatus(status, none)).toBe(status);
   });
 
   it('hides files under a forbidden directory even with diff.noprefix or mnemonicPrefix (NF-1)', async () => {
@@ -106,7 +111,7 @@ describe('forbidden zones stay out of git output (N2)', () => {
   });
 
   it('fails closed on a diff header it cannot parse', () => {
-    const zones = { globs: ['.env'], caseInsensitive: false };
+    const zones = zoneSetFromGlobs([], false);
     const out = filterDiff('diff --git weird header\n+leak\n', zones);
     expect(out).not.toContain('+leak');
     expect(out).toContain('1 entry in forbidden zones omitted');
@@ -131,7 +136,12 @@ describe('forbidden zones stay out of git output (N2)', () => {
   it('turns globs into git exclude pathspecs', () => {
     expect(
       excludePathspecs({
-        globs: ['.env', 'secrets/', 'private/**', 'a/b.txt', ''],
+        entries: ['.env', 'secrets/', 'private/**', 'a/b.txt', ''].map((glob) => ({
+          glob,
+          tier: 'added' as const,
+          origin: 'caller' as const,
+        })),
+        relaxed: [],
         caseInsensitive: true,
       }),
     ).toEqual([
@@ -144,6 +154,62 @@ describe('forbidden zones stay out of git output (N2)', () => {
       ':(exclude,glob,icase)a/b.txt',
       ':(exclude,glob,icase)a/b.txt/**',
     ]);
+  });
+});
+
+describe('git pathspecs match the zone decision exactly', () => {
+  const NAMES = [
+    '.env',
+    '.env.',
+    '.env.e',
+    '.env.exampl',
+    '.env.example',
+    '.env.examplex',
+    '.env.exbmple',
+    '.env.sample',
+    '.env.samples',
+    '.env.template',
+    '.env.templat',
+    '.env.local',
+    '.env.production',
+    '.env.Example',
+    '.env.SAMPLE',
+    '.env.dist',
+    'notes.md',
+  ];
+
+  it.each([false, true])('for every .env name (caseInsensitive %s)', async (ci) => {
+    const { dir, cleanup } = await tempDir();
+    try {
+      git(dir, 'init', '-q');
+      await mkdir(path.join(dir, 'sub'));
+      for (const n of NAMES) {
+        await writeFile(path.join(dir, n), 'x\n');
+        await writeFile(path.join(dir, 'sub', n), 'x\n');
+      }
+      const zones = zoneSetFromGlobs(DEFAULT_ZONES, ci);
+      const out = git(dir, 'ls-files', '-o', '--', '.', ...excludePathspecs(zones));
+      const listed = new Set(out.split('\n').filter(Boolean));
+      for (const n of NAMES) {
+        for (const p of [n, `sub/${n}`]) {
+          expect(listed.has(p), `${p} (ci ${ci})`).toBe(!inForbiddenZone(p, zones));
+        }
+      }
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('keeps credential pathspecs while a relaxation drops the heuristic ones', () => {
+    const zones = { ...zoneSetFromGlobs(DEFAULT_ZONES, false) };
+    const relaxed = { ...zones, relaxed: [{ pack: 'p', allow: 'detections/**', reason: 'r' }] };
+    const before = excludePathspecs(zones);
+    const after = excludePathspecs(relaxed);
+    expect(before).toContain(':(exclude,glob)**/*secret*');
+    expect(after).not.toContain(':(exclude,glob)**/*secret*');
+    expect(after).toContain(':(exclude,glob)**/id_rsa*');
+    expect(after).toContain(':(exclude,glob)**/.env');
+    expect(envCredentialGlobs()).toContain('.env.[!est]*');
   });
 });
 

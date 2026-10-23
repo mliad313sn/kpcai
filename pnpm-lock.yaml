@@ -302,6 +302,9 @@ importers:
       '@kernelpai/journal':
         specifier: workspace:*
         version: link:../journal
+      '@kernelpai/packs':
+        specifier: workspace:*
+        version: link:../packs
       '@modelcontextprotocol/client':
         specifier: ^2.3.1
         version: 2.3.1

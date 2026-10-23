@@ -8,6 +8,7 @@ import { redact } from './env.js';
 import { DEFAULT_FORBIDDEN_PATHS, GradedPermissionPolicy } from './policy.js';
 import { buildPolicy, loadPolicyConfig } from './policy-config.js';
 import { call, makeCtx, tempDir } from './test-helpers/ctx.js';
+import { CREDENTIAL_ZONES } from './zones.js';
 
 describe('default forbidden paths (P2-F10)', () => {
   const policy = new GradedPermissionPolicy();
@@ -33,11 +34,11 @@ describe('default forbidden paths (P2-F10)', () => {
     expect(r.content).toMatch(/forbidden zone/);
   });
 
-  it('leaves ordinary files alone and can be switched off', async () => {
+  it('leaves ordinary files alone; only the name heuristics can be switched off', async () => {
     const r = await bus.call(call('fs.read', { path: 'src/env.ts' }), makeCtx('/ws'));
     expect(r.content).not.toMatch(/forbidden zone/);
     const off = new GradedPermissionPolicy({ defaultForbiddenPaths: false });
-    expect(off.describe().forbiddenPaths).toEqual([]);
+    expect(off.describe().forbiddenPaths).toEqual([...CREDENTIAL_ZONES]);
     expect(policy.describe().forbiddenPaths).toEqual([...DEFAULT_FORBIDDEN_PATHS]);
   });
 });

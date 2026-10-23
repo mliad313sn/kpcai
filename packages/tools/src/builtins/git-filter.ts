@@ -1,15 +1,18 @@
-import { matchesForbidden } from '../paths.js';
+import { ENV_TEMPLATES, inForbiddenZone, type ZoneSet } from '../zones.js';
 
 /**
- * Keeps forbidden zones out of git read-tool output (review N2): the same globs
- * that make `fs.read` refuse `.env` also hide it from `git diff/status`.
+ * Keeps forbidden zones out of git read-tool output (review N2): the same zone set
+ * that makes `fs.read` refuse `.env` also hides it from `git diff/status`.
  * Primary: `:(exclude,glob)` pathspecs. Defence in depth: output sections or
  * lines naming a forbidden path are dropped and counted.
+ *
+ * Git cannot read files here, so `*.key` stays name-based (a Keynote document is
+ * hidden from git output, which would only say "Binary files differ" anyway). While a
+ * pack relaxation is in force the heuristic globs are not passed as pathspecs (git has
+ * no "except under" form); the output filter, which knows the relaxation, drops them.
+ * Credential and added zones keep both layers at all times.
  */
-export interface ZoneFilter {
-  globs: readonly string[];
-  caseInsensitive: boolean;
-}
+export type ZoneFilter = ZoneSet;
 
 /**
  * Our glob → git `:(glob)` pathspecs. A glob without `/` matches a segment at any depth.
@@ -23,15 +26,41 @@ function gitGlobs(glob: string): string[] {
   return g.endsWith('/**') ? [g, g.slice(0, -3)] : [g, `${g}/**`];
 }
 
-/** `:(exclude,glob[,icase])<pattern>` for every forbidden glob. */
+/**
+ * `.env.*` minus the template names, as wildmatch segment globs: `.env.X` for every X
+ * that is not `example`, `sample` or `template` (`.env.`, `.env.[!est]*`, then for each
+ * word its proper prefixes, one-character deviations and longer forms).
+ */
+export function envCredentialGlobs(): string[] {
+  const words = ENV_TEMPLATES.map((t) => t.slice('.env.'.length));
+  const firsts = words.map((w) => w[0] as string);
+  if (new Set(firsts).size !== firsts.length || words.some((w) => !/^[a-z]+$/.test(w))) {
+    return ['.env.*']; // cannot express exactly: hide every `.env.*` (stricter)
+  }
+  const out = ['.env.', `.env.[!${firsts.join('')}]*`];
+  for (const w of words) {
+    for (let i = 1; i < w.length; i++)
+      out.push(`.env.${w.slice(0, i)}`, `.env.${w.slice(0, i)}[!${w[i]}]*`);
+    out.push(`.env.${w}?*`);
+  }
+  return out;
+}
+
+/** `:(exclude,glob[,icase])<pattern>` for every zone of the set (see above for heuristics). */
 export function excludePathspecs(zones: ZoneFilter): string[] {
   const magic = zones.caseInsensitive ? 'exclude,glob,icase' : 'exclude,glob';
-  return zones.globs.flatMap(gitGlobs).map((p) => `:(${magic})${p}`);
+  const relaxing = zones.relaxed.length > 0;
+  const globs = zones.entries
+    .filter((e) => !(relaxing && e.tier === 'heuristic'))
+    .flatMap((e) =>
+      e.tier === 'credential' && e.glob === '.env.*' ? envCredentialGlobs() : [e.glob],
+    );
+  return [...new Set(globs.flatMap(gitGlobs))].map((p) => `:(${magic})${p}`);
 }
 
 function forbidden(p: string, zones: ZoneFilter): boolean {
   const clean = p.replace(/^"|"$/g, '');
-  return matchesForbidden(clean, zones.globs, zones.caseInsensitive);
+  return inForbiddenZone(clean, zones);
 }
 
 function omitted(n: number): string {
@@ -43,7 +72,7 @@ function omitted(n: number): string {
  * whose header cannot be parsed is dropped too: fail closed (review NF-1).
  */
 export function filterDiff(out: string, zones: ZoneFilter): string {
-  if (zones.globs.length === 0) return out;
+  if (zones.entries.length === 0) return out;
   const parts = out.split(/^(?=diff --git )/m);
   let dropped = 0;
   const kept = parts.filter((part) => {
@@ -58,7 +87,7 @@ export function filterDiff(out: string, zones: ZoneFilter): string {
 
 /** Drops porcelain status lines (`XY path` / `XY old -> new`) naming a forbidden path. */
 export function filterStatus(out: string, zones: ZoneFilter): string {
-  if (zones.globs.length === 0) return out;
+  if (zones.entries.length === 0) return out;
   let dropped = 0;
   const kept = out.split('\n').filter((line) => {
     if (line.startsWith('## ') || line.length < 4) return true;

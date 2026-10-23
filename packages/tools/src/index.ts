@@ -38,6 +38,39 @@ export {
   type ActivePolicy,
 } from './policy.js';
 export {
+  CREDENTIAL_ZONES,
+  HEURISTIC_ZONES,
+  DEFAULT_ZONES,
+  ENV_TEMPLATES,
+  inForbiddenZone,
+  zoneHit,
+  zoneSetFromGlobs,
+  zoneGlobs,
+  tierOf,
+  type ZoneSet,
+  type ZoneEntry,
+  type ZoneTier,
+  type ZoneOrigin,
+  type ZoneRelaxation,
+  type KeyProbe,
+} from './zones.js';
+export {
+  buildZoneSet,
+  relaxationProblem,
+  CREDENTIAL_SAMPLES,
+  EMPTY_PACK_ZONES,
+  type PackZonePlan,
+  type ZoneSetInput,
+} from './zone-set.js';
+export {
+  planPackZones,
+  journalPackZones,
+  describePackZones,
+  relaxKey,
+  type PackZoneOptions,
+} from './pack-zones.js';
+export { keynoteProbe, KEYNOTE_SNIFF_BYTES } from './keynote.js';
+export {
   loadPolicyConfig,
   buildPolicy,
   PolicyConfigSchema,

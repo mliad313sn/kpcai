@@ -6,6 +6,7 @@ import type { ToolContext } from '@kernelpai/core';
 import { scrubEnv, type Env } from '../env.js';
 import { runProcess, type RunResult } from '../process.js';
 import { fail, ok, type ToolOutcome } from '../types.js';
+import type { ZoneSet } from '../zones.js';
 
 export interface GitApplyRules {
   /** Allow `GIT binary patch` / `Binary files … differ` sections (default false). */
@@ -23,9 +24,14 @@ export interface GitToolOptions {
   apply?: GitApplyRules;
   /**
    * Forbidden globs hidden from git.status/diff/log output (default:
-   * DEFAULT_FORBIDDEN_PATHS; createToolBus passes the active policy's list).
+   * DEFAULT_FORBIDDEN_PATHS). The credential tier is always added.
    */
   forbiddenPaths?: readonly string[];
+  /**
+   * The effective zone set (createToolBus passes the active policy's, with pack
+   * additions and relaxations). Wins over `forbiddenPaths` / `caseInsensitive`.
+   */
+  zones?: ZoneSet;
   /** Case-insensitive zone matching (default: on Windows only). */
   caseInsensitive?: boolean;
 }

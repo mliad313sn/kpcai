@@ -8,7 +8,19 @@ import {
   type ToolDefinition,
   type ToolRisk,
 } from '@kernelpai/core';
-import { canonicalSync, matchesForbidden, toPosixRel } from './paths.js';
+import { keynoteProbe } from './keynote.js';
+import { canonicalSync, toPosixRel } from './paths.js';
+import {
+  DEFAULT_ZONES,
+  defaultCaseInsensitive,
+  relaxationFor,
+  zoneGlobs,
+  zoneHit,
+  type ZoneEntry,
+  type ZoneRelaxation,
+  type ZoneSet,
+} from './zones.js';
+import { buildZoneSet, type PackZonePlan } from './zone-set.js';
 
 export interface GradedPolicyOptions {
   /**
@@ -16,37 +28,36 @@ export interface GradedPolicyOptions {
    * value: tool-name globs (`shell.*`, `mcp.github.*`, `*`).
    */
   denyByModel?: Readonly<Record<string, readonly string[]>>;
-  /** Forbidden path globs (spec §6, deepened in phase 6): any matching path is refused. */
+  /** Extra forbidden path globs from the caller (spec §6): any matching path is refused. */
   forbiddenPaths?: readonly string[];
-  /** Prepend {@link DEFAULT_FORBIDDEN_PATHS} (default true; principle 5). */
+  /** Forbidden path globs from `$KPAI_HOME/policy.json` (kept apart for their origin). */
+  policyForbiddenPaths?: readonly string[];
+  /** Zone additions and approved relaxations from the user's enabled packs (pack-zones.ts). */
+  packZones?: PackZonePlan;
+  /**
+   * Include the relaxable name heuristics (default true). The credential tier is
+   * always in force: nothing turns it off (principle 5, WI-S7-01).
+   */
   defaultForbiddenPaths?: boolean;
   /** Case-insensitive path matching (default: on Windows only). */
   caseInsensitive?: boolean;
 }
 
 /**
- * Credential files that never reach a model through a tool (review P2-F10).
+ * The default zones as one flat list: the immovable credential tier, then the two
+ * relaxable name heuristics (see zones.ts for both tiers and their exemptions).
  * A glob without `/` matches a path segment at any depth; `x/**` also matches `x`.
  */
-export const DEFAULT_FORBIDDEN_PATHS: readonly string[] = [
-  '.env',
-  '.env.*',
-  '*.pem',
-  '*.key',
-  'id_rsa*',
-  'id_ed25519*',
-  '**/.aws/**',
-  '**/.ssh/**',
-  '**/.gnupg/**',
-  '.npmrc',
-  '.netrc',
-  '**/credentials*',
-  '**/*secret*',
-];
+export const DEFAULT_FORBIDDEN_PATHS: readonly string[] = DEFAULT_ZONES;
 
 /** The policy in force, for `kpai tools` / the console to show. */
 export interface ActivePolicy {
+  /** Every forbidden glob in force (flat; see `zones` for tier and origin). */
   forbiddenPaths: string[];
+  /** Each zone with its tier (credential / heuristic / added) and origin. */
+  zones: ZoneEntry[];
+  /** Pack relaxations in force (heuristic tier only), each journaled when applied. */
+  relaxations: ZoneRelaxation[];
   denyByModel: Record<string, string[]>;
   /** Write confirmations are remembered per session + node + model + root. */
   batchScope: string;
@@ -57,6 +68,8 @@ export interface ConfirmAwarePolicy extends PermissionPolicy {
   confirmed(def: ToolDefinition, call: ToolCall, ctx: ToolContext): void;
   /** Why the last `deny` was decided for this call (journaled). */
   reason?(def: ToolDefinition, call: ToolCall, ctx: ToolContext): string | undefined;
+  /** Paths a permitted call reaches only through a pack relaxation (journaled). */
+  relaxedPaths?(call: ToolCall, ctx: ToolContext): { path: string; pack: string; allow: string }[];
 }
 
 export function isConfirmAware(p: PermissionPolicy): p is ConfirmAwarePolicy {
@@ -128,6 +141,12 @@ function relForms(root: string, p: string): string[] {
   return [toPosixRel(path.relative(base, abs)), real];
 }
 
+function zoneLabel(z: ZoneEntry): string {
+  if (z.tier === 'credential') return 'credential file, cannot be relaxed';
+  const from = z.origin === 'default' ? 'default name heuristic' : `added by ${z.origin}`;
+  return z.tier === 'heuristic' ? `${from} ${z.glob}; a domain pack can exempt a folder` : from;
+}
+
 /** Tool-name glob: `*` matches any run of characters, dots included (`mcp.github.*`). */
 function toolGlob(glob: string): RegExp {
   const body = glob.split('*').map((s) => s.replace(/[|{}()[\]^$+?.\\]/g, '\\$&'));
@@ -152,8 +171,7 @@ export class GradedPermissionPolicy implements ConfirmAwarePolicy {
   private readonly trusted = new Set<string>();
   private readonly batches = new Set<string>();
   private readonly deny: { model: string; globs: string[]; tools: RegExp[] }[];
-  private readonly forbidden: readonly string[];
-  private readonly icase: boolean;
+  private readonly zones: ZoneSet;
 
   constructor(options: GradedPolicyOptions = {}) {
     this.deny = Object.entries(options.denyByModel ?? {}).map(([model, tools]) => ({
@@ -161,14 +179,25 @@ export class GradedPermissionPolicy implements ConfirmAwarePolicy {
       globs: [...tools],
       tools: tools.map(toolGlob),
     }));
-    const defaults = options.defaultForbiddenPaths === false ? [] : DEFAULT_FORBIDDEN_PATHS;
-    this.forbidden = [...new Set([...defaults, ...(options.forbiddenPaths ?? [])])];
-    this.icase = options.caseInsensitive ?? process.platform === 'win32';
+    this.zones = buildZoneSet({
+      heuristics: options.defaultForbiddenPaths !== false,
+      policyPaths: options.policyForbiddenPaths ?? [],
+      callerPaths: options.forbiddenPaths ?? [],
+      packs: options.packZones,
+      caseInsensitive: options.caseInsensitive ?? defaultCaseInsensitive(),
+    });
+  }
+
+  /** The effective zones, shared with the git tools and workspace helpers. */
+  zoneSet(): ZoneSet {
+    return this.zones;
   }
 
   describe(): ActivePolicy {
     return {
-      forbiddenPaths: [...this.forbidden],
+      forbiddenPaths: zoneGlobs(this.zones),
+      zones: this.zones.entries.map((e) => ({ ...e })),
+      relaxations: this.zones.relaxed.map((r) => ({ ...r })),
       denyByModel: Object.fromEntries(this.deny.map((d) => [d.model, [...d.globs]])),
       batchScope: 'session + node + model + root',
     };
@@ -186,10 +215,26 @@ export class GradedPermissionPolicy implements ConfirmAwarePolicy {
     if (this.modelDenied(def.name, refToString(ctx.model))) {
       return `tool ${def.name} is denied for model ${refToString(ctx.model)}`;
     }
-    const hit = pathsInCall(call).find((p) =>
-      relForms(ctx.root, p).some((rel) => matchesForbidden(rel, this.forbidden, this.icase)),
-    );
-    return hit === undefined ? undefined : `path is in a forbidden zone: ${hit}`;
+    const probe = keynoteProbe(ctx.root);
+    for (const p of pathsInCall(call)) {
+      for (const rel of relForms(ctx.root, p)) {
+        const z = zoneHit(rel, this.zones, probe);
+        if (z !== undefined) return `path is in a forbidden zone: ${p} (${zoneLabel(z)})`;
+      }
+    }
+    return undefined;
+  }
+
+  /** Paths of a permitted call that only an approved pack relaxation let through (journaled). */
+  relaxedPaths(call: ToolCall, ctx: ToolContext): { path: string; pack: string; allow: string }[] {
+    const out: { path: string; pack: string; allow: string }[] = [];
+    for (const p of pathsInCall(call)) {
+      const r = relForms(ctx.root, p)
+        .map((rel) => relaxationFor(rel, this.zones))
+        .find((x) => x !== undefined);
+      if (r) out.push({ path: p, pack: r.pack, allow: r.allow });
+    }
+    return out;
   }
 
   trust(scope: { sessionId: string; root: string; risk: Exclude<ToolRisk, 'destructive'> }): void {

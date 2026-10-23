@@ -2,7 +2,7 @@ import type { ToolContext } from '@kernelpai/core';
 import { resolveInRoot } from '../paths.js';
 import type { LocalTool } from '../types.js';
 import { gitApplyTool } from './git-apply.js';
-import { DEFAULT_FORBIDDEN_PATHS } from '../policy.js';
+import { DEFAULT_ZONES, defaultCaseInsensitive, zoneSetFromGlobs } from '../zones.js';
 import { git, outcome, type GitToolOptions } from './git-exec.js';
 import { excludePathspecs, filterDiff, filterStatus, type ZoneFilter } from './git-filter.js';
 
@@ -18,11 +18,11 @@ async function pathspecs(ctx: ToolContext, p: unknown, zones: ZoneFilter): Promi
   return ['--', base, ...excludePathspecs(zones)];
 }
 
-function zonesOf(opts: GitToolOptions): ZoneFilter {
-  return {
-    globs: opts.forbiddenPaths ?? DEFAULT_FORBIDDEN_PATHS,
-    caseInsensitive: opts.caseInsensitive ?? process.platform === 'win32',
-  };
+/** The zone set to hide: `zones` as given, else one built from `forbiddenPaths` (credentials always in). */
+export function gitZones(opts: GitToolOptions): ZoneFilter {
+  if (opts.zones) return opts.zones;
+  const ci = opts.caseInsensitive ?? defaultCaseInsensitive();
+  return zoneSetFromGlobs(opts.forbiddenPaths ?? DEFAULT_ZONES, ci);
 }
 
 /** `outcome`, with forbidden-zone entries dropped from successful output. */
@@ -44,7 +44,7 @@ const def = (name: string, description: string, properties: Record<string, unkno
 });
 
 function readTools(opts: GitToolOptions): LocalTool[] {
-  const zones = zonesOf(opts);
+  const zones = gitZones(opts);
   return [
     {
       def: def('git.status', 'Show the working tree status (porcelain, with branch).', {}),
