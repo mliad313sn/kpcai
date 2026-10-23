@@ -17,6 +17,7 @@ export default defineConfig({
       '@kernelpai/kernel/protocol': src('./packages/kernel/src/protocol.ts'),
       '@kernelpai/kernel': src('./packages/kernel/src/index.ts'),
       '@kernelpai/orchestrator': src('./packages/orchestrator/src/index.ts'),
+      '@kernelpai/learning': src('./packages/learning/src/index.ts'),
       '@kernelpai/server': src('./packages/server/src/index.ts'),
     },
   },

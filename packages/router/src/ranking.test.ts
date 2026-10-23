@@ -32,7 +32,8 @@ describe('CompetenceRouter weights', () => {
     const r = new CompetenceRouter({ measured });
     const d = r.route(node(), pool);
     expect(refToString(d.chosen.ref)).toBe('a/m');
-    expect(d.chosen.parts.measuredCompetence).toBe(1);
+    // Blended and bounded (ADR-0028): 0.6 + min(0.3, 50/60 · 0.4) = 0.9.
+    expect(d.chosen.parts.measuredCompetence).toBeCloseTo(0.9);
     expect(d.reason).toContain('measured competence');
   });
 

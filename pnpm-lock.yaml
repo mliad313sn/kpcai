@@ -255,6 +255,22 @@ importers:
         specifier: ^4.1.0
         version: 4.6.7
 
+  packages/learning:
+    dependencies:
+      '@kernelpai/core':
+        specifier: workspace:*
+        version: link:../core
+      '@kernelpai/journal':
+        specifier: workspace:*
+        version: link:../journal
+      '@kernelpai/orchestrator':
+        specifier: workspace:*
+        version: link:../orchestrator
+    devDependencies:
+      '@kernelpai/router':
+        specifier: workspace:*
+        version: link:../router
+
   packages/orchestrator:
     dependencies:
       '@kernelpai/budget':

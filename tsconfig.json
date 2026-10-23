@@ -29,6 +29,9 @@
       "path": "packages/orchestrator"
     },
     {
+      "path": "packages/learning"
+    },
+    {
       "path": "packages/kernel"
     },
     {

@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
+  MAX_MEASURED_SHIFT,
+  MIN_MEASURED_SAMPLES,
   blendMeasured,
+  measuredInForce,
   contributions,
   costPenalty,
   latencyPenalty,
@@ -44,10 +47,23 @@ describe('blendMeasured', () => {
   });
   it('weighs measured and prior equally at 10 samples and trusts many samples', () => {
     expect(blendMeasured(0.4, { score: 0.8, samples: 10 })).toBeCloseTo(0.6);
-    expect(blendMeasured(0.4, { score: 0.8, samples: 990 })).toBeCloseTo(0.796);
+    expect(blendMeasured(0.4, { score: 0.6, samples: 990 })).toBeCloseTo(0.598);
+  });
+  it('ignores measured competence below the minimum sample count', () => {
+    expect(blendMeasured(0.4, { score: 1, samples: MIN_MEASURED_SAMPLES - 1 })).toBe(0.4);
+    expect(blendMeasured(0.4, { score: 1, samples: MIN_MEASURED_SAMPLES })).toBeGreaterThan(0.4);
+  });
+  it('bounds the shift from the prior, however strong the evidence', () => {
+    expect(blendMeasured(0.4, { score: 1, samples: 10_000 })).toBeCloseTo(0.4 + MAX_MEASURED_SHIFT);
+    expect(blendMeasured(0.9, { score: 0, samples: 10_000 })).toBeCloseTo(0.9 - MAX_MEASURED_SHIFT);
+    // one more graded task moves the term by at most the cap, never flips it
+    const a = blendMeasured(0.5, { score: 0.9, samples: 20 });
+    const b = blendMeasured(0.5, { score: 0.9 * (20 / 21), samples: 21 });
+    expect(Math.abs(a - b)).toBeLessThan(0.05);
   });
   it('clamps out-of-range measured scores', () => {
-    expect(blendMeasured(0, { score: 5, samples: 10 })).toBeCloseTo(0.5);
+    expect(blendMeasured(0, { score: 5, samples: 10 })).toBeCloseTo(MAX_MEASURED_SHIFT);
+    expect(measuredInForce(undefined)).toBe(false);
   });
 });
 
@@ -78,7 +94,8 @@ describe('scoreParts / contributions', () => {
     });
     expect(parts).toEqual({
       staticCompetence: 0.8,
-      measuredCompetence: 0.6,
+      // the blended term: 0.8 + 0.5 · (0.6 − 0.8)
+      measuredCompetence: 0.7,
       costPenalty: 0.25,
       latencyPenalty: 0.25,
     });

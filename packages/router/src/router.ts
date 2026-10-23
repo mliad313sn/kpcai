@@ -23,7 +23,14 @@ import {
   type PreparedConstraints,
 } from './filters.js';
 import { SCORE_EPSILON, explain } from './reason.js';
-import { contributions, scoreParts, sumContributions, type Contributions } from './score.js';
+import {
+  contributions,
+  measuredInForce,
+  scoreParts,
+  sumContributions,
+  type Contributions,
+  type MeasuredSample,
+} from './score.js';
 import { weightsFor } from './weights.js';
 
 export interface CompetenceRouterOptions {
@@ -75,6 +82,8 @@ interface Survivor {
 interface Ranked {
   scored: ScoredCandidate;
   parts: Contributions;
+  /** The measured evidence behind the score, when it is in force. */
+  evidence?: string;
 }
 
 /** Spec §5.3 competence router: filter, score, rank, explain in one line. */
@@ -121,6 +130,7 @@ export class CompetenceRouter implements Router {
       chosenParts: first.parts,
       runnerUp: second,
       rejected: rejected.length,
+      evidence: first.evidence,
     });
     return {
       nodeId: node.id,
@@ -168,7 +178,7 @@ export class CompetenceRouter implements Router {
 
   private score(node: TaskNode, s: Survivor, budgetUsd: number, maxLatencyMs: number): Ranked {
     const { ref, card } = s.cand;
-    const measured = this.measured?.get(ref, node.type);
+    const measured: MeasuredSample = this.measured?.get(ref, node.type);
     const parts = scoreParts({
       card,
       type: node.type,
@@ -179,7 +189,9 @@ export class CompetenceRouter implements Router {
     });
     const contrib = contributions(parts, this.weights, measured);
     const score = sumContributions(contrib);
-    return { scored: { ref, score, parts, estimate: s.estimate }, parts: contrib };
+    const ranked: Ranked = { scored: { ref, score, parts, estimate: s.estimate }, parts: contrib };
+    if (measuredInForce(measured) && measured.evidence) ranked.evidence = measured.evidence;
+    return ranked;
   }
 }
 
