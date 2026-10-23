@@ -8,11 +8,15 @@ import {
   type Planner,
   type TaskGraph,
   type TaskNode,
+  type TaskType,
 } from '@kernelpai/core';
 import { FallbackExecutor } from '@kernelpai/executor';
+import type { Pack } from '@kernelpai/packs';
 import { extractJson } from '../parse.js';
 import type { BudgetHook, OrchestratorOptions } from '../types.js';
 import { graphProblems } from '../validate.js';
+import type { PlannedNode } from '../types.js';
+import { proposedTypeAliases } from './packs.js';
 import { DEFAULT_CODE_TOOLS, TemplatePlanner } from './template.js';
 
 export const MAX_PLAN_NODES = 12;
@@ -49,14 +53,22 @@ export interface ModelPlannerOptions {
   /** Tools a model plan may give a node (others are dropped); default read-only code tools. */
   allowedTools?: readonly string[];
   newId?: () => string;
+  /**
+   * Active domain packs: their `proposedTaskTypes` are offered to the model and mapped
+   * onto core types via `mapsTo` (kept as `proposedType`); the default fallback is a
+   * `TemplatePlanner` with the same packs.
+   */
+  packs?: readonly Pack[];
 }
 
-export function plannerPrompt(request: string): string {
+export function plannerPrompt(request: string, extraTypes: readonly string[] = []): string {
+  const types = ['analysis', 'code_generation', 'writing', 'research', 'test', 'critique'];
+  types.push('decision', ...extraTypes);
   return [
     'Role: planner',
     `Split the request into a small task graph of at most ${MAX_PLAN_NODES} nodes. Use "critical" for security-sensitive work.`,
     'Reply with only a JSON object:',
-    '{"reason": "...", "nodes": [{"id": "impl", "title": "...", "type": "analysis|code_generation|writing|research|test|critique|decision", "protocol": "solo|author_critic|debate|vote", "dependsOn": ["other-id"], "criticality": "low|normal|critical", "prompt": "what this node must do", "tools": ["fs.read"]}]}',
+    `{"reason": "...", "nodes": [{"id": "impl", "title": "...", "type": "${types.join('|')}", "protocol": "solo|author_critic|debate|vote", "dependsOn": ["other-id"], "criticality": "low|normal|critical", "prompt": "what this node must do", "tools": ["fs.read"]}]}`,
     '',
     'Request:',
     request,
@@ -72,6 +84,7 @@ export function plannerPrompt(request: string): string {
 export class ModelPlanner implements Planner {
   private readonly executor: FallbackExecutor;
   private readonly fallback: Planner;
+  private readonly aliases: ReadonlyMap<string, TaskType>;
 
   constructor(
     private readonly deps: PlannerDeps,
@@ -81,17 +94,20 @@ export class ModelPlanner implements Planner {
       throw new TypeError('ModelPlanner needs a budget hook (principle 6)');
     }
     this.executor = new FallbackExecutor(deps.resolve, deps.journal, deps.executor);
-    this.fallback = options.fallback ?? new TemplatePlanner();
+    this.fallback =
+      options.fallback ?? new TemplatePlanner(options.packs ? { packs: options.packs } : {});
+    this.aliases = proposedTypeAliases(options.packs ?? []);
   }
 
   async plan(request: string, ctx: PlanContext): Promise<TaskGraph> {
     let text: string;
     try {
-      text = await this.ask(request, ctx);
+      text = await this.ask(plannerPrompt(request, [...this.aliases.keys()]), ctx);
     } catch (err) {
       return this.fallBack(request, ctx, err instanceof Error ? err.message : String(err));
     }
-    const parsed = parsePlan(text, request, this.options.allowedTools ?? DEFAULT_CODE_TOOLS);
+    const tools = this.options.allowedTools ?? DEFAULT_CODE_TOOLS;
+    const parsed = parsePlan(text, request, tools, this.aliases);
     if (!parsed.ok) return this.fallBack(request, ctx, parsed.error);
     return {
       id: this.options.newId?.() ?? randomUUID(),
@@ -102,12 +118,12 @@ export class ModelPlanner implements Planner {
     };
   }
 
-  private async ask(request: string, ctx: PlanContext): Promise<string> {
+  private async ask(prompt: string, ctx: PlanContext): Promise<string> {
     const node: TaskNode = {
       id: 'plan',
       type: 'decision',
       criticality: 'normal',
-      messages: [{ role: 'user', content: plannerPrompt(request) }],
+      messages: [{ role: 'user', content: prompt }],
     };
     const d = this.deps.router.route(node, this.deps.candidates, this.deps.constraints ?? {});
     const { journal, sessionId } = this.deps;
@@ -145,10 +161,38 @@ export class ModelPlanner implements Planner {
 
 type Parsed = { ok: true; nodes: GraphNode[]; reason: string } | { ok: false; error: string };
 
-/** Validates a planner reply into graph nodes; each node's prompt carries the original request. */
-export function parsePlan(text: string, request: string, allowedTools: readonly string[]): Parsed {
+/**
+ * Pack-proposed type names in a raw plan become their core type (`mapsTo`); the proposed
+ * name is returned by node index.
+ */
+function mapTypes(json: unknown, aliases: ReadonlyMap<string, TaskType>): Map<number, string> {
+  const proposed = new Map<number, string>();
+  const nodes = (json as { nodes?: unknown } | null)?.nodes;
+  if (aliases.size === 0 || !Array.isArray(nodes)) return proposed;
+  nodes.forEach((n: unknown, i) => {
+    const node = n as { type?: unknown } | null;
+    const core = typeof node?.type === 'string' ? aliases.get(node.type) : undefined;
+    if (node && core) {
+      proposed.set(i, node.type as string);
+      node.type = core;
+    }
+  });
+  return proposed;
+}
+
+/**
+ * Validates a planner reply into graph nodes; each node's prompt carries the original
+ * request. `aliases` maps pack-proposed type names onto core types.
+ */
+export function parsePlan(
+  text: string,
+  request: string,
+  allowedTools: readonly string[],
+  aliases: ReadonlyMap<string, TaskType> = new Map(),
+): Parsed {
   const json = extractJson(text);
   if (json === undefined) return { ok: false, error: 'no JSON object in the reply' };
+  const proposed = mapTypes(json, aliases);
   const p = PlanSchema.safeParse(json);
   if (!p.success) {
     const first = p.error.issues[0];
@@ -161,7 +205,7 @@ export function parsePlan(text: string, request: string, allowedTools: readonly 
     return { ok: false, error: `${p.data.nodes.length} nodes (max ${MAX_PLAN_NODES})` };
   }
   const allowed = new Set(allowedTools);
-  const nodes: GraphNode[] = p.data.nodes.map((n) => ({
+  const nodes: PlannedNode[] = p.data.nodes.map((n, i) => ({
     id: n.id,
     title: n.title,
     type: n.type,
@@ -170,6 +214,7 @@ export function parsePlan(text: string, request: string, allowedTools: readonly 
     criticality: n.criticality,
     messages: [{ role: 'user', content: `${n.prompt}\n\nOverall request:\n${request}` }],
     ...(n.tools ? { tools: n.tools.filter((t) => allowed.has(t)) } : {}),
+    ...(proposed.has(i) ? { proposedType: proposed.get(i) as string } : {}),
   }));
   const problems = graphProblems(nodes);
   if (problems.length > 0) return { ok: false, error: problems.join('; ') };

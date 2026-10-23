@@ -1,4 +1,36 @@
-export { GraphRunner, effectiveProtocol, upgradeReason, type RunOptions } from './runner.js';
+export {
+  GraphRunner,
+  effectiveProtocol,
+  upgradeReason,
+  type RunOptions,
+  type RunResult,
+} from './runner.js';
+export {
+  DELIVERABLES,
+  MAX_ARTIFACTS_PER_NODE,
+  MAX_ARTIFACT_BYTES,
+  deliverableOf,
+  deliverablePrompt,
+  extractArtifacts,
+  fencedBlocks,
+  isDeliverable,
+  mediaTypeOf,
+  safeArtifactPath,
+  shapeOf,
+  type ArtifactKind,
+  type ArtifactShape,
+  type Deliverable,
+  type ExtractedArtifact,
+  type NodeDeliverable,
+  type RefusedBlock,
+} from './deliverable.js';
+export { ScopeError, checkRunScope, scopePayloads, type ScopeCheck } from './scope-gate.js';
+export {
+  MAX_CRITERION_CHARS,
+  MAX_GUIDANCE_CHARS,
+  MAX_REVIEW_CRITERIA,
+  MAX_SCOPE_CHARS,
+} from './prompts.js';
 export {
   MAX_INSTRUCTION_CHARS,
   withInstruction,
@@ -45,6 +77,16 @@ export {
   type RequestKind,
   type TemplatePlannerOptions,
 } from './planner/template.js';
+export {
+  domainPackPlan,
+  genericPackPlan,
+  packCriticality,
+  proposedTypeAliases,
+  proposedTypeFor,
+  resolveTaskType,
+  type PackPlan,
+  type ResolvedTaskType,
+} from './planner/packs.js';
 export {
   ModelPlanner,
   MAX_PLAN_NODES,

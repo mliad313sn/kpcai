@@ -13,6 +13,7 @@ import type {
 } from '@kernelpai/core';
 import type { AdapterResolver, FallbackExecutorOptions } from '@kernelpai/executor';
 import type { Journal } from '@kernelpai/journal';
+import type { Deliverable } from './deliverable.js';
 
 /**
  * Spend gate called before every model step and every fallback (principle 6), with the
@@ -75,6 +76,28 @@ export interface OrchestratorOptions {
  */
 export interface PlannedNode extends GraphNode {
   model?: ModelRef;
+  /**
+   * What the node hands back (orchestrator-local until core has it, WI-S1-02). Absent:
+   * `patch` for code and tests, else `answer` (`deliverableOf`). A non-patch node is asked
+   * for that artifact, and the run result carries what was extracted (`NodeDeliverable`).
+   */
+  deliverable?: Deliverable;
+  /** Id of the domain pack whose plan hint produced the node. */
+  pack?: string;
+  /**
+   * The pack's instruction for this node. Pack files may come from users or the community:
+   * it is untrusted data, capped and quoted in prompts, and never changes protocol rules.
+   */
+  guidance?: string;
+  /** Pack review criteria added to the critic prompt (quoted, capped, can only add checks). */
+  reviewCriteria?: string[];
+  /** The pack's name for the node's kind of work, mapped onto `type` (`mapsTo`). */
+  proposedType?: string;
+  /**
+   * The authorised boundary shown in every prompt. Set only by the runner from a scope it
+   * validated (WI-S4-02); any value given in the graph is discarded.
+   */
+  authorisedScope?: string;
 }
 
 /** Run-level control events (principle 4, R-304); node states still go through `onEvent`. */

@@ -20,6 +20,7 @@
     "@kernelpai/executor": "workspace:*",
     "@kernelpai/providers": "workspace:*",
     "@kernelpai/tools": "workspace:*",
+    "@kernelpai/packs": "workspace:*",
     "zod": "^4.1.0"
   }
 }

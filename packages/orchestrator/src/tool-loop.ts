@@ -29,9 +29,20 @@ export function nodeTools(
 ): { defs: ToolDefinition[]; unknown: string[] } {
   const wanted = node.tools ?? [];
   if (!bus || wanted.length === 0) return { defs: [], unknown: bus ? [] : [...wanted] };
-  const known = new Map(bus.list().map((d) => [d.name, d]));
-  const defs = wanted.flatMap((n) => (known.has(n) ? [known.get(n) as ToolDefinition] : []));
-  return { defs, unknown: wanted.filter((n) => !known.has(n)) };
+  const all = bus.list();
+  const defs = new Map<string, ToolDefinition>();
+  const unknown: string[] = [];
+  for (const w of wanted) {
+    // `<namespace>.*` (pack hints such as `mcp.ghidra.*`) matches every tool of that
+    // namespace; a bare `*` or `fs*` matches nothing (no blanket grant).
+    const prefix = /^[A-Za-z0-9_-][A-Za-z0-9_.-]*\.\*$/.test(w) ? w.slice(0, -1) : undefined;
+    const hits = all.filter((d) =>
+      prefix !== undefined ? d.name.startsWith(prefix) : d.name === w,
+    );
+    if (hits.length === 0) unknown.push(w);
+    for (const d of hits) defs.set(d.name, d);
+  }
+  return { defs: [...defs.values()], unknown };
 }
 
 function hooksFor(s: StepRunner, run: NodeRun, role: ContributionRole): ExecutionHooks {

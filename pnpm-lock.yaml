@@ -202,6 +202,9 @@ importers:
       '@kernelpai/journal':
         specifier: workspace:*
         version: link:../journal
+      '@kernelpai/packs':
+        specifier: workspace:*
+        version: link:../packs
       '@kernelpai/providers':
         specifier: workspace:*
         version: link:../providers

@@ -8,11 +8,20 @@ import {
   type ProtocolResult,
   type TaskGraph,
 } from '@kernelpai/core';
+import type { Pack } from '@kernelpai/packs';
 import { RunController, type ControlOutcome, type RunControl, type RunStatus } from './control.js';
+import { deliverableOf, extractArtifacts, shapeOf, type NodeDeliverable } from './deliverable.js';
 import { quote } from './prompts.js';
 import { PROTOCOLS } from './protocols/registry.js';
 import { sameRef } from './routing.js';
 import { carry, newRun, withCarried, type Run } from './run-state.js';
+import {
+  ScopeError,
+  checkRunScope,
+  scopePayloads,
+  stampScope,
+  type ScopeCheck,
+} from './scope-gate.js';
 import { StepRunner } from './step.js';
 import { nodeTools } from './tool-loop.js';
 import {
@@ -41,6 +50,10 @@ export function upgradeReason(node: GraphNode): string | undefined {
   if (node.type === 'code_generation' || node.type === 'test') {
     return `${node.type} is always reviewed by another provider (principle 2)`;
   }
+  const shape = shapeOf(deliverableOf(node as PlannedNode));
+  if (shape === 'diff' || shape === 'files') {
+    return `a ${(node as PlannedNode).deliverable} deliverable is always reviewed by another provider (principle 2)`;
+  }
   if (node.criticality === 'critical' && node.protocol === 'solo') {
     return 'critical node always gets an independent critic (principle 2)';
   }
@@ -51,6 +64,22 @@ export interface RunOptions {
   signal?: AbortSignal;
   /** The user's edits to the proposed plan (`validatePlan(...).changes`), journaled. */
   edits?: string[];
+  /**
+   * The domain packs selected for this run. A pack with `safety.requiresScope` makes the
+   * run refuse to start without a valid `scope` (WI-S4-02); nodes tagged with a pack that
+   * is not listed are refused (fail closed).
+   */
+  packs?: readonly Pack[];
+  /** The declared authorised scope (`AuthorisedScope` of `@kernelpai/packs`), validated here. */
+  scope?: unknown;
+  /** Clock for the scope expiry; default now. */
+  now?: () => Date;
+}
+
+/** A graph result plus each finished node's deliverable and extracted artifacts. */
+export interface RunResult extends GraphResult {
+  /** By node id, for nodes that finished ok, in graph order (for the kernel, S1/ADR-0021). */
+  deliverables: Record<string, NodeDeliverable>;
 }
 
 /**
@@ -74,11 +103,13 @@ export class GraphRunner implements RunControl {
     this.control = new RunController(this.steps);
   }
 
-  async run(graph: TaskGraph, options: RunOptions = {}): Promise<GraphResult> {
+  async run(graph: TaskGraph, options: RunOptions = {}): Promise<RunResult> {
     const problems = [...graphProblems(graph.nodes), ...this.pinProblems(graph)];
     if (problems.length > 0) throw new OrchestrationError(`invalid graph: ${problems.join('; ')}`);
     if (this.control.run) throw new OrchestrationError('this runner is already running a graph');
+    const scope = this.admit(graph, options);
     const r = newRun(graph, options.signal);
+    stampScope(r.graph.nodes, scope.boundary);
     this.control.run = r;
     this.steps.graph.reset();
     if (options.edits?.length) {
@@ -91,6 +122,30 @@ export class GraphRunner implements RunControl {
       this.control.run = undefined;
     }
     return this.result(r);
+  }
+
+  /**
+   * The scope gate (WI-S4-02): refuses (journaled, nothing scheduled, no provider called)
+   * when a selected pack needs an authorised scope that is missing, expired, unbounded or
+   * out of kind; journals the accepted scope (targets as `kind:value`, no notes).
+   */
+  private admit(graph: TaskGraph, options: RunOptions): ScopeCheck {
+    const packs = options.packs ?? [];
+    const now = options.now?.() ?? new Date();
+    const check = checkRunScope(packs, graph.nodes as PlannedNode[], options.scope, now);
+    if (!check.ok) {
+      this.steps.intervention(undefined, {
+        action: 'run refused',
+        reason: 'authorised scope',
+        packs: check.required,
+        problems: check.problems,
+      });
+      throw new ScopeError(check.required, check.problems);
+    }
+    for (const payload of scopePayloads(packs, check)) {
+      this.steps.intervention(undefined, { action: 'scope accepted', ...payload });
+    }
+    return check;
   }
 
   pause(): ControlOutcome {
@@ -262,9 +317,10 @@ export class GraphRunner implements RunControl {
     this.steps.emit({ type: 'node_state', nodeId, state });
   }
 
-  private result(r: Run): GraphResult {
+  private result(r: Run): RunResult {
     const results: Record<string, ProtocolResult> = {};
     const states: Record<string, NodeState> = {};
+    const deliverables: Record<string, NodeDeliverable> = {};
     let cost = 0;
     for (const n of r.graph.nodes) {
       states[n.id] = r.states[n.id] as NodeState;
@@ -272,11 +328,12 @@ export class GraphRunner implements RunControl {
       if (res) {
         results[n.id] = res;
         cost += res.costUsd;
+        if (res.ok) deliverables[n.id] = extractArtifacts(n.id, deliverableOf(n), res.output);
       }
     }
     const costUsd = Math.round(cost * 1e6) / 1e6;
     const ok = Object.values(states).every((s) => s === 'done');
     this.steps.emit({ type: 'graph_done', costUsd, ok });
-    return { graphId: r.graph.id, results, states, costUsd, ok };
+    return { graphId: r.graph.id, results, states, costUsd, ok, deliverables };
   }
 }

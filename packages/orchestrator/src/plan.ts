@@ -1,4 +1,5 @@
 import { refToString, TaskTypeSchema, type Candidate, type TaskGraph } from '@kernelpai/core';
+import { isDeliverable } from './deliverable.js';
 import { estimateGraph, type EstimateDeps, type GraphEstimate } from './estimate.js';
 import { sameRef } from './routing.js';
 import type { PlannedNode } from './types.js';
@@ -55,12 +56,29 @@ export function nodeProblems(n: PlannedNode, candidates: readonly Candidate[]): 
     Array.isArray(n.messages) &&
     n.messages.some((m) => m?.role === 'user' && isStr(m.content) && m.content.trim() !== '');
   if (!asks) bad('needs a non-empty user message');
+  p.push(...packFieldProblems(n).map((w) => `node "${id}": ${w}`));
   if (n.model !== undefined) {
     const m = n.model as unknown as Record<string, unknown> | null;
     if (!m || !isStr(m.provider) || !isStr(m.model)) bad('model must be {provider, model}');
     else if (!candidates.some((c) => sameRef(c.ref, n.model as PlannedNode['model'] & object))) {
       bad(`model ${refToString(n.model)} is not an available candidate`);
     }
+  }
+  return p;
+}
+
+/** The orchestrator-local fields a pack plan adds (WI-S4-01); all optional. */
+function packFieldProblems(n: PlannedNode): string[] {
+  const p: string[] = [];
+  if (n.deliverable !== undefined && !isDeliverable(n.deliverable)) {
+    p.push(`unknown deliverable "${String(n.deliverable)}"`);
+  }
+  for (const f of ['pack', 'guidance', 'proposedType'] as const) {
+    if (n[f] !== undefined && !isStr(n[f])) p.push(`${f} must be a string`);
+  }
+  const rc = n.reviewCriteria;
+  if (rc !== undefined && !(Array.isArray(rc) && rc.every(isStr))) {
+    p.push('reviewCriteria must list strings');
   }
   return p;
 }
@@ -108,6 +126,7 @@ const FIELDS: Array<[string, (n: PlannedNode) => string]> = [
   ['type', (n) => String(n.type)],
   ['dependsOn', (n) => (Array.isArray(n.dependsOn) ? n.dependsOn.join(',') : '?')],
   ['tools', (n) => (n.tools ?? []).join(',')],
+  ['deliverable', (n) => String(n.deliverable ?? 'default')],
 ];
 
 /** The user's edits between two plans, one line each, in the edited plan's order. */
@@ -124,7 +143,9 @@ export function planChanges(original: TaskGraph, edited: TaskGraph): string[] {
     for (const [field, get] of FIELDS) {
       if (get(o) !== get(n)) out.push(`${n.id}: ${field} ${get(o)} → ${get(n)}`);
     }
-    if (prompt(o) !== prompt(n) || o.title !== n.title) out.push(`${n.id}: prompt edited`);
+    if (prompt(o) !== prompt(n) || o.title !== n.title || o.guidance !== n.guidance) {
+      out.push(`${n.id}: prompt edited`);
+    }
   }
   return out;
 }

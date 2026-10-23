@@ -17,6 +17,7 @@ import {
   OrchestrationError,
   type NodeRun,
   type OrchestratorOptions,
+  type PlannedNode,
   type StepFailed,
   type StepOutcome,
   type StepSpec,
@@ -169,9 +170,16 @@ export class StepRunner {
         excludedProviders: r.excluded,
         ...(r.diversity ? { diversity: r.diversity } : {}),
         ...(pinned ? { pinned: true } : {}),
+        ...proposedOf(node),
       },
     });
   }
+}
+
+/** The pack's name for the node's work (`mapsTo` routed as `taskType`), for calibration. */
+function proposedOf(node: TaskNode): { proposedType?: string } {
+  const p = (node as PlannedNode).proposedType;
+  return typeof p === 'string' ? { proposedType: p } : {};
 }
 
 function failed(error: string, costUsd: number, cancelled: boolean): StepFailed {

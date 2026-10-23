@@ -10,6 +10,7 @@
     { "path": "../budget" },
     { "path": "../executor" },
     { "path": "../providers" },
-    { "path": "../tools" }
+    { "path": "../tools" },
+    { "path": "../packs" }
   ]
 }
