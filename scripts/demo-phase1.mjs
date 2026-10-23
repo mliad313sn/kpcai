@@ -2,11 +2,12 @@
 // Phase 1 reproducible demo: competence routing, fallback, budget, metrics. Offline by
 // default with three mock providers; KPAI_DEMO_LIVE=1 also routes over real providers
 // whose keys are set (or local servers running) — that spends real money.
-import { spawn, spawnSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { runAndInterrupt } from './lib/interrupt.mjs';
 
 const bin = fileURLToPath(new URL('../apps/cli/dist/bin.js', import.meta.url));
 const home = mkdtempSync(join(tmpdir(), 'kpai-demo1-'));
@@ -48,12 +49,7 @@ async function cancelStep() {
     '--allow-test',
     'write a parser [[slow]] with many many many words to stream',
   ];
-  const child = spawn(process.execPath, [bin, ...args], {
-    env,
-    stdio: ['ignore', 'inherit', 'inherit'],
-  });
-  setTimeout(() => child.kill('SIGINT'), 400);
-  const code = await new Promise((r) => child.on('exit', (c) => r(c)));
+  const code = await runAndInterrupt(bin, args, env);
   if (code !== 130) failures++;
   console.log(code === 130 ? '  ✔ exit 130 (cancelled)' : `  ✘ exit ${code}, expected 130`);
 }

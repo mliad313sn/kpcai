@@ -14,7 +14,29 @@ export interface Io {
   onInterrupt(handler: () => void): () => void;
 }
 
+/**
+ * One SIGINT listener for the whole process. While a call is in flight its handler runs
+ * (cancel, keep partial output); at any other moment Ctrl+C exits cleanly with 130, so an
+ * interrupt is never lost to a race with start-up or shutdown.
+ */
+function interruptBus(): Io['onInterrupt'] {
+  const handlers: Array<() => void> = [];
+  process.on('SIGINT', () => {
+    const top = handlers.at(-1);
+    if (top) top();
+    else process.exit(130);
+  });
+  return (handler) => {
+    handlers.push(handler);
+    return () => {
+      const i = handlers.lastIndexOf(handler);
+      if (i >= 0) handlers.splice(i, 1);
+    };
+  };
+}
+
 export function processIo(): Io {
+  const onInterrupt = interruptBus();
   return {
     out: (t) => process.stdout.write(t),
     err: (t) => process.stderr.write(t),
@@ -31,9 +53,6 @@ export function processIo(): Io {
         rl.close();
       }
     },
-    onInterrupt: (handler) => {
-      process.on('SIGINT', handler);
-      return () => process.off('SIGINT', handler);
-    },
+    onInterrupt,
   };
 }
