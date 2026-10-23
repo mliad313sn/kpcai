@@ -9,14 +9,15 @@ import { vote } from './vote.js';
 
 /**
  * Solo: one routed model answers (its prompt uses the author role line). A `critique` node
- * reviewing earlier nodes is routed away from their providers when possible (soft).
+ * reviewing earlier nodes is routed away from their providers (principle 2: fails unless
+ * `allowSameProvider`, then the waiver is journaled).
  */
 export async function solo(s: StepRunner, run: NodeRun): Promise<ProtocolResult> {
   const review = run.node.type === 'critique' && (run.upstream?.length ?? 0) > 0;
   const r = await s.run(run, {
     role: 'solo',
     prompt: authorPrompt(run.node, run.context),
-    ...(review ? { exclude: run.upstream, diversity: 'soft' as const } : {}),
+    ...(review ? { exclude: run.upstream } : {}),
   });
   return r.ok ? finish(run, 'solo', r.text) : failure(run, 'solo', r);
 }

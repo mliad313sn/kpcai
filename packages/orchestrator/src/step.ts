@@ -8,6 +8,7 @@ import {
   type TaskNode,
 } from '@kernelpai/core';
 import { FallbackExecutor } from '@kernelpai/executor';
+import { GraphBudget } from './graph-budget.js';
 import { stepMessages } from './prompts.js';
 import { preferRef, routeDiverse, type Routed } from './routing.js';
 import { executeWithTools } from './tool-loop.js';
@@ -28,9 +29,17 @@ const errorText = (err: unknown): string => (err instanceof Error ? err.message 
  */
 export class StepRunner {
   readonly executor: FallbackExecutor;
+  /** Cumulative spend of the current graph run against `maxGraphUsd`. */
+  readonly graph: GraphBudget;
 
   constructor(readonly o: OrchestratorOptions) {
     this.executor = new FallbackExecutor(o.resolve, o.journal, o.executor);
+    this.graph = new GraphBudget(
+      o.maxGraphUsd,
+      o.budget && ((c, l) => this.hook(c, l)),
+      o.journal,
+      o.sessionId,
+    );
   }
 
   emit(event: GraphEvent): void {
@@ -41,8 +50,16 @@ export class StepRunner {
     }
   }
 
-  /** The budget hook; a throw counts as a refusal (as in the executor). */
-  async allow(c: ScoredCandidate, label: string): Promise<boolean> {
+  /**
+   * Spend gate of every model call: the graph cap first (`maxGraphUsd`), then the budget
+   * hook. A throw counts as a refusal (as in the executor).
+   */
+  async allow(c: ScoredCandidate, label: string, nodeId?: string): Promise<boolean> {
+    if (!(await this.graph.check(c, label, nodeId))) return false;
+    return this.hook(c, label);
+  }
+
+  private async hook(c: ScoredCandidate, label: string): Promise<boolean> {
     if (!this.o.budget) return true;
     try {
       return (await this.o.budget(c, label)) !== false;
@@ -79,11 +96,12 @@ export class StepRunner {
       return err instanceof OrchestrationError ? { ...f, diversity: true } : f;
     }
     const label = `${spec.role} on ${run.node.id}: ${refToString(decision.chosen.ref)}`;
-    if (!(await this.allow(decision.chosen, label))) {
+    if (!(await this.allow(decision.chosen, label, run.node.id))) {
       this.intervention(run.node.id, { action: 'step blocked by budget', role: spec.role, label });
       return failed(`budget: ${label} not allowed`, 0, false);
     }
-    const loop = await executeWithTools(this, run, spec, stepNode, decision);
+    const release = this.graph.reserve(decision.chosen.estimate.expectedCostUsd);
+    const loop = await executeWithTools(this, run, spec, stepNode, decision).finally(release);
     run.costUsd += loop.costUsd;
     if (!loop.ok) {
       if (loop.text && loop.ref) {
@@ -117,14 +135,11 @@ export class StepRunner {
     const d = r.decision;
     if (r.diversity) {
       this.intervention(node.id, {
-        action: r.diversity === 'waived' ? 'diversity waived' : 'diversity reduced',
+        action: 'diversity waived',
         role: spec.role,
         excluded: r.excluded,
         chosen: refToString(d.chosen.ref),
-        reason:
-          r.diversity === 'waived'
-            ? 'allowSameProvider: no other provider available (principle 2 override)'
-            : 'no further distinct provider available',
+        reason: 'allowSameProvider: no other provider available (principle 2 override)',
       });
     }
     this.o.journal.append({

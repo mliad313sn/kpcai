@@ -22,9 +22,23 @@ const BLOCKING: ReadonlySet<NodeState> = new Set(['failed', 'skipped', 'cancelle
 
 /** Critical nodes always get a critic (principle 2): solo is upgraded to author+critic. */
 export function effectiveProtocol(node: GraphNode): ProtocolName {
-  return node.criticality === 'critical' && node.protocol === 'solo'
-    ? 'author_critic'
-    : node.protocol;
+  return upgradeReason(node) ? 'author_critic' : node.protocol;
+}
+
+/**
+ * Why a node's planned protocol is replaced by author+critic (principle 2), if it is:
+ * code and tests are always reviewed by another provider, whatever the plan (template or
+ * model) says (review P2-F4); a critical solo node always gets a critic.
+ */
+export function upgradeReason(node: GraphNode): string | undefined {
+  if (node.protocol === 'author_critic') return undefined;
+  if (node.type === 'code_generation' || node.type === 'test') {
+    return `${node.type} is always reviewed by another provider (principle 2)`;
+  }
+  if (node.criticality === 'critical' && node.protocol === 'solo') {
+    return 'critical node always gets an independent critic (principle 2)';
+  }
+  return undefined;
 }
 
 interface Run {
@@ -59,6 +73,7 @@ export class GraphRunner {
       running: new Map(),
       signal: options.signal,
     };
+    this.steps.graph.reset();
     for (const n of graph.nodes) this.setState(r, n.id, 'pending');
     const limit = Math.max(1, Math.floor(this.o.concurrency ?? DEFAULT_CONCURRENCY));
     for (;;) {
@@ -102,12 +117,13 @@ export class GraphRunner {
 
   private async runNode(r: Run, node: GraphNode): Promise<void> {
     const protocol = effectiveProtocol(node);
-    if (protocol !== node.protocol) {
+    const why = upgradeReason(node);
+    if (why) {
       this.steps.intervention(node.id, {
         action: 'protocol upgraded',
         from: node.protocol,
         to: protocol,
-        reason: 'critical node always gets an independent critic (principle 2)',
+        reason: why,
       });
     }
     const unknown = nodeTools(this.o.tools, node).unknown;

@@ -11,7 +11,7 @@ import {
 } from '@kernelpai/core';
 import { FallbackExecutor } from '@kernelpai/executor';
 import { extractJson } from '../parse.js';
-import type { OrchestratorOptions } from '../types.js';
+import type { BudgetHook, OrchestratorOptions } from '../types.js';
 import { graphProblems } from '../validate.js';
 import { DEFAULT_CODE_TOOLS, TemplatePlanner } from './template.js';
 
@@ -34,17 +34,14 @@ export const PlanSchema = z.object({
   nodes: z.array(NodeSchema).min(1),
 });
 
+/**
+ * `budget` is required (review P2-F8, principle 6): a planner call costs money, so callers
+ * cannot forget the spend gate. Pass `() => true` explicitly to allow everything.
+ */
 export type PlannerDeps = Pick<
   OrchestratorOptions,
-  | 'router'
-  | 'candidates'
-  | 'constraints'
-  | 'resolve'
-  | 'journal'
-  | 'sessionId'
-  | 'budget'
-  | 'executor'
->;
+  'router' | 'candidates' | 'constraints' | 'resolve' | 'journal' | 'sessionId' | 'executor'
+> & { budget: BudgetHook };
 
 export interface ModelPlannerOptions {
   /** Used when the model's plan is rejected; default a `TemplatePlanner`. */
@@ -80,6 +77,9 @@ export class ModelPlanner implements Planner {
     private readonly deps: PlannerDeps,
     private readonly options: ModelPlannerOptions = {},
   ) {
+    if (typeof deps.budget !== 'function') {
+      throw new TypeError('ModelPlanner needs a budget hook (principle 6)');
+    }
     this.executor = new FallbackExecutor(deps.resolve, deps.journal, deps.executor);
     this.fallback = options.fallback ?? new TemplatePlanner();
   }
@@ -123,7 +123,7 @@ export class ModelPlanner implements Planner {
         fallbacks: d.fallbacks.map((f) => refToString(f.ref)),
       },
     });
-    const gate = this.deps.budget ?? (() => true);
+    const gate = this.deps.budget;
     if (!(await gate(d.chosen, `planner: ${refToString(d.chosen.ref)}`))) {
       throw new Error('planner blocked by budget');
     }

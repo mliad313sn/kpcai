@@ -115,13 +115,14 @@ describe('OllamaAdapter tool calls', () => {
     ]);
   });
 
-  it('surfaces a model without tool support as bad_request with a clear message', async () => {
+  it('surfaces a model without tool support as fallback-eligible unavailable (review P2-F11)', async () => {
     server = await fakeServer((_q, res) => {
       res.writeHead(400, { 'content-type': 'application/json' });
       res.end('{"error":"registry.ollama.ai/library/gemma:2b does not support tools"}');
     });
     await expect(run({ ...ask, model: 'gemma:2b' })).rejects.toMatchObject({
-      kind: 'bad_request',
+      kind: 'unavailable',
+      fallbackEligible: true,
       status: 400,
       message: expect.stringMatching(/gemma:2b does not support tool calling/),
     });

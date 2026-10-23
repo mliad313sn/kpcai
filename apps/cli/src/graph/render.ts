@@ -16,7 +16,7 @@ export function renderGraphPlan(graph: TaskGraph, est: GraphEstimate, m: Money):
       `  ${node.id.padEnd(16)} ${node.title.slice(0, 28).padEnd(28)} ${node.type.padEnd(15)} ${(e?.protocol ?? node.protocol).padEnd(13)} ${who.padEnd(34)} ${cost}${deps}${tools}`,
     );
   }
-  const status = est.complete ? '' : ' (some nodes cannot be routed)';
+  const status = est.complete ? '' : ` (cannot run as planned: ${est.problems.join('; ')})`;
   lines.push(
     `total  ${formatMoney(est.minUsd, m)}–${formatMoney(est.totalUsd, m)} before running${status}`,
   );

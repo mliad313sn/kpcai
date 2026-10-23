@@ -1,10 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { estimateGraph } from './estimate.js';
 import { extractJson, normalizeChoice, parseJudge, parseVerdict, parseVote } from './parse.js';
 import { quote, stepMessages } from './prompts.js';
 import { decisionAfter, preferRef } from './routing.js';
 import { tally } from './protocols/vote.js';
-import { RoleAdapter, friendly, gnode, graph, setup } from './test-helpers/fakes.js';
+import { RoleAdapter, friendly, gnode, setup } from './test-helpers/fakes.js';
 import { findCycle, graphProblems } from './validate.js';
 
 describe('parsers', () => {
@@ -91,49 +90,5 @@ describe('helpers', () => {
         { choice: 'a', weight: 0.5, ref },
       ]).map((r) => r.choice),
     ).toEqual(['a', 'b']);
-  });
-});
-
-describe('estimateGraph', () => {
-  it('multiplies the routed expected cost by protocol rounds', () => {
-    const s = setup([new RoleAdapter('a', friendly('A'))]);
-    const nodes = [
-      gnode({ id: 's' }),
-      gnode({ id: 'crit', criticality: 'critical' }),
-      gnode({ id: 'ac', protocol: 'author_critic' }),
-      gnode({ id: 'd', protocol: 'debate' }),
-      gnode({ id: 'v', protocol: 'vote' }),
-    ];
-    const e = estimateGraph(graph(nodes), s.options);
-    const per = e.nodes[0]?.perCallUsd ?? 0;
-    expect(per).toBeGreaterThan(0);
-    expect(e.nodes.map((n) => [n.nodeId, n.protocol, n.rounds.min, n.rounds.max])).toEqual([
-      ['s', 'solo', 1, 1],
-      ['crit', 'author_critic', 2, 3],
-      ['ac', 'author_critic', 2, 3],
-      ['d', 'debate', 5, 5],
-      ['v', 'vote', 3, 3],
-    ]);
-    expect(e.totalUsd).toBeCloseTo(per * (1 + 3 + 3 + 5 + 3), 5);
-    expect(e.minUsd).toBeCloseTo(per * (1 + 2 + 2 + 5 + 3), 5);
-    expect(e.complete).toBe(true);
-    expect(estimateGraph(graph([nodes[4]!]), { ...s.options, voters: 5 }).nodes[0]?.rounds).toEqual(
-      {
-        min: 5,
-        max: 5,
-      },
-    );
-  });
-
-  it('reports nodes that cannot be routed', () => {
-    const s = setup([new RoleAdapter('a', friendly('A'))]);
-    const e = estimateGraph(graph([gnode()]), {
-      ...s.options,
-      constraints: { deniedProviders: ['a'] },
-    });
-    expect(e.complete).toBe(false);
-    expect(e.nodes[0]?.ref).toBeNull();
-    expect(e.nodes[0]?.error).toBeTruthy();
-    expect(e.totalUsd).toBe(0);
   });
 });

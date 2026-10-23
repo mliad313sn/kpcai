@@ -1,8 +1,11 @@
-export { GraphRunner, effectiveProtocol } from './runner.js';
+export { GraphRunner, effectiveProtocol, upgradeReason } from './runner.js';
+export { GraphBudget } from './graph-budget.js';
 export { StepRunner } from './step.js';
 export {
   estimateGraph,
+  DEFAULT_DEPENDENCY_ALLOWANCE_TOKENS,
   PROTOCOL_ROUNDS,
+  type StepEstimate,
   type EstimateDeps,
   type GraphEstimate,
   type NodeEstimate,
@@ -26,6 +29,7 @@ export {
 } from './planner/model.js';
 export * from './protocols/index.js';
 export {
+  extractAllJson,
   extractJson,
   normalizeChoice,
   parseJudge,

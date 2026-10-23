@@ -1,7 +1,7 @@
 import type { Candidate, Planner, RoutingConstraints } from '@kernelpai/core';
 import { outputCalibration } from '@kernelpai/executor';
 import type { Journal } from '@kernelpai/journal';
-import { ModelPlanner, TemplatePlanner } from '@kernelpai/orchestrator';
+import { ModelPlanner, TemplatePlanner, type BudgetHook } from '@kernelpai/orchestrator';
 import { candidates as scanCandidates, type ProviderRegistry } from '@kernelpai/providers';
 import { CompetenceRouter } from '@kernelpai/router';
 import { ProviderError } from '@kernelpai/core';
@@ -63,9 +63,12 @@ export function plannerFor(
   s: GraphSetup,
   journal: Journal,
   sessionId: string,
+  budget: BudgetHook,
 ): Planner {
   if (o.planner !== 'model') return new TemplatePlanner();
+  // A model plan is a paid call: it goes through the budget gate like any step (P2-F8).
   return new ModelPlanner({
+    budget,
     router: s.router,
     candidates: s.candidates,
     constraints: s.constraints,

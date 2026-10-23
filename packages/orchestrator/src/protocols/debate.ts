@@ -9,7 +9,7 @@ import { structured } from './structured.js';
 /**
  * Debate (spec §3.1): two debaters from different providers (principle 2, hard), one
  * rebuttal each (run in parallel), then a judge from a third provider when one exists
- * (soft: otherwise journaled as reduced diversity). Output: the judge's answer, else the
+ * (principle 2: fails unless `allowSameProvider`, then journaled as waived). Output: the judge's answer, else the
  * winning debater's final position.
  */
 export async function debate(s: StepRunner, run: NodeRun): Promise<ProtocolResult> {
@@ -44,7 +44,6 @@ export async function debate(s: StepRunner, run: NodeRun): Promise<ProtocolResul
       type: 'decision',
       prompt: judgePrompt(node, context, r1.text, r2.text),
       exclude: [d1.ref.provider, d2.ref.provider, r1.ref.provider, r2.ref.provider],
-      diversity: 'soft',
     },
     parseJudge,
   );

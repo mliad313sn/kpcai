@@ -149,7 +149,8 @@ export class OllamaAdapter extends BaseAdapter {
       const text = await res.text().catch(() => '');
       const noTools = tools && /does not support tools/i.test(text);
       throw new ProviderError(
-        noTools ? 'bad_request' : kindFromStatus(res.status),
+        // Model-specific: another (tool-capable) model can serve the node (review P2-F11).
+        noTools ? 'unavailable' : kindFromStatus(res.status),
         this.descriptor.id,
         noTools
           ? `Model ${req.model} does not support tool calling on Ollama; route this node to a tool-capable model`

@@ -178,14 +178,21 @@ describe('debate', () => {
     expect(r?.output).toBe('B:debater:1');
   });
 
-  it('prefers the judge answer and reduces diversity when no third provider exists', async () => {
+  it('needs a third provider for the judge unless the waiver is given (P2-F18)', async () => {
     const both: Script = ({ role, n }) =>
       role === 'judge' ? JSON.stringify({ winner: '1', answer: 'synthesis' }) : `A${n}`;
-    const s = setup([new RoleAdapter('a', both), new RoleAdapter('b', friendly('B'))]);
+    const two = () => [new RoleAdapter('a', both), new RoleAdapter('b', friendly('B'))];
+    const strict = await run(setup(two()), [node]);
+    expect(strict.states['n1']).toBe('failed');
+    expect(strict.results['n1']?.error).toMatch(/can act as judge.*allowSameProvider/);
+    const s = setup(two(), { allowSameProvider: true });
     const r = (await run(s, [node])).results['n1'];
     expect(r?.output).toBe('synthesis');
     const iv = s.journal.events().filter((e) => e.type === 'intervention');
-    expect(iv.map((e) => e.payload['action'])).toContain('diversity reduced');
+    expect(iv.map((e) => [e.payload['action'], e.payload['role']])).toContainEqual([
+      'diversity waived',
+      'judge',
+    ]);
   });
 
   it('needs two providers for debaters', async () => {

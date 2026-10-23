@@ -110,7 +110,7 @@ describe('GraphRunner', () => {
     expect(r.results['n1']?.error).toMatch(/resolver bug/);
   });
 
-  it('routes a review node away from the providers that did the work when it can', async () => {
+  it('routes a review node away from the upstream providers, strictly (P2-F16)', async () => {
     const s = setup([
       new RoleAdapter('a', friendly('A'), { analysis: 0.9, critique: 0.9 }),
       new RoleAdapter('b', friendly('B'), { analysis: 0.1, critique: 0.1 }),
@@ -118,11 +118,15 @@ describe('GraphRunner', () => {
     const nodes = [gnode({ id: 'w' }), gnode({ id: 'rev', type: 'critique', dependsOn: ['w'] })];
     const r = await new GraphRunner(s.options).run(graph(nodes));
     expect(r.results['rev']?.contributions[0]?.ref.provider).toBe('b');
-    const one = setup([new RoleAdapter('a', friendly('A'))]);
+    const strict = setup([new RoleAdapter('a', friendly('A'))]);
+    const rs = await new GraphRunner(strict.options).run(graph(nodes));
+    expect(rs.states['rev']).toBe('failed');
+    expect(rs.results['rev']?.error).toMatch(/diversity \(principle 2\)/);
+    const one = setup([new RoleAdapter('a', friendly('A'))], { allowSameProvider: true });
     const r1 = await new GraphRunner(one.options).run(graph(nodes));
     expect(r1.ok).toBe(true);
     const iv = one.journal.events().filter((e) => e.type === 'intervention');
-    expect(iv[0]?.payload['action']).toBe('diversity reduced');
+    expect(iv[0]?.payload['action']).toBe('diversity waived');
   });
 });
 

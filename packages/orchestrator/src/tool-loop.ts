@@ -1,4 +1,5 @@
 import {
+  estimateRequest,
   refToString,
   type ChatMessage,
   type ChatRequest,
@@ -13,7 +14,7 @@ import {
   type ToolDefinition,
 } from '@kernelpai/core';
 import type { ToolAwareResult } from '@kernelpai/executor';
-import { preferRef, servedCandidate } from './routing.js';
+import { preferRef, sameRef, servedCandidate } from './routing.js';
 import type { StepRunner } from './step.js';
 import { DEFAULT_MAX_TOOL_ROUNDS, type NodeRun, type StepSpec } from './types.js';
 
@@ -46,7 +47,7 @@ function hooksFor(s: StepRunner, run: NodeRun, role: ContributionRole): Executio
       }),
     onText: (delta, ref) => s.emit({ type: 'text', nodeId, role, ref, delta }),
     beforeFallback: (next) =>
-      s.allow(next, `${role} fallback on ${nodeId}: ${refToString(next.ref)}`),
+      s.allow(next, `${role} fallback on ${nodeId}: ${refToString(next.ref)}`, nodeId),
   };
 }
 
@@ -88,6 +89,7 @@ export async function executeWithTools(
       tags: { role: spec.role },
     });
     cost += r.costUsd;
+    s.graph.add(r.costUsd);
     const done = settle(r, cost, defs.length > 0, decision);
     if (done) return done;
     const ref = r.servedBy as ModelRef;
@@ -98,9 +100,9 @@ export async function executeWithTools(
       { role: 'assistant', content: r.text, toolCalls: r.toolCalls },
       ...results,
     ];
-    decision = preferRef(decision, ref);
+    decision = reestimated(s, preferRef(decision, ref), stepNode, messages, tools);
     const label = `${spec.role} tool round ${round + 1} on ${run.node.id}`;
-    if (!(await s.allow(decision.chosen, label))) {
+    if (!(await s.allow(decision.chosen, label, run.node.id))) {
       s.intervention(run.node.id, {
         action: 'tool round blocked by budget',
         role: spec.role,
@@ -109,6 +111,40 @@ export async function executeWithTools(
       return stop(`budget: ${label} not allowed`, cost, r.text, ref);
     }
   }
+}
+
+/**
+ * The decision with its first choice re-priced on the conversation as it now stands (tool
+ * calls, tool results and tool definitions included), so each tool round is gated on its
+ * real input size (review P2-F9) rather than on the first prompt's.
+ */
+export function reestimated(
+  s: StepRunner,
+  decision: RoutingDecision,
+  node: GraphNode,
+  messages: ChatMessage[],
+  tools: ChatRequest['tools'],
+): RoutingDecision {
+  const c = decision.chosen;
+  const card = s.o.candidates.find((k) => sameRef(k.ref, c.ref))?.card;
+  if (!card) return decision;
+  const flat: ChatMessage[] = messages.map((m) => ({
+    role: m.role,
+    content: m.toolCalls ? `${m.content}${JSON.stringify(m.toolCalls)}` : m.content,
+  }));
+  if (tools && tools.length > 0) flat.push({ role: 'system', content: JSON.stringify(tools) });
+  const expected = s.o.executor?.expectedOutput?.(c.ref, node.type);
+  const req = {
+    model: c.ref.model,
+    messages: flat,
+    ...(node.maxOutputTokens ? { maxOutputTokens: node.maxOutputTokens } : {}),
+  };
+  const estimate = estimateRequest(
+    req,
+    card,
+    expected === undefined ? {} : { expectedOutputTokens: expected },
+  );
+  return { ...decision, chosen: { ...c, estimate } };
 }
 
 /** The step's result when this execution ends it; undefined when tools must run. */

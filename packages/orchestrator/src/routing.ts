@@ -56,7 +56,7 @@ export function servedCandidate(decision: RoutingDecision, ref: ModelRef): Score
   );
 }
 
-export type DiversityNote = 'waived' | 'reduced' | undefined;
+export type DiversityNote = 'waived' | undefined;
 
 export interface Routed {
   decision: RoutingDecision;
@@ -66,8 +66,8 @@ export interface Routed {
 
 /**
  * Routes a step with principle 2: `spec.exclude` providers are excluded. When that leaves
- * nobody, a `hard` step fails unless `allowSameProvider`; a `soft` one routes without the
- * exclusion. Both overrides are reported so the caller can journal them.
+ * nobody, a `hard` step fails unless `allowSameProvider` (then it routes without the
+ * exclusion, reported as `waived` so the caller journals it); a `strict` step always fails.
  */
 export function routeDiverse(o: OrchestratorOptions, node: TaskNode, spec: StepSpec): Routed {
   const base: RoutingConstraints = o.constraints ?? {};
@@ -82,12 +82,11 @@ export function routeDiverse(o: OrchestratorOptions, node: TaskNode, spec: StepS
   } catch (err) {
     if (excluded.length === 0) throw err;
     const mode = spec.diversity ?? 'hard';
-    const hard = mode !== 'soft';
-    if (mode === 'strict' || (hard && o.allowSameProvider !== true)) {
+    if (mode === 'strict' || o.allowSameProvider !== true) {
       throw new OrchestrationError(
         `diversity (principle 2): no provider other than ${excluded.join(', ')} can act as ${spec.role} on node ${node.id}; add another provider${mode === 'strict' ? '' : ' or pass allowSameProvider to waive it'}`,
       );
     }
-    return { decision: route(base), diversity: hard ? 'waived' : 'reduced', excluded };
+    return { decision: route(base), diversity: 'waived', excluded };
   }
 }

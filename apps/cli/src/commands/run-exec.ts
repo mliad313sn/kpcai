@@ -36,6 +36,7 @@ export class BudgetGate {
   }
 
   async allow(c: ScoredCandidate, label: string): Promise<boolean> {
+    if (label.startsWith('graph total')) return this.graphCap(label);
     const est = c.estimate.expectedCostUsd;
     const v = this.governor.check(est, {
       sessionId: this.ctx.sessionId,
@@ -60,6 +61,20 @@ export class BudgetGate {
       ));
     if (!ok) this.io.err(`not run — ${who} declined at confirmation\n`);
     return ok ? true : this.record(`budget: ${who} declined at confirmation`, v, false);
+  }
+
+  /**
+   * The run would exceed the graph total the user accepted before it started: always a
+   * human decision (or --over-budget), never a silent governor pass (review P2-F9).
+   */
+  private async graphCap(label: string): Promise<boolean> {
+    const ok =
+      this.flags.overBudget === true ||
+      (await this.io.confirm(
+        `${label}: the run would exceed the estimate you accepted. Continue?`,
+      ));
+    if (!ok) this.io.err(`not continued — ${label}\n`);
+    return this.record(`${ok ? 'accepted' : 'refused'}: ${label}`, { label }, ok);
   }
 
   private money(usd: number): string {

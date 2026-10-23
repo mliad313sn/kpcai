@@ -1,36 +1,58 @@
 import type {
+  Candidate,
+  GraphNode,
   ModelRef,
   ProtocolName,
   Router,
-  Candidate,
   RoutingConstraints,
   TaskGraph,
 } from '@kernelpai/core';
-import { effectiveProtocol } from './runner.js';
-import { DEFAULT_VOTERS } from './types.js';
+import {
+  filler,
+  placeholderContext,
+  planSteps,
+  type StepContext,
+  type StepEstimate,
+} from './estimate-steps.js';
+import { effectiveProtocol, upgradeReason } from './runner.js';
+import { DEFAULT_MAX_REVISIONS, DEFAULT_VOTERS } from './types.js';
 
-/** Expected model calls per protocol (tool rounds not included). */
+/**
+ * Tokens assumed for each dependency's output, and for the work a critic, rebuttal or
+ * judge reads, since outputs are unknown before running. 4,000 = a quarter of the default
+ * 16,000-token output cap, the same typical-output heuristic as the core cost estimator.
+ */
+export const DEFAULT_DEPENDENCY_ALLOWANCE_TOKENS = 4000;
+
+/** Model calls per protocol with default settings (tool rounds not included). */
 export const PROTOCOL_ROUNDS: Readonly<Record<ProtocolName, { min: number; max: number }>> = {
   solo: { min: 1, max: 1 },
-  author_critic: { min: 2, max: 3 },
-  debate: { min: 5, max: 5 },
-  vote: { min: DEFAULT_VOTERS, max: DEFAULT_VOTERS },
+  // author, critic; then per revision a revision and a critic; plus one critic retry.
+  author_critic: { min: 2, max: 3 + 2 * DEFAULT_MAX_REVISIONS },
+  // two openings, two rebuttals, a judge (+ one judge retry).
+  debate: { min: 5, max: 6 },
+  // each voter once (+ one retry each).
+  vote: { min: DEFAULT_VOTERS, max: 2 * DEFAULT_VOTERS },
 };
 
 export interface NodeEstimate {
   nodeId: string;
-  /** Effective protocol (a critical solo node counts as author+critic). */
+  /** Effective protocol (code, tests and critical solo nodes count as author+critic). */
   protocol: ProtocolName;
-  /** First-choice model, null when routing failed. */
+  /** Why the planned protocol was upgraded, if it was. */
+  upgraded?: string;
+  /** First step's model, null when it could not be routed. */
   ref: ModelRef | null;
-  /** Expected cost of one call by the first choice. */
+  /** Expected cost of one call of the first step. */
   perCallUsd: number;
+  /** Total calls of all steps. */
   rounds: { min: number; max: number };
-  /** perCallUsd × rounds.min */
   minUsd: number;
-  /** perCallUsd × rounds.max (shown before running: principle 6 prefers not to underestimate). */
+  /** Upper expectation (principle 6 prefers not to underestimate): every revision/retry. */
   expectedUsd: number;
-  /** Why the node could not be routed. */
+  /** Per-role breakdown: who would do what, and for how much. */
+  steps: StepEstimate[];
+  /** Why the node cannot run as planned (no provider, diversity impossible). */
   error?: string;
 }
 
@@ -38,60 +60,94 @@ export interface GraphEstimate {
   nodes: NodeEstimate[];
   minUsd: number;
   totalUsd: number;
-  /** True when every node could be routed. */
+  /** True when every node can run as planned. */
   complete: boolean;
+  /** `<nodeId>: <why>` for each node that cannot. */
+  problems: string[];
 }
 
 export interface EstimateDeps {
   router: Router;
   candidates: readonly Candidate[];
   constraints?: RoutingConstraints;
-  /** Voters per vote node; default 3. */
+  /** Same meaning and defaults as `OrchestratorOptions`. */
   voters?: number;
+  maxRevisions?: number;
+  allowSameProvider?: boolean;
+  /** Default `DEFAULT_DEPENDENCY_ALLOWANCE_TOKENS`. */
+  dependencyAllowanceTokens?: number;
 }
 
 const r6 = (n: number): number => Math.round(n * 1e6) / 1e6;
+const sum = (xs: number[]): number => r6(xs.reduce((a, b) => a + b, 0));
 
 /**
- * Cost of a graph before it runs (ADR-0017): for each node, the router's expected cost of
- * its first choice times the protocol's expected rounds; the total is their sum.
+ * Cost of a graph before it runs (ADR-0017, review P2-F9): every step of every node's
+ * protocol is routed as the runner would route it (critic with the author excluded, judge
+ * with the debaters excluded, voters from distinct providers, revisions and rebuttals on
+ * their author's model, a review away from upstream providers), with dependency context
+ * counted at `dependencyAllowanceTokens` per dependency, times its call count.
  */
 export function estimateGraph(graph: TaskGraph, deps: EstimateDeps): GraphEstimate {
-  const nodes = graph.nodes.map((node): NodeEstimate => {
-    const protocol = effectiveProtocol(node);
-    const base = PROTOCOL_ROUNDS[protocol];
-    const rounds =
-      protocol === 'vote' && deps.voters ? { min: deps.voters, max: deps.voters } : base;
-    try {
-      const d = deps.router.route(node, deps.candidates, deps.constraints ?? {});
-      const per = d.chosen.estimate.expectedCostUsd;
-      return {
-        nodeId: node.id,
-        protocol,
-        ref: d.chosen.ref,
-        perCallUsd: per,
-        rounds,
-        minUsd: r6(per * rounds.min),
-        expectedUsd: r6(per * rounds.max),
-      };
-    } catch (err) {
-      const error = err instanceof Error ? err.message : String(err);
-      return {
-        nodeId: node.id,
-        protocol,
-        ref: null,
-        perCallUsd: 0,
-        rounds,
-        minUsd: 0,
-        expectedUsd: 0,
-        error,
-      };
-    }
-  });
+  const memo = new Map<string, NodeEstimate>();
+  const byId = new Map(graph.nodes.map((n) => [n.id, n]));
+  const visit = (node: GraphNode, path: Set<string>): NodeEstimate => {
+    const known = memo.get(node.id);
+    if (known) return known;
+    path.add(node.id);
+    const upstream = node.dependsOn.flatMap((id) => {
+      const dep = byId.get(id);
+      if (!dep || path.has(id)) return [];
+      return visit(dep, path).steps.map((s) => s.ref.provider);
+    });
+    const e = estimateNode(node, deps, [...new Set(upstream)]);
+    memo.set(node.id, e);
+    return e;
+  };
+  const nodes = graph.nodes.map((n) => visit(n, new Set()));
   return {
     nodes,
-    minUsd: r6(nodes.reduce((s, n) => s + n.minUsd, 0)),
-    totalUsd: r6(nodes.reduce((s, n) => s + n.expectedUsd, 0)),
-    complete: nodes.every((n) => n.ref !== null),
+    minUsd: sum(nodes.map((n) => n.minUsd)),
+    totalUsd: sum(nodes.map((n) => n.expectedUsd)),
+    complete: nodes.every((n) => n.error === undefined),
+    problems: nodes.flatMap((n) => (n.error ? [`${n.nodeId}: ${n.error}`] : [])),
   };
 }
+
+function estimateNode(node: GraphNode, deps: EstimateDeps, upstream: string[]): NodeEstimate {
+  const protocol = effectiveProtocol(node);
+  const allowance = deps.dependencyAllowanceTokens ?? DEFAULT_DEPENDENCY_ALLOWANCE_TOKENS;
+  const x: StepContext = {
+    router: deps.router,
+    candidates: deps.candidates,
+    constraints: deps.constraints ?? {},
+    allowSameProvider: deps.allowSameProvider === true,
+    maxRevisions: deps.maxRevisions ?? DEFAULT_MAX_REVISIONS,
+    voters: deps.voters ?? DEFAULT_VOTERS,
+    node,
+    context: placeholderContext(node, allowance),
+    work: filler(allowance),
+    upstream,
+  };
+  const planned = planSteps(x, protocol);
+  const { steps } = planned;
+  const first = steps[0];
+  const upgraded = upgradeReason(node);
+  return {
+    nodeId: node.id,
+    protocol,
+    ...(upgraded ? { upgraded } : {}),
+    ref: first?.ref ?? null,
+    perCallUsd: first?.perCallUsd ?? 0,
+    rounds: {
+      min: steps.reduce((a, s) => a + s.calls.min, 0),
+      max: steps.reduce((a, s) => a + s.calls.max, 0),
+    },
+    minUsd: sum(steps.map((s) => s.minUsd)),
+    expectedUsd: sum(steps.map((s) => s.expectedUsd)),
+    steps,
+    ...(planned.ok ? {} : { error: planned.error }),
+  };
+}
+
+export type { StepEstimate } from './estimate-steps.js';

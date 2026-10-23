@@ -46,6 +46,12 @@ export interface OrchestratorOptions {
   allowSameProvider?: boolean;
   /** Passed to the internal `FallbackExecutor`. */
   executor?: FallbackExecutorOptions;
+  /**
+   * Cumulative cap for one graph run (USD). When the next call would take the total above
+   * it, the budget hook is asked once with a label starting `graph total`; no hook or a
+   * refusal stops every further step. Default: no cap.
+   */
+  maxGraphUsd?: number;
   /** Ready nodes run in parallel up to this many. Default 3. */
   concurrency?: number;
   /** Max tool rounds per model step. Default 8. */
@@ -109,10 +115,9 @@ export interface StepSpec {
   exclude?: string[];
   /**
    * `hard` (default): fail when exclusion leaves no candidate, unless `allowSameProvider`.
-   * `soft`: route without the exclusion and journal that diversity was reduced.
    * `strict`: like `hard` but never waived (a second vote from the same provider is useless).
    */
-  diversity?: 'hard' | 'soft' | 'strict';
+  diversity?: 'hard' | 'strict';
   /** Try this model first when it survives routing (author revising its own draft). */
   prefer?: ModelRef;
   /** Only this model, no routing (retry after invalid output). */

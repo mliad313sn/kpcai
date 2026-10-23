@@ -38,11 +38,18 @@ describe('kpai tools / plan / do', () => {
     expect(io.stdout).toMatch(/shell\.run\s+destructive/);
   });
 
-  it('plans four nodes on four different models, with the cost before running', async () => {
+  it('plans each role on the best model, review by a provider that did not author it', async () => {
     const io = setup();
     expect(await main(['plan', '--allow-test', REQ], io)).toBe(0);
-    const models = [...io.stdout.matchAll(/(mock-\w+)\/m1/g)].map((m) => m[1]);
-    expect(new Set(models).size).toBe(4);
+    const who = (node: string) =>
+      new RegExp(`^\\s+${node}\\s.*?(mock-\\w+)/m1`, 'm').exec(io.stdout)?.[1];
+    expect([who('architecture'), who('implementation'), who('tests')]).toEqual([
+      'mock-alpha',
+      'mock-beta',
+      'mock-gamma',
+    ]);
+    expect(who('review')).not.toBe(who('implementation'));
+    expect(who('review')).not.toBe(who('tests'));
     expect(io.stdout).toMatch(/^total\s+\$[\d.]+–\$[\d.]+ before running/m);
   });
 
@@ -63,15 +70,23 @@ describe('kpai tools / plan / do', () => {
     expect(existsSync(join(io.cwd, 'test/s.test.ts'))).toBe(true);
   });
 
-  it('refuses self-review with one provider unless waived (principle 2)', async () => {
+  it('refuses self-review with one provider before spending anything, unless waived (principle 2)', async () => {
     const only = ['--exclude', 'mock,mock-alpha,mock-beta,mock-gamma'];
     const io = setup();
     expect(await main(['do', '--allow-test', ...only, 'draft an email announcing v2'], io)).toBe(1);
-    expect(io.stdout).toMatch(/\[failed\]/);
+    expect(io.stderr).toMatch(/no provider other than mock-delta \(principle 2/);
+    expect(io.stderr).toMatch(/not run/);
     const waived = setup();
     expect(
       await main(
-        ['do', '--allow-test', '--allow-same-provider', ...only, 'draft an email announcing v2'],
+        [
+          'do',
+          '--allow-test',
+          '--yes',
+          '--allow-same-provider',
+          ...only,
+          'draft an email announcing v2',
+        ],
         waived,
       ),
     ).toBe(0);

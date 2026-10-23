@@ -119,10 +119,10 @@ describe('parsePlan', () => {
 });
 
 describe('ModelPlanner', () => {
-  const planWith = (script: Script, budget?: () => boolean) => {
+  const planWith = (script: Script, budget: () => boolean = () => true) => {
     const a = new RoleAdapter('a', script);
-    const s = setup([a], budget ? { budget } : {});
-    return { a, s, planner: new ModelPlanner(s.options, { newId: () => 'mg' }) };
+    const s = setup([a]);
+    return { a, s, planner: new ModelPlanner({ ...s.options, budget }, { newId: () => 'mg' }) };
   };
 
   it('asks a routed model with Role: planner and returns its validated plan', async () => {
@@ -153,7 +153,7 @@ describe('ModelPlanner', () => {
       () => false,
     );
     expect((await blocked.planner.plan('x', ctx)).reason).toMatch(/planner blocked by budget/);
-    const none = new ModelPlanner({ ...failing.s.options, candidates: [] });
+    const none = new ModelPlanner({ ...failing.s.options, budget: () => true, candidates: [] });
     expect((await none.plan('x', ctx)).createdBy).toBe('template');
   });
 });

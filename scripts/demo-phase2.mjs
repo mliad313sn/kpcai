@@ -99,6 +99,7 @@ step('Do with --apply: approved patches go through the tool bus (git.apply)', [
   '--new-session',
   '--apply',
   '--yes',
+  '--yes-apply',
   REQ,
 ]);
 const status = git('status', '--short', '-uall').stdout;
@@ -114,7 +115,7 @@ step('A critic rejects: the author revises, the critic approves the revision', [
   'draft an email announcing the v2 release [[reject@mock-delta]] [[reject@mock-beta]] [[reject@mock-alpha]] [[reject@mock-gamma]]',
 ]);
 step(
-  'Principle 2: with one provider, no self-review — the node fails',
+  'Principle 2: with one provider, no self-review — refused before spending',
   [
     'do',
     T,

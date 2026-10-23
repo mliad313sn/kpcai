@@ -25,13 +25,18 @@ async function planGraph(
   sessionId: string,
 ): Promise<Planned> {
   const setup = await graphSetup(io, o, journal);
-  const graph = await plannerFor(o, setup, journal, sessionId).plan(o.request, { root: io.cwd });
+  const m = money(io.env);
+  if (o.planner === 'model') io.err('planning with a model: this is a paid call, budget-checked\n');
+  const gate = new BudgetGate(io, journal, { sessionId, nodeId: 'planner', m }, o);
+  const planner = plannerFor(o, setup, journal, sessionId, (c, l) => gate.allow(c, l));
+  const graph = await planner.plan(o.request, { root: io.cwd });
   const est = estimateGraph(graph, {
     router: setup.router,
     candidates: setup.candidates,
     constraints: setup.constraints,
+    allowSameProvider: o.allowSameProvider === true,
   });
-  return { graph, est, setup, m: money(io.env) };
+  return { graph, est, setup, m };
 }
 
 /** `kpai plan "request"`: the graph, who would do what, and the cost range. Runs nothing. */
@@ -136,6 +141,8 @@ async function runGraph(
   });
   try {
     const runner = new GraphRunner({
+      // The user accepted this total before the run; going beyond it asks again (P2-F9).
+      maxGraphUsd: p.est.totalUsd,
       router: p.setup.router,
       candidates: p.setup.candidates,
       constraints: p.setup.constraints,
