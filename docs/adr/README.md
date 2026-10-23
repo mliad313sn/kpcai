@@ -14,3 +14,8 @@ Status values: Accepted, Superseded by ADR-NNNN.
 | [0007](0007-journal-hash-chain.md)        | Append-only hash-chained journal                    | Accepted |
 | [0008](0008-provider-descriptors.md)      | Provider descriptors in YAML                        | Accepted |
 | [0009](0009-no-default-model-phase0.md)   | No default model and budget gate in phase 0         | Accepted |
+| [0010](0010-ai-sdk-generic-adapter.md)    | One generic adapter on the Vercel AI SDK            | Accepted |
+| [0011](0011-competence-router.md)         | Competence router: filters, score, reason           | Accepted |
+| [0012](0012-task-classifier.md)           | Heuristic task classifier                           | Accepted |
+| [0013](0013-display-currency.md)          | Display currency                                    | Accepted |
+| [0014](0014-budget-governor.md)           | Budget governor and spend ledger                    | Accepted |

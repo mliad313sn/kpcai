@@ -9,6 +9,7 @@ import {
   type JournalEvent,
   type JournalEventInput,
   type SessionRow,
+  type SpendFilter,
   type VerifyResult,
 } from './types.js';
 
@@ -156,6 +157,26 @@ export class Journal {
 
   findSession(idPrefix: string): SessionRow | undefined {
     return this.sessions(100_000).find((s) => s.id.startsWith(idPrefix));
+  }
+
+  /** Sum of `cost_usd` over matching events, in USD (spec §3.4). */
+  spend(filter: SpendFilter = {}): number {
+    const row = this.db
+      .prepare(
+        `SELECT COALESCE(SUM(e.cost_usd), 0) AS total
+         FROM events e JOIN sessions s ON s.id = e.session_id
+         WHERE (?1 IS NULL OR e.session_id = ?1)
+           AND (?2 IS NULL OR s.cwd = ?2)
+           AND (?3 IS NULL OR e.ts >= ?3)`,
+      )
+      .get(
+        filter.sessionId ?? null,
+        filter.project ?? null,
+        filter.since?.toISOString() ?? null,
+      ) as {
+      total: number;
+    };
+    return row.total;
   }
 
   /** Recomputes the whole hash chain; any edited or deleted row breaks it. */

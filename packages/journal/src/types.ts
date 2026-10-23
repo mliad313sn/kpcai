@@ -48,3 +48,12 @@ export interface VerifyResult {
   /** Sequence number of the first event whose hash does not match. */
   brokenAt?: number;
 }
+
+/** Filter for `Journal.spend`; all given fields must match (AND). */
+export interface SpendFilter {
+  sessionId?: string;
+  /** Project key: the session's working directory (`sessions.cwd`). */
+  project?: string;
+  /** Only events at or after this instant. */
+  since?: Date;
+}

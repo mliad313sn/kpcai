@@ -1,4 +1,5 @@
-export const SCHEMA_VERSION = 1;
+/** Always equals MIGRATIONS.length; migrations are append-only and never destructive. */
+export const SCHEMA_VERSION = 2;
 
 export const MIGRATIONS: readonly string[] = [
   `CREATE TABLE IF NOT EXISTS sessions (
@@ -22,4 +23,7 @@ export const MIGRATIONS: readonly string[] = [
      hash TEXT NOT NULL
    );
    CREATE INDEX IF NOT EXISTS events_session ON events(session_id, seq);`,
+  // v2 (phase 1): indexes for budget spend queries (by month and by project).
+  `CREATE INDEX IF NOT EXISTS events_ts ON events(ts);
+   CREATE INDEX IF NOT EXISTS sessions_cwd ON sessions(cwd);`,
 ];

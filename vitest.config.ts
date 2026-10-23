@@ -9,6 +9,9 @@ export default defineConfig({
       '@kernelpai/core': src('./packages/core/src/index.ts'),
       '@kernelpai/journal': src('./packages/journal/src/index.ts'),
       '@kernelpai/providers': src('./packages/providers/src/index.ts'),
+      '@kernelpai/router': src('./packages/router/src/index.ts'),
+      '@kernelpai/budget': src('./packages/budget/src/index.ts'),
+      '@kernelpai/executor': src('./packages/executor/src/index.ts'),
     },
   },
   test: {

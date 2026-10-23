@@ -17,8 +17,16 @@
     "descriptors"
   ],
   "dependencies": {
-    "@kernelpai/core": "workspace:*",
+    "@ai-sdk/deepseek": "^3.0.72",
+    "@ai-sdk/google": "^4.0.104",
+    "@ai-sdk/mistral": "^4.0.71",
+    "@ai-sdk/openai": "^4.0.101",
+    "@ai-sdk/openai-compatible": "^3.0.77",
+    "@ai-sdk/xai": "^5.0.29",
     "@anthropic-ai/sdk": "^1.1.0",
+    "@kernelpai/core": "workspace:*",
+    "@openrouter/ai-sdk-provider": "^3.1.0",
+    "ai": "^7.0.150",
     "yaml": "^2.8.0",
     "zod": "^4.1.0"
   }

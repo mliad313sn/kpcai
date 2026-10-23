@@ -1,9 +1,26 @@
 {
   "files": [],
   "references": [
-    { "path": "packages/core" },
-    { "path": "packages/journal" },
-    { "path": "packages/providers" },
-    { "path": "apps/cli" }
+    {
+      "path": "packages/core"
+    },
+    {
+      "path": "packages/journal"
+    },
+    {
+      "path": "packages/providers"
+    },
+    {
+      "path": "packages/router"
+    },
+    {
+      "path": "packages/budget"
+    },
+    {
+      "path": "packages/executor"
+    },
+    {
+      "path": "apps/cli"
+    }
   ]
 }

@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { Journal } from './journal.js';
 import { sessionToMarkdown } from './markdown.js';
 import { GENESIS_HASH } from './hash.js';
+import { MIGRATIONS, SCHEMA_VERSION } from './schema.js';
 
 const open: Journal[] = [];
 function fresh(path = ':memory:'): Journal {
@@ -119,5 +120,47 @@ describe('sessionToMarkdown', () => {
     expect(md).toContain('error (auth): no key');
     expect(md).toContain('response: 3 output tokens, stop=end · $0.250000');
     expect(md).toMatch(/## Answer\n\nThe answer\.\n$/);
+  });
+});
+
+describe('Journal.spend', () => {
+  it('sums cost by session, project and since', () => {
+    let t = Date.parse('2026-09-30T23:59:57Z');
+    const j = Journal.open(':memory:', { now: () => new Date((t += 1000)) });
+    open.push(j);
+    const a = j.startSession('a', '/p1');
+    const b = j.startSession('b', '/p2');
+    j.append({ sessionId: a, type: 'response', costUsd: 1, payload: {} }); // 2026-10-01T00:00:00Z
+    j.append({ sessionId: a, type: 'call', payload: {} }); // no cost
+    j.append({ sessionId: b, type: 'response', costUsd: 2.5, payload: {} });
+    j.append({ sessionId: a, type: 'error', costUsd: 0.25, payload: {} });
+    expect(j.spend()).toBe(3.75);
+    expect(j.spend({ sessionId: a })).toBe(1.25);
+    expect(j.spend({ project: '/p2' })).toBe(2.5);
+    expect(j.spend({ project: '/p1', sessionId: b })).toBe(0);
+    expect(j.spend({ since: new Date('2026-10-01T00:00:01Z') })).toBe(2.75);
+    expect(j.spend({ project: '/none' })).toBe(0);
+  });
+
+  it('migrates a v1 journal without touching its chain', () => {
+    const path = join(mkdtempSync(join(tmpdir(), 'kpai-')), 'v1.db');
+    const raw = new DatabaseSync(path);
+    raw.exec(MIGRATIONS[0] as string);
+    raw.exec('PRAGMA user_version = 1');
+    raw.close();
+    const j1 = fresh(path);
+    const s = j1.startSession('old', '/repo');
+    j1.append({ sessionId: s, type: 'response', costUsd: 0.5, payload: {} });
+    const check = new DatabaseSync(path);
+    const v = check.prepare('PRAGMA user_version').get() as { user_version: number };
+    const idx = check.prepare("SELECT name FROM sqlite_master WHERE type = 'index'").all();
+    check.close();
+    expect(v.user_version).toBe(SCHEMA_VERSION);
+    expect(SCHEMA_VERSION).toBe(MIGRATIONS.length);
+    expect(idx.map((r) => (r as { name: string }).name)).toEqual(
+      expect.arrayContaining(['events_ts', 'sessions_cwd']),
+    );
+    expect(j1.spend({ project: '/repo' })).toBe(0.5);
+    expect(j1.verify().ok).toBe(true);
   });
 });

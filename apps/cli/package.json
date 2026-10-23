@@ -18,6 +18,9 @@
   "dependencies": {
     "@kernelpai/core": "workspace:*",
     "@kernelpai/journal": "workspace:*",
-    "@kernelpai/providers": "workspace:*"
+    "@kernelpai/providers": "workspace:*",
+    "@kernelpai/router": "workspace:*",
+    "@kernelpai/budget": "workspace:*",
+    "@kernelpai/executor": "workspace:*"
   }
 }
