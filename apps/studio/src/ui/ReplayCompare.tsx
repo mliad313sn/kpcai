@@ -1,12 +1,12 @@
 /**
  * R-403 side by side: the original attempt (kept as recorded) and its replay — models,
  * protocol, outcome, verdicts, cost and duration, then both outputs. Outputs are model
- * text: rendered as text only.
+ * text: rendered as text only. While the replay runs, it can be cancelled (P4-F5).
  */
 import { t, type Key } from '../i18n/core';
 import type { Attempt, ReplayView } from '../rpc/learning-schemas';
 import { formatDuration, formatUsd } from '../store/format';
-import { nodeKey } from '../store/learning';
+import { cancelReplay, nodeKey } from '../store/replay';
 import { refKey } from '../store/reducer';
 import { useStudio } from '../store/store';
 
@@ -80,9 +80,20 @@ export function ReplayCompare({ runId, nodeId }: { runId: string; nodeId: string
   if (!entry) return null;
   if (entry.pending)
     return (
-      <p className="muted" role="status">
-        {t('replay.running', { id: nodeId })}
-      </p>
+      <div className="row">
+        <p className="muted" role="status">
+          {t(entry.cancelling ? 'replay.cancelling' : 'replay.running', { id: nodeId })}
+        </p>
+        {entry.planId && (
+          <button
+            type="button"
+            disabled={entry.cancelling === true}
+            onClick={() => void cancelReplay(runId, nodeId)}
+          >
+            {t('replay.cancel')}
+          </button>
+        )}
+      </div>
     );
   const r = entry.result;
   const c = r.comparison;

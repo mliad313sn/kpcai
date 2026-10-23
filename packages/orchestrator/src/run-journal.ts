@@ -34,6 +34,22 @@ export interface ForkOrigin {
   nodeId: string;
 }
 
+/**
+ * The routing constraints a run was started under (P4-F2): journaled with `run started` so
+ * that a replay or a fork of the run can hold them as a floor (stricter, never looser).
+ * Provider-neutral: no model ids, no secrets.
+ */
+export interface RunRouting {
+  /** Only `kind: local` providers. */
+  localOnly?: boolean;
+  /** Providers the run was told never to use. */
+  exclude?: string[];
+  /** The routing profile in force (economy, balanced, performance). */
+  profile?: string;
+  /** True when `kind: test` providers were allowed. */
+  allowTest?: boolean;
+}
+
 /** A finished node as recorded: its inputs, its result and how long it took. */
 export interface RecordedNode {
   /** Id of the journal event holding this record. */
@@ -74,10 +90,14 @@ export interface RecordedRun {
   eventId: string;
   graph: TaskGraph & { nodes: PlannedNode[] };
   parent?: ForkOrigin;
+  /** The run's routing constraints; absent for runs journaled before P4-F2. */
+  routing?: RunRouting;
   reused: string[];
   nodes: Record<string, RecordedNode>;
   replays: RecordedReplay[];
 }
+
+const isObj = (x: unknown): x is Record<string, unknown> => typeof x === 'object' && x !== null;
 
 /** Journals the start of a run with the graph as it will run. */
 export function journalRunStart(
@@ -85,13 +105,29 @@ export function journalRunStart(
   runId: string,
   graph: TaskGraph,
   fork?: { parent: ForkOrigin; reused: string[] },
+  routing?: RunRouting,
 ): void {
   steps.intervention(undefined, {
     action: RUN_STARTED,
     runId,
     graph: { ...graph, nodes: graph.nodes },
     ...(fork ? { parent: fork.parent, reused: fork.reused } : {}),
+    ...(routing ? { routing } : {}),
   });
+}
+
+/** A journaled routing record, read defensively (journal payloads are data). */
+export function toRouting(x: unknown): RunRouting | undefined {
+  if (!isObj(x)) return undefined;
+  const exclude = Array.isArray(x['exclude'])
+    ? x['exclude'].filter((p): p is string => typeof p === 'string')
+    : [];
+  return {
+    ...(x['localOnly'] === true ? { localOnly: true } : {}),
+    ...(exclude.length > 0 ? { exclude } : {}),
+    ...(typeof x['profile'] === 'string' ? { profile: x['profile'] } : {}),
+    ...(typeof x['allowTest'] === 'boolean' ? { allowTest: x['allowTest'] } : {}),
+  };
 }
 
 /** Journals one node's record (inputs, result, duration). */
@@ -102,8 +138,6 @@ export function journalNode(
 ): void {
   steps.intervention(rec.result.nodeId, { action: NODE_RECORDED, runId, ...rec });
 }
-
-const isObj = (x: unknown): x is Record<string, unknown> => typeof x === 'object' && x !== null;
 
 /** Reads a run's record back from the journal; undefined when the run is unknown. */
 export function readRun(
@@ -143,12 +177,14 @@ function assemble(
     if (replay) replays.push(replay);
   }
   const parent = p['parent'];
+  const routing = toRouting(p['routing']);
   return {
     runId,
     sessionId,
     eventId: start.id,
     graph: p['graph'] as unknown as RecordedRun['graph'],
     ...(isObj(parent) ? { parent: parent as unknown as ForkOrigin } : {}),
+    ...(routing ? { routing } : {}),
     reused: Array.isArray(p['reused']) ? (p['reused'] as string[]) : [],
     nodes,
     replays,

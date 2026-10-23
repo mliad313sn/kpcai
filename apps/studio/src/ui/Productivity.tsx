@@ -59,8 +59,9 @@ function extras(p: ProductivityView): Array<[Key, string]> {
       'productivity.review',
       t('productivity.reviewValue', {
         review: formatUsd(p.review.reviewUsd),
-        count: p.review.acceptedFindings,
-        per: usd(p.review.usdPerAcceptedFinding),
+        count: p.review.revisedVerdicts ?? '—',
+        per: usd(p.review.usdPerRevisedVerdict),
+        issues: p.review.issuesRaised ?? '—',
       }),
     ]);
   if (p.band)

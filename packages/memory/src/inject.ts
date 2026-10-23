@@ -6,7 +6,8 @@
  * and fits a token budget; what was left out is counted. `local-only` facts are given only
  * when the receiving provider is local.
  */
-import { isHuman, type Fact, type Layer } from './types.js';
+import { screenFact, type Guard } from './guard.js';
+import { isHuman, type Fact, type Layer, type Provenance } from './types.js';
 
 export const DEFAULT_MEMORY_TOKENS = 2000;
 
@@ -36,6 +37,8 @@ export interface MemoryContext {
   omitted: number;
   /** Local-only facts not given because the receiver is not local. */
   withheld: number;
+  /** Facts the guard refused at injection (zones, size, empty): never given. */
+  refused: number;
   usedTokens: number;
   budgetTokens: number;
 }
@@ -46,7 +49,20 @@ export interface BuildOptions {
   local: boolean;
   /** Treat every fact as untrusted (memory files were reachable by model tools). */
   distrustAll?: boolean;
+  /**
+   * Zones and secret values in force: every fact is screened again as it is injected
+   * (files can be edited by hand), refused ones are left out and counted (P4-F1).
+   */
+  guard?: Guard;
 }
+
+/** What a repository file says about a fact's origin is ignored (P4-F1). */
+export const REPOSITORY_PROVENANCE: Readonly<Provenance> = {
+  source: 'repository',
+  date: '',
+  evidence: [],
+  localOnly: false,
+};
 
 /** Rough token count used for the budget (4 characters per token, rounded up). */
 export function tokensOf(text: string): number {
@@ -77,21 +93,38 @@ function trustOf(origin: MemoryOrigin, f: Fact, distrustAll: boolean): FactTrust
   return !distrustAll && origin !== 'repository' && isHuman(f.provenance) ? 'user' : 'untrusted';
 }
 
+/** An attribute as a prompt tag: one short token of safe characters, whatever the file said. */
+export function tagOf(v: string): string {
+  return v.slice(0, 120).replace(/[^A-Za-z0-9._:/@+-]/g, '_') || '_';
+}
+
 function lineOf(c: Omit<Candidate, 'line'>): string {
   const p = c.fact.provenance;
   const who = c.trust === 'user' ? 'you' : p.source;
-  const tags = [c.origin, who, p.date || 'undated', ...p.evidence.slice(0, 2)];
+  const tags = [c.origin, who, p.date || 'undated', ...p.evidence.slice(0, 2), c.fact.id];
   // The text is one cleaned line; angle brackets cannot close the data block.
   const text = c.fact.text.replace(/</g, '‹').replace(/>/g, '›');
-  return `- ${text} [${tags.join(' · ')} · ${c.fact.id}]`;
+  return `- ${text} [${tags.map(tagOf).join(' · ')}]`;
+}
+
+/** The fact as it may be injected: repository provenance replaced, text screened again. */
+function screened(origin: MemoryOrigin, f: Fact, guard: Guard): Fact | undefined {
+  const provenance = origin === 'repository' ? { ...REPOSITORY_PROVENANCE } : f.provenance;
+  try {
+    return { ...f, provenance, text: screenFact(f.text, guard) };
+  } catch {
+    return undefined;
+  }
 }
 
 /** Deterministic order: user-trusted first, then by layer, date and id. */
 function ordered(sources: readonly MemorySource[], o: BuildOptions): Candidate[] {
   const all = sources.flatMap((s) =>
-    s.facts.map((fact) => {
+    s.facts.flatMap((raw) => {
+      const fact = screened(s.origin, raw, o.guard ?? {});
+      if (!fact) return [];
       const trust = trustOf(s.origin, fact, o.distrustAll === true);
-      return { fact, origin: s.origin, trust };
+      return [{ fact, origin: s.origin, trust }];
     }),
   );
   all.sort(
@@ -141,6 +174,7 @@ export function buildMemoryContext(
 ): MemoryContext {
   const budgetTokens = o.budgetTokens ?? DEFAULT_MEMORY_TOKENS;
   const all = ordered(sources, o);
+  const refused = sources.reduce((n, s) => n + s.facts.length, 0) - all.length;
   const allowed = all.filter((c) => o.local || !c.fact.provenance.localOnly);
   const withheld = all.length - allowed.length;
   const picked: Candidate[] = [];
@@ -155,12 +189,12 @@ export function buildMemoryContext(
   const included = picked.map((c) => ({
     id: c.fact.id,
     origin: c.origin,
-    source: c.fact.provenance.source,
+    source: tagOf(c.fact.provenance.source),
     trust: c.trust,
     localOnly: c.fact.provenance.localOnly,
   }));
   if (picked.length === 0 && withheld === 0 && omitted === 0)
-    return { text: '', included, omitted, withheld, usedTokens: 0, budgetTokens };
+    return { text: '', included, omitted, withheld, refused, usedTokens: 0, budgetTokens };
   const text = [header(picked), body(picked, omitted, withheld)].filter(Boolean).join('\n\n');
-  return { text, included, omitted, withheld, usedTokens: tokensOf(text), budgetTokens };
+  return { text, included, omitted, withheld, refused, usedTokens: tokensOf(text), budgetTokens };
 }

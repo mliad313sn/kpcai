@@ -7,14 +7,18 @@
 import { z } from 'zod';
 import { RefSchema } from './schemas';
 
+/**
+ * The headline is `revisedVerdicts` (P4-F12): rejecting verdicts answered by a revision the
+ * reviewers then approved, one each, and the review cost per such verdict. Raw issues come
+ * second. An older kernel without them shows the raw issues only.
+ */
 export const VerificationSchema = z.looseObject({
   reviewUsd: z.number(),
   totalUsd: z.number(),
   share: z.number(),
   issuesRaised: z.number(),
-  acceptedFindings: z.number(),
-  acceptedRevisions: z.number().optional().catch(undefined),
-  usdPerAcceptedFinding: z.number().nullable().catch(null),
+  revisedVerdicts: z.number().optional().catch(undefined),
+  usdPerRevisedVerdict: z.number().nullable().catch(null),
 });
 export type Verification = z.infer<typeof VerificationSchema>;
 
@@ -109,8 +113,9 @@ export const ProductivityViewSchema = z.looseObject({
   review: z
     .looseObject({
       reviewUsd: z.number(),
-      acceptedFindings: z.number(),
-      usdPerAcceptedFinding: Ratio,
+      issuesRaised: z.number().optional().catch(undefined),
+      revisedVerdicts: z.number().optional().catch(undefined),
+      usdPerRevisedVerdict: Ratio,
     })
     .optional()
     .catch(undefined),

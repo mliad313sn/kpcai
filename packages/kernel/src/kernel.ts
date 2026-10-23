@@ -7,8 +7,8 @@
 import { randomUUID } from 'node:crypto';
 import type { ModelRef } from '@kernelpai/core';
 import type { Journal } from '@kernelpai/journal';
-import type { ControlOutcome, RunControl } from '@kernelpai/orchestrator';
-import { applyAll, applyArtifacts, type ApplyContext } from './apply.js';
+import type { ControlOutcome, ReplayResult, RunControl } from '@kernelpai/orchestrator';
+import { applyAll, applyArtifacts, runApplyContext, type ApplyContext } from './apply.js';
 import type { GateHost } from './budget-gate.js';
 import { askQueue, hostChoose, hostConfirm, type Choose, type Confirm } from './confirm.js';
 import { KernelError } from './errors.js';
@@ -33,10 +33,10 @@ import { summarizeRun } from './runs-view.js';
 import { askZoneRelaxations, gatherScope, guardWorkspace } from './authorise.js';
 import { checkScope } from './scope.js';
 import { CANCEL_ACTION, notWritable, recordedOutcome, runFlags } from './run-record.js';
-import { WT_SUFFIX, WorkspaceOps, type CheckpointInfo } from './workspace-ops.js';
+import { WorkspaceOps, type CheckpointInfo } from './workspace-ops.js';
 import { KernelMemory, type ExportResult } from './memory-service.js';
 import { KernelLearning } from './learning.js';
-import { KernelReplays } from './replay.js';
+import { KernelReplays, type ReplayFlags, type ReplayHandle, type ReplayPlan } from './replay.js';
 import type { PackZoneOptions } from '@kernelpai/tools';
 
 const KEEP_PLANS = 32;
@@ -111,12 +111,28 @@ export class Kernel extends Queries {
 
   /**
    * Reruns a finished run's node beside the original (R-403); never while the run is live.
-   * It spends and its tools act in the workspace, so the workspace is guarded like a run's.
+   * Plans the replay and starts it at once: its cap is still checked against the budget
+   * (D-021). Front ends that show the estimate first use `replayPlan` and `startReplay`.
    */
-  async replay(...args: Parameters<KernelReplays['replay']>): ReturnType<KernelReplays['replay']> {
+  async replay(...args: Parameters<KernelReplays['plan']>): Promise<ReplayResult> {
+    const plan = await this.replayPlan(...args);
+    const o = args[3] ?? {};
+    return (await this.startReplay(plan.planId, { yes: o.yes, overBudget: o.overBudget })).done;
+  }
+
+  /** A replay's likely cost and cap, before anything is spent (P4-F5). Runs nothing. */
+  async replayPlan(...args: Parameters<KernelReplays['plan']>): Promise<ReplayPlan> {
     this.notLive(args[0], 'replay a node');
+    return this.replays.plan(...args);
+  }
+
+  /**
+   * Starts a planned replay. It spends and its tools act in the workspace, so the workspace
+   * is guarded like a run's; `cancel(replayId)` stops it (P4-F5).
+   */
+  async startReplay(planId: string, flags: ReplayFlags = {}): Promise<ReplayHandle> {
     await this.checkWorkspace();
-    return this.replays.replay(...args);
+    return this.replays.start(planId, flags);
   }
 
   /** Plans a fork of a past run from a node (R-403); start it with `startFork`. */
@@ -297,6 +313,10 @@ export class Kernel extends Queries {
    * still open or queued are declined (review P3-F2). False if finished.
    */
   cancel(runId: string): boolean {
+    // A live replay's id (P4-F5): journaled by the replay, its questions closed.
+    const replay = this.replays.cancel(runId);
+    if (replay) this.host.cancelConfirmations?.(runId);
+    if (replay !== undefined) return replay;
     const run = this.runById(runId);
     if (FINISHED.has(run.state) || run.ctl.signal.aborted) return false;
     // A live runner journals and reports the cancel itself; before it starts, the kernel does.
@@ -313,8 +333,9 @@ export class Kernel extends Queries {
     return true;
   }
 
-  /** True while a cancelled run winds down: its questions are void. */
+  /** True while a cancelled run or replay winds down: its questions are void. */
   private cancelling(runId: string | undefined): boolean {
+    if (this.replays.cancelling(runId)) return true;
     const run = runId === undefined ? undefined : this.runs.get(runId);
     return run !== undefined && run.ctl.signal.aborted && !FINISHED.has(run.state);
   }
@@ -372,20 +393,8 @@ export class Kernel extends Queries {
 
   /** Writes go to the run's tree, each after a checkpoint of that tree (R-305, R-307). */
   private applyContext(run: StoredRun, yesApply: boolean | undefined): ApplyContext {
-    const root = run.workRoot ?? this.host.cwd;
-    const ns = run.workRoot ? run.runId + WT_SUFFIX : run.runId;
-    const sessionId = run.plan.sessionId;
-    return {
-      host: this.host,
-      journal: this.journal,
-      confirm: this.confirm,
-      sessionId,
-      runId: run.runId,
-      root,
-      checkpoint: (label) => this.workspace.before(root, ns, label, sessionId),
-      packs: busPacks(run.plan.packs, sessionId),
-      ...(yesApply ? { yesApply: true } : {}),
-    };
+    const base = { host: this.host, journal: this.journal, confirm: this.confirm };
+    return runApplyContext({ ...base, workspace: this.workspace }, run, yesApply);
   }
 
   /**
@@ -500,6 +509,7 @@ export class Kernel extends Queries {
       run.ctl.abort();
       this.host.cancelConfirmations?.(run.runId);
     }
+    await this.replays.close((id) => this.host.cancelConfirmations?.(id));
     await Promise.allSettled([...this.runs.values()].flatMap((r) => [r.done, r.asked]));
     this.closeJournal();
   }

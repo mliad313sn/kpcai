@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { verificationLine } from './commands/graph.js';
-import { terminalChoose } from './host.js';
+import { KERNEL_OPTION_CHARS, terminalChoose } from './host.js';
 import { main } from './main.js';
 import { fakeIo, type FakeIo } from './test-helpers/fake-io.js';
 import { writeMockProviders } from './test-helpers/mock-providers.js';
@@ -43,7 +43,7 @@ describe('kpai grade, stats and bench', () => {
     const io = setup();
     expect(await kpai(io, 'do', '--allow-test', '--yes', REQ)).toBe(0);
     expect(io.stderr).toMatch(/^accuracy past estimates here: no finished run yet/m);
-    expect(io.stderr).toMatch(/review \S+ \(\d+%\) for \d+ accepted finding/);
+    expect(io.stderr).toMatch(/review \S+ \(\d+%\) for \d+ revised verdict\(s\).* \(\d+ issues\)/);
     const runId = /kpai merge (\S+)/.exec(io.stderr)?.[1] ?? '';
     const sessions = await kpai(io, 'log');
     expect(sessions).toBe(0);
@@ -103,8 +103,30 @@ describe('disputes at the terminal (R-405)', () => {
     expect(await terminalChoose(io)(req)).toBe('b');
     expect(io.stderr).toContain('    > first');
     expect(io.stderr).not.toContain('\u001b');
-    expect(io.stderr).toContain('…');
+    // P4-F11: an option the human may choose is shown whole, never cut.
+    expect(io.stderr).toContain(`    > ${'x'.repeat(3000)}\n`);
+    expect(io.stderr).not.toContain('…');
     expect(io.questions).toEqual(['Take option A for node n?', 'Take option B for node n?']);
+  });
+
+  it('cuts long positions but never offers an option it could not show whole (P4-F11)', async () => {
+    const io = setup();
+    io.confirmAnswers = [true];
+    const long = {
+      ...dispute,
+      options: [
+        { id: 'a', label: 'A', text: 'y'.repeat(KERNEL_OPTION_CHARS), backers: [] },
+        { id: 'b', label: 'B', text: 'short', backers: [] },
+      ],
+      positions: [{ ref: 'p/m', role: 'voter', says: 'z'.repeat(3000) }],
+    };
+    expect(await terminalChoose(io)({ ...req, dispute: long })).toBe('b');
+    expect(io.stderr).toContain('…');
+    expect(io.stderr).not.toContain('y'.repeat(100));
+    expect(io.stderr).toMatch(
+      /too long to show in full: 20000 characters or more; it cannot be chosen here/,
+    );
+    expect(io.questions).toEqual(['Take option B for node n?']);
   });
 
   it('rejects when every answer is no', async () => {
@@ -122,12 +144,15 @@ describe('disputes at the terminal (R-405)', () => {
           verification: {
             reviewUsd: 0.5,
             share: 0.25,
-            acceptedFindings: 2,
-            usdPerAcceptedFinding: 0.25,
+            acceptedFindings: 3,
+            usdPerAcceptedFinding: 0.1667,
+            revisedVerdicts: 2,
+            majorFindings: 1,
+            usdPerRevisedVerdict: 0.25,
           },
         },
         m,
       ),
-    ).toBe('review $0.50 (25%) for 2 accepted finding(s), $0.25 each');
+    ).toBe('review $0.50 (25%) for 2 revised verdict(s), $0.25 each (3 issues)');
   });
 });

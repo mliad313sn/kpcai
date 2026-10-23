@@ -13,6 +13,7 @@ import {
   serializeMemory,
   type MemoryDoc,
 } from './format.js';
+import { isEvidence, isSource } from './attrs.js';
 import { KeyedLock, memoryFile, pendingFile, readText, writeAtomic } from './files.js';
 import { screenFact, type Guard } from './guard.js';
 import {
@@ -57,9 +58,10 @@ const PendingSchema = z.object({
   scope: ScopeSchema,
   text: z.string().min(1),
   provenance: z.object({
-    source: z.string().min(1),
+    // A hand-edited queue cannot forge a source or evidence either (P4-F1).
+    source: z.string().refine((v) => v !== 'human' && isSource(v)),
     date: z.string(),
-    evidence: z.array(z.string()),
+    evidence: z.array(z.string().refine(isEvidence)),
     localOnly: z.boolean(),
   }),
   proposedAt: z.string(),
@@ -201,6 +203,11 @@ export class MemoryStore {
   ): Promise<PendingFact> {
     if (!from.source || from.source === 'human')
       throw new MemoryError('invalid', 'a proposal comes from a model; a human adds facts');
+    if (!isSource(from.source) || !(from.evidence ?? []).every(isEvidence))
+      throw new MemoryError(
+        'invalid',
+        'a proposal needs a provider/model source and run:/node: evidence',
+      );
     const text = screenFact(input.text, this.o);
     const known = await this.list(input.scope);
     if (known.facts.some((f) => f.text === text))

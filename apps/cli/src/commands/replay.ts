@@ -4,7 +4,14 @@
  * nothing; a fork is planned, shown with its estimate, started like any plan (band top
  * checked, D-021) and finished like `kpai do` (patches only with `--apply`, each confirmed).
  */
-import { KernelError, type GraphOptions, type NodeEdit } from '@kernelpai/kernel';
+import {
+  KernelError,
+  readScopeFile,
+  type GraphOptions,
+  type Kernel,
+  type NodeEdit,
+  type ReplayPlan,
+} from '@kernelpai/kernel';
 import type { ReplayResult } from '@kernelpai/orchestrator';
 import { formatMoney, money } from '../config.js';
 import type { Io } from '../io.js';
@@ -27,6 +34,8 @@ export interface NodeCliOptions extends GraphOptions {
   instruction?: string | undefined;
   apply?: boolean | undefined;
   yesApply?: boolean | undefined;
+  /** `--scope <file>`: authorised scope (YAML or JSON) for packs that need one. */
+  scopeFile?: string | undefined;
 }
 
 /** A usage problem in the arguments, reported with exit code 2. */
@@ -51,11 +60,64 @@ export function nodeEdit(o: NodeCliOptions): NodeEdit {
   return edit;
 }
 
-function graphOptions(o: NodeCliOptions): GraphOptions {
-  const keys = ['allowTest', 'yes', 'overBudget', 'allowSameProvider', 'isolated'] as const;
+/**
+ * The run flags of a replay or fork, routing included (P4-F2): the kernel holds them to the
+ * original run's routing as a floor, so they can only make it stricter.
+ */
+async function graphOptions(o: NodeCliOptions): Promise<GraphOptions> {
+  const keys = [
+    'allowTest',
+    'yes',
+    'overBudget',
+    'allowSameProvider',
+    'isolated',
+    'localOnly',
+    'exclude',
+    'profile',
+  ] as const;
   const out: GraphOptions = {};
   for (const k of keys) if (o[k] !== undefined) Object.assign(out, { [k]: o[k] });
+  if (o.scopeFile)
+    out.scope = (await readScopeFile(o.scopeFile)) ?? { invalid: `${o.scopeFile} not found` };
   return out;
+}
+
+/** What the replay is held to, in words (P4-F2). */
+function routingLine(o: GraphOptions): string {
+  const parts = [
+    o.localOnly ? 'local-only' : '',
+    o.exclude?.length ? `excluding ${o.exclude.join(', ')}` : '',
+    o.profile ? `profile ${o.profile}` : '',
+  ].filter(Boolean);
+  return parts.length ? ` · ${sanitizeForTerminal(parts.join(' · '))}` : '';
+}
+
+/**
+ * P4-F5: likely and cap first (D-021), then a yes (`--yes` or y at the prompt) before
+ * anything is spent. Returns false when the human declined.
+ */
+async function accepted(io: Io, plan: ReplayPlan, yes: boolean | undefined): Promise<boolean> {
+  const m = money(io.env);
+  const { expectedUsd, capUsd } = plan.estimate;
+  const what = `replay of ${sanitizeForTerminal(plan.nodeId)} (run ${plan.runId.slice(0, 8)})`;
+  io.err(
+    `${what}: likely ${formatMoney(expectedUsd, m)} · up to ${formatMoney(capUsd, m)} (cap)${routingLine(plan.options)}\n`,
+  );
+  for (const p of plan.scope.problems) io.err(`  – scope: ${sanitizeForTerminal(p)}\n`);
+  if (yes) return true;
+  return io.confirm(`Run this ${what} for up to ${formatMoney(capUsd, m)}?`);
+}
+
+/** Runs a planned replay; Ctrl+C cancels it (the attempt keeps its partial output). */
+async function runReplay(io: Io, kernel: Kernel, plan: ReplayPlan, o: NodeCliOptions) {
+  const flags = { yes: o.yes, overBudget: o.overBudget, accepted: true };
+  const handle = await kernel.startReplay(plan.planId, flags);
+  const unregister = io.onInterrupt(() => void kernel.cancel(handle.replayId));
+  try {
+    return await handle.done;
+  } finally {
+    unregister();
+  }
 }
 
 /** Kernel refusals of a replay or fork: bad arguments are 2, an unknown run or node 1. */
@@ -63,6 +125,10 @@ function failed(io: Io, err: unknown): number {
   if (err instanceof NodeArgsError) {
     io.err(`${err.message}\n`);
     return 2;
+  }
+  if (err instanceof KernelError && err.code === 'budget') {
+    io.err(`${err.message}\n`);
+    return 4;
   }
   if (err instanceof KernelError && (err.code === 'invalid' || err.code === 'not_found')) {
     io.err(`not run — ${err.message}\n`);
@@ -87,7 +153,12 @@ export async function replayCommand(io: Io, o: NodeCliOptions): Promise<number> 
   }
   const kernel = open(io, o);
   try {
-    const r = await kernel.replay(o.runId, o.nodeId, nodeEdit(o), graphOptions(o));
+    const plan = await kernel.replayPlan(o.runId, o.nodeId, nodeEdit(o), await graphOptions(o));
+    if (!(await accepted(io, plan, o.yes))) {
+      io.err('not run — replay declined\n');
+      return 4;
+    }
+    const r = await runReplay(io, kernel, plan, o);
     const m = money(io.env);
     io.out(attempt('original', r.original, m));
     io.out(attempt('replay', r.replay, m));
@@ -108,7 +179,7 @@ export async function replayCommand(io: Io, o: NodeCliOptions): Promise<number> 
 export async function forkCommand(io: Io, o: NodeCliOptions): Promise<number> {
   const kernel = open(io, o);
   try {
-    const options = graphOptions(o);
+    const options = await graphOptions(o);
     const plan = await kernel.forkPlan(o.runId, o.nodeId, nodeEdit(o), options);
     const f = plan.fork;
     io.err(planText(plan));

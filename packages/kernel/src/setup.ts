@@ -10,6 +10,7 @@ import {
   ModelPlanner,
   TemplatePlanner,
   type BudgetHook,
+  type RecordedRun,
   type ReviewPolicy,
 } from '@kernelpai/orchestrator';
 import { candidates as scanCandidates, type ProviderRegistry } from '@kernelpai/providers';
@@ -40,6 +41,42 @@ export interface GraphOptions {
   isolated?: boolean | 'auto';
   /** Authorised scope for packs that require one (WI-S1-03); validated by the kernel. */
   scope?: unknown;
+}
+
+/** The routing constraints journaled with a run (P4-F2). */
+export type RunRouting = NonNullable<RecordedRun['routing']>;
+
+/** What a run's options say about routing, as journaled with it (the profile resolved). */
+export function routingRecord(env: Env, o: GraphOptions): RunRouting {
+  let profile: string | undefined;
+  try {
+    profile = routingProfile(env, o.profile);
+  } catch {
+    profile = undefined;
+  }
+  return {
+    ...(o.localOnly ? { localOnly: true } : {}),
+    ...(o.exclude?.length ? { exclude: [...o.exclude] } : {}),
+    ...(profile ? { profile } : {}),
+    allowTest: o.allowTest === true,
+  };
+}
+
+/**
+ * A replay's or a fork's options held to the original run's routing as a floor (P4-F2):
+ * local-only stays on, excluded providers stay excluded, test providers stay refused when
+ * the run refused them; the run's profile applies unless one is given. Stricter options
+ * are kept. A run journaled before P4-F2 has no record: the options are used as given.
+ */
+export function routingFloor(o: GraphOptions, r: RunRouting | undefined): GraphOptions {
+  if (!r) return o;
+  const out: GraphOptions = { ...o };
+  if (r.localOnly) out.localOnly = true;
+  const exclude = [...new Set([...(r.exclude ?? []), ...(o.exclude ?? [])])];
+  if (exclude.length > 0) out.exclude = exclude;
+  if (r.allowTest !== true) delete out.allowTest;
+  if (o.profile === undefined && r.profile !== undefined) out.profile = r.profile;
+  return out;
 }
 
 export interface GraphSetup {

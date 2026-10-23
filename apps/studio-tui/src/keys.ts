@@ -4,7 +4,8 @@
  * instruction or a redirect for the selected node; Esc goes back to the request line. A
  * confirmation takes over the keyboard and only y/o (yes) is a yes: anything else — n,
  * Esc, Enter — is the default No. A dispute (R-405) first takes a number to pick an
- * option; y then settles it with that option, anything else rejects (fail closed). A
+ * option; ] and [ (or the arrow and page keys) scroll the picked option, y then settles it
+ * with that option once it was read to the end, anything else rejects (fail closed). A
  * memory proposal (ADR-0027) also takes r to reject it; No leaves it pending.
  */
 export type Action =
@@ -24,6 +25,7 @@ export type Action =
   | { kind: 'quit' }
   | { kind: 'confirm'; ok: boolean; reject?: true }
   | { kind: 'choose'; index: number }
+  | { kind: 'scroll'; pages: 1 | -1 }
   | { kind: 'grade'; grade: 'good' | 'bad' }
   | { kind: 'none' };
 
@@ -35,6 +37,10 @@ export interface KeyInfo {
   tab?: boolean;
   backspace?: boolean;
   delete?: boolean;
+  upArrow?: boolean;
+  downArrow?: boolean;
+  pageUp?: boolean;
+  pageDown?: boolean;
 }
 
 const CTRL: Record<string, Action['kind']> = {
@@ -63,7 +69,17 @@ export function confirmAction(input: string, kind: Confirming = true, ctrl = fal
 
 const GRADES: Record<string, 'good' | 'bad'> = { g: 'good', b: 'bad' };
 
+/** ] or ↓ or PgDn scrolls a picked dispute option down a window; [ or ↑ or PgUp up. */
+function scrollAction(input: string, key: KeyInfo): Action | undefined {
+  if (key.ctrl) return undefined;
+  if (input === ']' || key.downArrow || key.pageDown) return { kind: 'scroll', pages: 1 };
+  if (input === '[' || key.upArrow || key.pageUp) return { kind: 'scroll', pages: -1 };
+  return undefined;
+}
+
 export function keyAction(input: string, key: KeyInfo, confirming: Confirming): Action {
+  const scroll = confirming === 'dispute' ? scrollAction(input, key) : undefined;
+  if (scroll) return scroll;
   if (confirming)
     return key.ctrl && input === 'c'
       ? { kind: 'quit' }

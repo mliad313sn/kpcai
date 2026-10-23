@@ -8,6 +8,7 @@ import {
   type Kernel,
   type KernelErrorCode,
   type LayerRef,
+  type NodeEdit,
   type RunHandle,
 } from '@kernelpai/kernel';
 import {
@@ -198,7 +199,8 @@ async function forkPlanResult(kernel: Kernel, p: ParamsOf<'run.forkPlan'>, defau
     ...(e.protocol ? { protocol: e.protocol } : {}),
     ...(e.instruction ? { instruction: e.instruction } : {}),
   };
-  const plan = await kernel.forkPlan(p.runId, p.nodeId, edit, defaults);
+  // The kernel holds these to the run's routing as a floor (P4-F2).
+  const plan = await kernel.forkPlan(p.runId, p.nodeId, edit, { ...defaults, ...p.options });
   const fork = plan.fork!;
   return {
     planId: plan.planId,
@@ -211,12 +213,55 @@ async function forkPlanResult(kernel: Kernel, p: ParamsOf<'run.forkPlan'>, defau
   };
 }
 
+/** The edit of a replay request: model and protocol only. */
+function replayEdit(p: ParamsOf<'run.replay'>): NodeEdit {
+  return {
+    ...(p.model ? { model: p.model } : {}),
+    ...(p.protocol ? { protocol: p.protocol } : {}),
+  };
+}
+
+/** A replay's estimate before anything is spent (P4-F5): likely, cap, routing, scope. */
+async function replayPlanResult(
+  kernel: Kernel,
+  p: ParamsOf<'run.replayPlan'>,
+  defaults: RunOptions,
+) {
+  const options = { ...defaults, ...p.options };
+  const plan = await kernel.replayPlan(p.runId, p.nodeId, replayEdit(p), options);
+  const o = plan.options;
+  return {
+    planId: plan.planId,
+    runId: plan.runId,
+    nodeId: plan.nodeId,
+    routing: {
+      ...(o.localOnly ? { localOnly: true } : {}),
+      ...(o.exclude?.length ? { exclude: o.exclude } : {}),
+      ...(o.profile ? { profile: o.profile } : {}),
+      allowTest: o.allowTest === true,
+    },
+    estimate: plan.estimate,
+    scope: scopeSummary(plan.scope),
+  };
+}
+
+/** `run.replay`: a planned replay (cancellable by its id), or planned and run at once. */
+async function replayResult(kernel: Kernel, p: ParamsOf<'run.replay'>, defaults: RunOptions) {
+  if (!p.planId)
+    return kernel.replay(p.runId, p.nodeId, replayEdit(p), { ...defaults, ...p.options });
+  const handle = await kernel.startReplay(p.planId);
+  if (handle.runId !== p.runId || handle.nodeId !== p.nodeId)
+    throw new RpcError(ErrorCodes.invalidParams, `replay plan ${p.planId} is for another node`);
+  return handle.done;
+}
+
 type LearningMethod =
   | 'grade'
   | 'stats.accuracy'
   | 'stats.productivity'
   | 'competence'
   | 'run.replay'
+  | 'run.replayPlan'
   | 'run.forkPlan'
   | 'run.fork';
 
@@ -230,13 +275,13 @@ function learningHandlers(
   defaults: RunOptions,
 ): Pick<Handlers, LearningMethod> {
   return {
+    // The author is always the local user the server runs as (P4-F9), never the client's word.
     grade: (p) =>
       kernel.learning.grade({
         runId: p.runId,
         nodeId: p.nodeId,
         grade: p.grade,
         ...(p.note ? { note: p.note } : {}),
-        ...(p.author ? { author: p.author } : {}),
       }),
     'stats.accuracy': () => kernel.learning.accuracy(),
     'stats.productivity': (p) =>
@@ -246,13 +291,8 @@ function learningHandlers(
         ...(p?.detail ? { detail: true } : {}),
       }),
     competence: () => ({ entries: kernel.learning.competence() }),
-    'run.replay': (p) =>
-      kernel.replay(
-        p.runId,
-        p.nodeId,
-        { ...(p.model ? { model: p.model } : {}), ...(p.protocol ? { protocol: p.protocol } : {}) },
-        defaults,
-      ),
+    'run.replayPlan': (p) => replayPlanResult(kernel, p, defaults),
+    'run.replay': (p) => replayResult(kernel, p, defaults),
     'run.forkPlan': (p) => forkPlanResult(kernel, p, defaults),
     'run.fork': async (p) => {
       // Like run.start: isolated when the workspace is a git working tree (ADR-0021).

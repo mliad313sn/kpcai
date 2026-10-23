@@ -129,6 +129,8 @@ export const DisputeSchema = z.object({
         label: z.string().max(200),
         text: z.string().max(20_000),
         backers: z.array(z.string().max(300)).max(20),
+        /** Shown cut: the kernel refuses any choice of it (P4-F11). */
+        truncated: z.literal(true).optional(),
       }),
     )
     .max(20),
@@ -150,14 +152,16 @@ export const NodeEdit = {
 };
 
 export const LearningMethods = {
-  /** A human's grade of one node of a run (ADR-0028); the author defaults to the local user. */
+  /**
+   * A human's grade of one node of a run (ADR-0028). The author is the local user the
+   * server runs as (P4-F9): a client cannot name one, and an `author` it sends is dropped.
+   */
   grade: {
     params: z.object({
       runId: Id,
       nodeId: Id,
       grade: z.enum(['good', 'bad']),
       note: z.string().max(500).optional(),
-      author: z.string().min(1).max(100).optional(),
     }),
     result: z.object({
       runId: z.string(),
@@ -183,11 +187,6 @@ export const LearningMethods = {
   competence: {
     params: z.object({}).optional(),
     result: z.object({ entries: z.array(CompetenceEntrySchema) }),
-  },
-  /** Reruns one finished node with another model or protocol, beside the original. */
-  'run.replay': {
-    params: z.object({ runId: Id, nodeId: Id, ...NodeEdit }),
-    result: ReplayResultSchema,
   },
   /** Starts a planned fork; its band top is checked like any plan's (D-021). */
   'run.fork': { params: z.object({ planId: Id }), result: z.object({ runId: Id }) },

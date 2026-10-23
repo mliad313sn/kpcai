@@ -26,21 +26,41 @@ export function kernelHost(io: Io, extra: Partial<KernelHost> = {}): KernelHost 
 }
 
 const QUOTE_CHARS = 2_000;
+/**
+ * The kernel hands dispute options to hosts capped at this many characters (`disputeInfo`):
+ * an option this long may have been cut, so the terminal cannot show it whole (P4-F11).
+ */
+export const KERNEL_OPTION_CHARS = 20_000;
 
-/** Untrusted model text, quoted line by line and made safe for the terminal. */
-function quoted(text: string): string {
+/**
+ * Untrusted model text, quoted line by line and made safe for the terminal. `full` shows
+ * all of it: an option the human may choose is never cut (P4-F11); a position may be.
+ */
+function quoted(text: string, full = false): string {
   const t = sanitizeForTerminal(text);
-  const cut = t.length > QUOTE_CHARS ? `${t.slice(0, QUOTE_CHARS)}…` : t;
+  const cut = !full && t.length > QUOTE_CHARS ? `${t.slice(0, QUOTE_CHARS)}…` : t;
   return cut
     .split('\n')
     .map((l) => `    > ${l}`)
     .join('\n');
 }
 
+type Option = Parameters<Choose>[0]['dispute']['options'][number];
+
+/** An option is shown whole or refused: one the kernel may have cut cannot be chosen. */
+function optionLines(o: Option): string[] {
+  const head = `  option ${sanitizeForTerminal(o.label)} (backed by ${o.backers.map(sanitizeForTerminal).join(', ') || 'nobody'}):`;
+  if (o.text.length < KERNEL_OPTION_CHARS) return [head, quoted(o.text, true)];
+  return [
+    head,
+    `    (too long to show in full: ${o.text.length} characters or more; it cannot be chosen here)`,
+  ];
+}
+
 /**
  * A disputed node at the terminal (R-405): the positions and options are shown quoted
- * (model output, untrusted), then one yes/no per option; the first yes picks it. All no,
- * or no terminal, rejects: the node fails closed.
+ * (model output, untrusted), then one yes/no per option the human could read whole; the
+ * first yes picks it. All no, or no terminal, rejects: the node fails closed.
  */
 export function terminalChoose(io: Io): Choose {
   return async (req) => {
@@ -50,13 +70,10 @@ export function terminalChoose(io: Io): Choose {
     ];
     for (const p of d.positions)
       lines.push(`  ${sanitizeForTerminal(p.ref)} (${p.role}) says:`, quoted(p.says));
-    for (const o of d.options)
-      lines.push(
-        `  option ${sanitizeForTerminal(o.label)} (backed by ${o.backers.map(sanitizeForTerminal).join(', ') || 'nobody'}):`,
-        quoted(o.text),
-      );
+    for (const o of d.options) lines.push(...optionLines(o));
     io.err(`${lines.join('\n')}\n`);
     for (const o of d.options) {
+      if (o.text.length >= KERNEL_OPTION_CHARS) continue;
       if (
         await io.confirm(
           `Take option ${sanitizeForTerminal(o.label)} for node ${sanitizeForTerminal(d.nodeId)}?`,

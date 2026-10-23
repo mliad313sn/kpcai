@@ -13,7 +13,7 @@ import { stepBand } from './band.js';
 import { GraphBudget } from './graph-budget.js';
 import { NodeBudgets, type NodeHold } from './node-budget.js';
 import { stepMessages } from './prompts.js';
-import { preferRef, routeDiverse, sameRef, type Routed } from './routing.js';
+import { constrainDecision, preferRef, routeDiverse, sameRef, type Routed } from './routing.js';
 import { executeWithTools, type LoopResult } from './tool-loop.js';
 import {
   OrchestrationError,
@@ -125,7 +125,10 @@ export class StepRunner {
     if (pin) run.pin = undefined;
     let decision: RoutingDecision;
     try {
-      decision = spec.decision ?? this.decide(stepNode, spec, pin);
+      // A fixed decision still meets the node's constraints (ADR-0027 §6 taint).
+      decision = spec.decision
+        ? constrainDecision(this.o, stepNode, spec.decision)
+        : this.decide(stepNode, spec, pin);
     } catch (err) {
       const f = failed(errorText(err), 0, false);
       return err instanceof OrchestrationError ? { ...f, diversity: true } : f;

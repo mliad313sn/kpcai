@@ -17,7 +17,13 @@ import { execNode } from './node-exec.js';
 import { quote } from './prompts.js';
 import { reviewedNode } from './review-policy.js';
 import { sameRef } from './routing.js';
-import { journalNode, journalRunStart, type ForkOrigin, type RecordedNode } from './run-journal.js';
+import {
+  journalNode,
+  journalRunStart,
+  type ForkOrigin,
+  type RecordedNode,
+  type RunRouting,
+} from './run-journal.js';
 import { carry, newRun, withCarried, type Run } from './run-state.js';
 import {
   ScopeError,
@@ -86,6 +92,53 @@ export interface RunOptions {
    * re-run ("reused, not re-run"); the parent is journaled with the run.
    */
   fork?: { parent: ForkOrigin; reuse: Readonly<Record<string, RecordedNode>> };
+  /**
+   * The routing constraints to journal with the run (P4-F2), so its replays and forks keep
+   * them as a floor; default: what the runner's own `constraints` say (no profile).
+   */
+  routing?: RunRouting;
+}
+
+/** The journal form of routing constraints, when the caller gave no record of its own. */
+export function routingOf(c: OrchestratorOptions['constraints']): RunRouting {
+  return {
+    ...(c?.localOnly ? { localOnly: true } : {}),
+    ...(c?.deniedProviders?.length ? { exclude: [...c.deniedProviders] } : {}),
+    allowTest: c?.excludeKinds !== undefined && !c.excludeKinds.includes('test'),
+  };
+}
+
+/**
+ * The scope gate (WI-S4-02), for a run and for a replay (P4-F6): refuses (journaled as
+ * `refused`, nothing scheduled, no provider called) when a selected pack needs an
+ * authorised scope that is missing, expired, unbounded or out of kind, or a node comes
+ * from a pack that is not loaded; journals the accepted scope (targets as `kind:value`, no
+ * notes). `extra` is added to each journaled payload (a replay's ids).
+ */
+export function admitScope(
+  steps: StepRunner,
+  nodes: readonly PlannedNode[],
+  options: Pick<RunOptions, 'packs' | 'scope' | 'now'>,
+  refused = 'run refused',
+  extra: Record<string, unknown> = {},
+): ScopeCheck {
+  const packs = options.packs ?? [];
+  const now = options.now?.() ?? new Date();
+  const check = checkRunScope(packs, nodes, options.scope, now);
+  if (!check.ok) {
+    steps.intervention(undefined, {
+      action: refused,
+      reason: 'authorised scope',
+      packs: check.required,
+      problems: check.problems,
+      ...extra,
+    });
+    throw new ScopeError(check.required, check.problems);
+  }
+  for (const payload of scopePayloads(packs, check)) {
+    steps.intervention(undefined, { action: 'scope accepted', ...payload, ...extra });
+  }
+  return check;
 }
 
 /** A graph result plus each finished node's deliverable and extracted artifacts. */
@@ -127,7 +180,7 @@ export class GraphRunner implements RunControl {
     const problems = [...graphProblems(graph.nodes), ...this.pinProblems(graph, reuse)];
     if (problems.length > 0) throw new OrchestrationError(`invalid graph: ${problems.join('; ')}`);
     if (this.control.run) throw new OrchestrationError('this runner is already running a graph');
-    const scope = this.admit(graph, options);
+    const scope = admitScope(this.steps, graph.nodes as PlannedNode[], options);
     const r = newRun(this.policy(graph, reuse), options.signal, options.runId ?? randomUUID());
     stampScope(r.graph.nodes, scope.boundary);
     this.control.run = r;
@@ -137,7 +190,8 @@ export class GraphRunner implements RunControl {
       this.steps.intervention(undefined, { action: 'plan edited', changes: options.edits });
     }
     const fork = options.fork && { parent: options.fork.parent, reused: Object.keys(reuse) };
-    journalRunStart(this.steps, r.runId, r.graph, fork);
+    const routing = options.routing ?? routingOf(this.o.constraints);
+    journalRunStart(this.steps, r.runId, r.graph, fork, routing);
     try {
       for (const n of r.graph.nodes) this.setState(r, n.id, 'pending');
       this.preload(r, reuse);
@@ -173,30 +227,6 @@ export class GraphRunner implements RunControl {
       journalNode(this.steps, r.runId, { ...kept, node: n, reused: true, reusedFrom: eventId });
       this.setState(r, n.id, 'done');
     }
-  }
-
-  /**
-   * The scope gate (WI-S4-02): refuses (journaled, nothing scheduled, no provider called)
-   * when a selected pack needs an authorised scope that is missing, expired, unbounded or
-   * out of kind; journals the accepted scope (targets as `kind:value`, no notes).
-   */
-  private admit(graph: TaskGraph, options: RunOptions): ScopeCheck {
-    const packs = options.packs ?? [];
-    const now = options.now?.() ?? new Date();
-    const check = checkRunScope(packs, graph.nodes as PlannedNode[], options.scope, now);
-    if (!check.ok) {
-      this.steps.intervention(undefined, {
-        action: 'run refused',
-        reason: 'authorised scope',
-        packs: check.required,
-        problems: check.problems,
-      });
-      throw new ScopeError(check.required, check.problems);
-    }
-    for (const payload of scopePayloads(packs, check)) {
-      this.steps.intervention(undefined, { action: 'scope accepted', ...payload });
-    }
-    return check;
   }
 
   pause(): ControlOutcome {

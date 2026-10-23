@@ -7,7 +7,7 @@ import { refKey } from '../../studio/src/store/reducer';
 import { patch, useStudio } from '../../studio/src/store/store';
 import type { ConfirmView } from '../../studio/src/store/types';
 import { keyAction, type Confirming } from './keys';
-import { EMPTY_LINE, perform, type TuiLine } from './perform';
+import { EMPTY_LINE, perform, withoutPick, type TuiLine } from './perform';
 import {
   AgentsPane,
   Badge,
@@ -92,12 +92,7 @@ function useConfirming(
 ): Confirming {
   const id = confirm?.confirmId;
   useEffect(() => {
-    setLine((l) => {
-      if (l.choice === undefined) return l;
-      const next = { ...l };
-      delete next.choice;
-      return next;
-    });
+    setLine((l) => (l.choice === undefined ? l : withoutPick(l)));
   }, [id, setLine]);
   if (!confirm) return false;
   return confirm.kind === 'dispute' || confirm.kind === 'memory' ? confirm.kind : true;
@@ -130,7 +125,7 @@ export function TuiApp() {
         <ConfirmPane
           c={confirm}
           now={now}
-          {...(line.choice !== undefined ? { choice: line.choice } : {})}
+          {...(line.choice !== undefined ? { choice: line.choice, scroll: line.scroll ?? 0 } : {})}
         />
       ) : null}
       {plan ? <PlanPane plan={plan} {...(selected ? { selected } : {})} /> : null}

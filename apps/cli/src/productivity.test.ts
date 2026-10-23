@@ -114,14 +114,31 @@ describe('kpai replay and kpai fork (R-403)', () => {
     expect(await kpai(io, 'do', '--allow-test', '--yes', REQ)).toBe(0);
     const run = await lastRunId(io);
     expect(run).not.toBe('');
-    expect(
-      await kpai(io, 'replay', run, 'implementation', '-m', 'mock-alpha/m1', '--allow-test'),
-    ).toBe(0);
+    // P4-F5: likely and cap first; without --yes or a y nothing is spent.
+    const replay = ['replay', run, 'implementation', '-m', 'mock-alpha/m1', '--allow-test'];
+    expect(await kpai(io, ...replay)).toBe(4);
+    expect(io.stderr).toMatch(
+      /replay of implementation \(run \S{8}\): likely .* · up to .* \(cap\)/,
+    );
+    expect(io.questions.at(-1)).toMatch(/^Run this replay of implementation .* for up to /);
+    expect(io.stderr).toMatch(/not run — replay declined/);
+    expect(io.stdout).not.toMatch(/--- replay:/);
+    io.confirmAnswers = [true];
+    expect(await kpai(io, ...replay)).toBe(0);
     expect(io.stdout).toMatch(/^--- original: author_critic · /m);
     expect(io.stdout).toMatch(/^--- replay: author_critic · mock-alpha\/m1/m);
     expect(io.stderr).toMatch(/^replay \S{8} of implementation: (same|different) output · cost /m);
-    expect(await kpai(io, 'replay', run, 'implementation', '-m', 'nope/x', '--allow-test')).toBe(2);
+    expect(
+      await kpai(io, 'replay', run, 'implementation', '-m', 'nope/x', '--allow-test', '--yes'),
+    ).toBe(2);
     expect(io.stderr).toMatch(/not run — model nope\/x is not available/);
+    // P4-F2: routing flags reach the kernel (no local provider here: nothing can route).
+    expect(
+      await kpai(io, 'replay', run, 'implementation', '--allow-test', '--yes', '--local-only'),
+    ).toBe(1);
+    expect(io.stderr).toMatch(/not run — .*cannot be routed|unroutable|no candidate/i);
+    const all = 'mock-alpha,mock-beta,mock-gamma,mock-delta';
+    expect(await kpai(io, 'fork', run, 'tests', '--allow-test', '--yes', '--exclude', all)).toBe(1);
     expect(await kpai(io, 'replay', run, 'nope', '--allow-test')).toBe(1);
     expect(await kpai(io, 'replay', run, 'tests', '--instruction', 'x')).toBe(2);
     expect(await kpai(io, 'replay', run)).toBe(2);

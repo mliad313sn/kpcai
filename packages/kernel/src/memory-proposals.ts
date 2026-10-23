@@ -7,7 +7,7 @@ import type { ContributionRole, GraphResult, ModelRef, ProtocolResult } from '@k
 import type { Journal } from '@kernelpai/journal';
 import { extractProposals, type MemoryScope } from '@kernelpai/memory';
 import type { Env } from './env.js';
-import { memoryStore } from './memory.js';
+import { localTaint, memoryStore, NO_MEMORY } from './memory.js';
 import { busPacks, folderKey, policyFor } from './packs.js';
 import type { Plan } from './types.js';
 
@@ -38,7 +38,29 @@ interface Found {
   localOnly: boolean;
 }
 
-function found(result: GraphResult): { list: Found[]; dropped: number } {
+/**
+ * Nodes that saw local-only facts (a contribution from a local provider), or depend on
+ * one that did (P4-F3): what they propose is kept local-only, whatever the model tagged.
+ */
+function taintedBy(c: ProposalContext, result: GraphResult): (nodeId: string) => boolean {
+  const taint = localTaint(c.plan.memory ?? NO_MEMORY, c.plan.graph?.nodes ?? []);
+  if (!taint.active) return () => false;
+  const kind = (provider: string): string | undefined => {
+    try {
+      return c.plan.setup?.registry.get(provider).descriptor.kind;
+    } catch {
+      return undefined;
+    }
+  };
+  for (const r of Object.values(result.results))
+    for (const x of r.contributions) taint.observe(r.nodeId, kind(x.ref.provider) === 'local');
+  return (nodeId) => taint.source(nodeId) !== undefined;
+}
+
+function found(
+  result: GraphResult,
+  tainted: (nodeId: string) => boolean,
+): { list: Found[]; dropped: number } {
   const list: Found[] = [];
   let dropped = 0;
   for (const r of Object.values(result.results)) {
@@ -51,7 +73,9 @@ function found(result: GraphResult): { list: Found[]; dropped: number } {
       continue;
     }
     const source = `${ref.provider}/${ref.model}`;
-    for (const p of e.proposals) list.push({ nodeId: r.nodeId, source, ...p });
+    const local = tainted(r.nodeId);
+    for (const p of e.proposals)
+      list.push({ nodeId: r.nodeId, source, ...p, localOnly: p.localOnly || local });
   }
   const kept = list.slice(0, MAX_PROPOSALS_PER_RUN);
   return { list: kept, dropped: dropped + list.length - kept.length };
@@ -59,7 +83,7 @@ function found(result: GraphResult): { list: Found[]; dropped: number } {
 
 /** Queues a run's proposals; returns the pending ids. Refusals are counted and journaled. */
 export async function queueProposals(c: ProposalContext, result: GraphResult): Promise<string[]> {
-  const { list, dropped } = found(result);
+  const { list, dropped } = found(result, taintedBy(c, result));
   if (list.length === 0 && dropped === 0) return [];
   const sessionId = c.plan.sessionId;
   const { policy } = await policyFor(c.env, busPacks(c.plan.packs, sessionId), undefined, c.cwd);

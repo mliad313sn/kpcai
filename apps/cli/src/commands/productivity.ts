@@ -33,8 +33,9 @@ function review(p: ProductivityView, m: Money): string {
   const r = p.review;
   return t('prod.review', {
     usd: formatMoney(r.reviewUsd, m),
+    verdicts: r.revisedVerdicts,
+    each: r.usdPerRevisedVerdict === null ? '–' : formatMoney(r.usdPerRevisedVerdict, m),
     findings: r.acceptedFindings,
-    each: r.usdPerAcceptedFinding === null ? '–' : formatMoney(r.usdPerAcceptedFinding, m),
     issues: r.issuesRaised,
     nodes: r.nodes,
   });

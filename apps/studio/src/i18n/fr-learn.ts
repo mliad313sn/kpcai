@@ -121,9 +121,6 @@ export const frLearn = {
   'replay.title': 'Rejouer le nœud #{id}',
   'replay.help':
     'Relance ce nœud à partir de ses entrées enregistrées avec un autre modèle ou protocole, à côté de l’original. L’original n’est jamais remplacé.',
-  'replay.note':
-    'Choisissez un modèle, un protocole ou les deux. Les nœuds de code gardent un critique d’un autre fournisseur. Les dépenses passent par le contrôle de budget.',
-  'replay.submit': 'Rejouer',
   'replay.running': 'Rejeu de #{id} en cours…',
   'replay.compareTitle': 'Rejeu à côté de l’original',
   'replay.same': 'Même sortie',
@@ -186,9 +183,6 @@ export const frLearn = {
   'verify.title': 'Vérification :',
   'verify.spend': 'relecture {review} ({share} de {total})',
   'verify.issues': 'problèmes soulevés : {count}',
-  'verify.accepted': 'constats acceptés : {count}',
-  'verify.perFinding': '{cost} par constat accepté',
-  'verify.noFinding': 'aucun constat accepté',
   'verify.section': 'Vérification de l’exécution en cours',
   'verify.none': 'Aucune exécution terminée dans cette fenêtre pour l’instant.',
   'evidence.refresh': 'Actualiser',
@@ -233,12 +227,6 @@ export const frLearn = {
   'fail.replay': 'Le rejeu a échoué : {error}',
   'fail.fork': 'La bifurcation n’a pas pu être planifiée : {error}',
   'error.badReplay': 'Le noyau a envoyé un résultat de rejeu illisible pour la console',
-  'tui.disputeKeys': {
-    one: '1 = sélectionner la réponse, puis o = la choisir · n, Échap ou Entrée = tout rejeter (par défaut)',
-    other:
-      '1–{count} = sélectionner une réponse, puis o = la choisir · n, Échap ou Entrée = tout rejeter (par défaut)',
-  },
-  'tui.disputePicked': 'Réponse {n} sélectionnée : {label}. Appuyez sur o pour la choisir.',
   'tui.disputePickFirst':
     'Sélectionnez d’abord une réponse par son numéro, ou appuyez sur n pour tout rejeter.',
   'tui.memoryKeys': 'o = garder · r = rejeter · n, Échap ou Entrée = plus tard (reste en attente)',
@@ -260,7 +248,6 @@ export const frLearn = {
   'productivity.rework': 'Reprises',
   'productivity.reworkValue': '{rate} (retouchées dans les {days} jours)',
   'productivity.review': 'Relecture',
-  'productivity.reviewValue': '{review} dépensés · {count} constats acceptés · {per} par constat',
   'productivity.band': 'Exécutions dans la fourchette estimée',
   'dispute.timeout': 'Rejette tout automatiquement dans {time}',
   'memory.timeout': 'Le laisse en attente automatiquement dans {time}',

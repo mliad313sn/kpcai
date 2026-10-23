@@ -23,6 +23,9 @@ const VERIFICATION = {
   acceptedFindings: 2,
   acceptedRevisions: 1,
   usdPerAcceptedFinding: 0.01,
+  revisedVerdicts: 1,
+  majorFindings: 1,
+  usdPerRevisedVerdict: 0.02,
   nodes: [],
 };
 
@@ -104,30 +107,48 @@ describe('summaries shared by web and terminal', () => {
       'Memory: 2 facts sent to every node (user 1, project 2); 1 as untrusted data. ~40 of 2000 tokens.',
       '1 fact left out: the 2000-token memory budget is full.',
       '1 local-only fact is withheld from cloud models.',
+      'Local-only rule: local-only facts are given to local providers only',
       'The memory files are inside the workspace, where models can write: every fact is sent as untrusted.',
       'Memory: memory/user.md line 3 kept as is',
       '1 proposed fact waits for you.',
     ]);
-    expect(lines.map((l) => l.tone)).toEqual(['info', 'warn', 'muted', 'warn', 'warn', 'info']);
+    expect(lines.map((l) => l.tone)).toEqual([
+      'info',
+      'warn',
+      'muted',
+      'muted',
+      'warn',
+      'warn',
+      'info',
+    ]);
     setLocale('fr');
     expect(memoryLines(MEMORY_SUMMARY as unknown as MemorySummary)[0]!.text).toBe(
       'Mémoire : 2 faits envoyés à chaque nœud (utilisateur 1, projet 2) ; 1 comme données non fiables. ~40 jetons sur 2000.',
     );
     setLocale('en');
     const none = { ...MEMORY_SUMMARY, included: [], truncated: false, localOnly: 0 };
+    delete (none as { localOnlyRule?: string }).localOnlyRule;
     const quiet = { ...none, distrusted: false, problems: [], pending: 0 };
     expect(memoryLines(quiet as unknown as MemorySummary)).toEqual([
       { text: 'Memory: no fact is sent with this plan.', tone: 'info' },
     ]);
   });
 
-  it('states the verification ROI with or without accepted findings', () => {
+  it('heads the verification ROI with revised verdicts, raw issues second (P4-F12)', () => {
     const v = parseVerification(VERIFICATION)!;
     expect(verificationText(v)).toBe(
-      'review $0.02 (25% of $0.08) · issues raised: 3 · accepted findings: 2 · $0.01 per accepted finding',
+      'review $0.02 (25% of $0.08) · 1 revised verdict · $0.02 per revised verdict · raw issues raised: 3',
     );
-    expect(verificationText({ ...v, usdPerAcceptedFinding: null })).toMatch(/no accepted finding$/);
+    expect(verificationText({ ...v, revisedVerdicts: 0, usdPerRevisedVerdict: null })).toBe(
+      'review $0.02 (25% of $0.08) · 0 revised verdicts · no revised verdict · raw issues raised: 3',
+    );
+    // An older kernel without the new fields: the raw issues only, never a made-up zero.
+    const old = parseVerification({ ...VERIFICATION, revisedVerdicts: undefined })!;
+    expect(verificationText(old)).toBe('review $0.02 (25% of $0.08) · issues raised: 3');
     setLocale('fr');
+    expect(verificationText(v)).toMatch(
+      /^relecture 0,02\s\$ .* · 1 verdict révisé · 0,02\s\$ par verdict révisé · problèmes soulevés bruts : 3$/,
+    );
     expect(formatPct(0.25)).toMatch(/^25\s%$/);
     expect(formatPct(null)).toBe('—');
   });

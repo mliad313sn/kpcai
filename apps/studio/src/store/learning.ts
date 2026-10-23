@@ -1,18 +1,17 @@
 /**
- * Evidence, grades, replay and fork (ADR-0028, ADR-0029, R-402, R-403). A replay and a
- * fork spend through the kernel's budget gate: the kernel may ask a budget question while
- * the call waits, so their timeouts are long. A fork is shown as a plan (likely cost and
- * cap) and starts only when the user presses Run, like any plan.
+ * Evidence, grades and fork (ADR-0028, ADR-0029, R-402, R-403); replay is in replay.ts. A
+ * fork is shown as a plan (likely cost and cap) and starts only when the user presses Run,
+ * like any plan; it spends through the kernel's budget gate.
  */
 import { t } from '../i18n/core';
 import type { MethodName } from '../rpc/client';
-import { ProductivityViewSchema, ReplayViewSchema } from '../rpc/learning-schemas';
+import { ProductivityViewSchema } from '../rpc/learning-schemas';
 import { Methods } from '@kernelpai/kernel/protocol';
 import { TaskGraphSchema, parseEstimate, type Ref } from '../rpc/schemas';
 import { call, fail } from './actions';
 import { costOf } from './cost';
 import { formatUsd } from './format';
-import { refKey } from './reducer';
+import { nodeKey, routingOptions } from './replay';
 import { announce, patch, studio } from './store';
 import type { EvidenceView, PlanView } from './types';
 
@@ -23,10 +22,9 @@ export interface NodeEditInput {
   instruction?: string;
 }
 
-const SPEND_TIMEOUT_MS = 300_000;
 const PLAN_TIMEOUT_MS = 120_000;
 
-export const nodeKey = (runId: string, nodeId: string): string => `${runId}:${nodeId}`;
+export { nodeKey };
 
 function setEvidence(update: (e: EvidenceView) => EvidenceView): void {
   patch({ evidence: update(studio.getState().evidence) });
@@ -107,47 +105,14 @@ export async function gradeNode(
   }
 }
 
-/** Reruns one finished node with another model or protocol, beside the original. */
-export async function replayNode(runId: string, nodeId: string, edit: NodeEditInput) {
-  const key = nodeKey(runId, nodeId);
-  const replays = () => studio.getState().replays;
-  patch({ replays: { ...replays(), [key]: { pending: true } } });
-  announce(t('replay.announce.started', { id: nodeId }));
-  try {
-    const raw = await call(
-      'run.replay',
-      {
-        runId,
-        nodeId,
-        ...(edit.model ? { model: edit.model } : {}),
-        ...(edit.protocol ? { protocol: edit.protocol } : {}),
-      },
-      SPEND_TIMEOUT_MS,
-    );
-    const parsed = ReplayViewSchema.safeParse(raw);
-    if (!parsed.success) throw new Error(t('error.badReplay'));
-    patch({ replays: { ...replays(), [key]: { pending: false, result: parsed.data } } });
-    const r = parsed.data;
-    announce(
-      t('replay.announce.done', {
-        id: nodeId,
-        model: r.replay.models.map(refKey).join(', ') || '—',
-        cost: formatUsd(r.replay.costUsd),
-      }),
-    );
-  } catch (e) {
-    const rest = { ...replays() };
-    delete rest[key];
-    patch({ replays: rest });
-    fail('fail.replay', e);
-  }
-}
-
 /** Plans a fork from a node; the plan waits in the thread until the user runs it. */
 export async function planFork(runId: string, nodeId: string, edit: NodeEditInput) {
   patch({ planning: true });
   try {
-    const raw = await call('run.forkPlan', { runId, nodeId, edit }, PLAN_TIMEOUT_MS);
+    // Held to the original run's routing; the console's choices can only tighten it (P4-F2).
+    const options = routingOptions();
+    const params = { runId, nodeId, edit, ...(options ? { options } : {}) };
+    const raw = await call('run.forkPlan', params, PLAN_TIMEOUT_MS);
     const graph = TaskGraphSchema.safeParse(raw.graph);
     const estimate = parseEstimate(raw.estimate, raw);
     if (!graph.success || !estimate) throw new Error(t('error.badPlan'));

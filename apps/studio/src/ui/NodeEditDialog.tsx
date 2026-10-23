@@ -1,13 +1,13 @@
 /**
- * Replay and fork dialogs (R-403). A replay reruns one finished node from its recorded
- * inputs with another model and/or protocol, beside the original. A fork plans a new run
- * from this node with an optional edit; the plan (likely cost and cap) shows before
- * anything runs. Both spend only through the kernel's budget gate.
+ * The fork dialog (R-403) and the model/protocol fields it shares with the replay dialog
+ * (ReplayDialog.tsx). A fork plans a new run from this node with an optional edit; the
+ * plan (likely cost and cap) shows before anything runs, and it spends only through the
+ * kernel's budget gate.
  */
 import { useState } from 'react';
 import { t, type Key } from '../i18n/core';
 import type { Ref } from '../rpc/schemas';
-import { planFork, replayNode, type NodeEditInput, type Protocol } from '../store/learning';
+import { planFork, type NodeEditInput, type Protocol } from '../store/learning';
 import { refKey } from '../store/reducer';
 import { useStudio } from '../store/store';
 import { Modal } from './Modal';
@@ -21,12 +21,12 @@ const PROTOCOLS: Array<[Protocol, Key]> = [
 
 export type EditMode = 'replay' | 'fork';
 
-function toRef(v: string): Ref | undefined {
+export function toRef(v: string): Ref | undefined {
   const [provider, ...rest] = v.split('/');
   return provider && rest.length ? { provider, model: rest.join('/') } : undefined;
 }
 
-function Fields(props: {
+export function Fields(props: {
   mode: EditMode;
   model: string;
   setModel: (v: string) => void;
@@ -82,37 +82,27 @@ function Instruction({ value, set }: { value: string; set: (v: string) => void }
   );
 }
 
-function Footer({ mode, empty, onClose }: { mode: EditMode; empty: boolean; onClose: () => void }) {
+function Footer({ onClose }: { onClose: () => void }) {
   return (
     <>
-      <p className="muted small" id={`${mode}-note`}>
-        {t(mode === 'replay' ? 'replay.note' : 'fork.note')}
+      <p className="muted small" id="fork-note">
+        {t('fork.note')}
       </p>
       <div className="row end">
         <button type="button" onClick={onClose}>
           {t('common.cancel')}
         </button>
-        <button
-          type="submit"
-          className="primary"
-          disabled={empty}
-          aria-describedby={`${mode}-note`}
-        >
-          {t(mode === 'replay' ? 'replay.submit' : 'fork.submit')}
+        <button type="submit" className="primary" aria-describedby="fork-note">
+          {t('fork.submit')}
         </button>
       </div>
     </>
   );
 }
 
-/** The model/protocol (and, for a fork, instruction) form in a dialog; Escape cancels. */
-export function NodeEditDialog(props: {
-  mode: EditMode;
-  runId: string;
-  nodeId: string;
-  onClose: () => void;
-}) {
-  const { mode, runId, nodeId, onClose } = props;
+/** The fork form (model, protocol, instruction) in a dialog; Escape cancels. */
+export function ForkDialog(props: { runId: string; nodeId: string; onClose: () => void }) {
+  const { runId, nodeId, onClose } = props;
   const [model, setModel] = useState('');
   const [protocol, setProtocol] = useState('');
   const [instruction, setInstruction] = useState('');
@@ -121,27 +111,23 @@ export function NodeEditDialog(props: {
   const edit: NodeEditInput = {
     ...(ref ? { model: ref } : {}),
     ...(protocol ? { protocol: protocol as Protocol } : {}),
-    ...(mode === 'fork' && text ? { instruction: text } : {}),
+    ...(text ? { instruction: text } : {}),
   };
-  const empty = mode === 'replay' && !ref && !protocol;
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (empty) return;
     onClose();
-    void (mode === 'replay' ? replayNode(runId, nodeId, edit) : planFork(runId, nodeId, edit));
+    void planFork(runId, nodeId, edit);
   };
   return (
-    <Modal labelledBy={`${mode}-title`} describedBy={`${mode}-help`} onClose={onClose}>
+    <Modal labelledBy="fork-title" describedBy="fork-help" onClose={onClose}>
       <form onSubmit={submit}>
-        <h2 id={`${mode}-title`}>
-          {t(mode === 'replay' ? 'replay.title' : 'fork.dialogTitle', { id: nodeId })}
-        </h2>
-        <p id={`${mode}-help`} className="muted">
-          {t(mode === 'replay' ? 'replay.help' : 'fork.help')}
+        <h2 id="fork-title">{t('fork.dialogTitle', { id: nodeId })}</h2>
+        <p id="fork-help" className="muted">
+          {t('fork.help')}
         </p>
-        <Fields {...{ mode, model, setModel, protocol, setProtocol }} />
-        {mode === 'fork' && <Instruction value={instruction} set={setInstruction} />}
-        <Footer mode={mode} empty={empty} onClose={onClose} />
+        <Fields {...{ mode: 'fork' as const, model, setModel, protocol, setProtocol }} />
+        <Instruction value={instruction} set={setInstruction} />
+        <Footer onClose={onClose} />
       </form>
     </Modal>
   );

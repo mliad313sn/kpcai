@@ -292,12 +292,12 @@ console.log(
   `  cost per accepted change ${usd(p.costPerAcceptedChangeUsd ?? 0)} · time per accepted change ${p.timePerAcceptedChangeMs} ms`,
 );
 console.log(
-  `  rollback rate ${pct(p.rollbackRate)} · rework rate ${pct(p.reworkRate)} · findings accepted ${p.review.acceptedFindings} (review ${usd(p.review.reviewUsd)}) · band hit ${p.band.inBand}/${p.band.runs}`,
+  `  rollback rate ${pct(p.rollbackRate)} · rework rate ${pct(p.reworkRate)} · review ${usd(p.review.reviewUsd)} for ${p.review.revisedVerdicts} revised verdict(s), ${p.review.usdPerRevisedVerdict === null ? '–' : usd(p.review.usdPerRevisedVerdict)} each (${p.review.acceptedFindings} issues) · band hit ${p.band.inBand}/${p.band.runs}`,
 );
 check(p.changes.accepted === 2 && p.rolledBack === 1, 'two accepted changes, one rolled back');
 check(
-  p.review.acceptedFindings > 0,
-  `${p.review.acceptedFindings} review findings led to an approved revision`,
+  p.review.revisedVerdicts > 0,
+  `${p.review.revisedVerdicts} rejecting verdict(s) led to an approved revision (${p.review.acceptedFindings} issues)`,
 );
 const n = j.events({ limit: 100_000 }).length;
 const s0 = performance.now();

@@ -2,7 +2,8 @@
  * A disputed node (R-405, ADR-0029): critics, judges or voters disagree and the human
  * settles it. Positions and options are untrusted model output, each quoted as data. The
  * default is Reject (focus starts there): Escape, the timeout and Reject all fail closed —
- * the node fails with no output, patch or file. Only a picked option settles it.
+ * the node fails with no output, patch or file. Only a picked option settles it; every
+ * option is shown in full, and one the kernel marks `truncated` cannot be picked (P4-F11).
  */
 import { useState } from 'react';
 import { t } from '../i18n/core';
@@ -50,6 +51,7 @@ function Options(props: { d: Dispute; choice: string; pick: (id: string) => void
             id={`dispute-opt-${i}`}
             value={o.id}
             checked={choice === o.id}
+            disabled={o.truncated === true}
             onChange={() => pick(o.id)}
             aria-describedby={`dispute-text-${i}`}
           />
@@ -63,6 +65,12 @@ function Options(props: { d: Dispute; choice: string; pick: (id: string) => void
             )}
           </label>
           <div id={`dispute-text-${i}`}>
+            {o.truncated === true && (
+              <p className="warn-text small">
+                <span aria-hidden="true">⚠ </span>
+                {t('dispute.truncated')}
+              </p>
+            )}
             <Quoted text={o.text} label={t('dispute.optionText', { option: o.label })} />
           </div>
         </div>
@@ -102,7 +110,10 @@ export function DisputeDialog({ c, queued }: { c: ConfirmView; queued: number })
           type="button"
           className="primary"
           disabled={!choice}
-          onClick={() => void answerConfirm(c.confirmId, true, choice)}
+          onClick={() => {
+            if (d.options.some((o) => o.id === choice && o.truncated !== true))
+              void answerConfirm(c.confirmId, true, choice);
+          }}
         >
           {t('dispute.choose')}
         </button>

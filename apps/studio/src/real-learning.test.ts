@@ -8,7 +8,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 import WebSocket from 'ws';
 import { connect, disconnect } from './connection';
 import { answerConfirm, requestPlan, startRun } from './store/actions';
-import { gradeNode, loadEvidence, planFork, replayNode } from './store/learning';
+import { gradeNode, loadEvidence, planFork } from './store/learning';
+import { planReplay, runReplay } from './store/replay';
 import {
   addFact,
   confirmProposal,
@@ -116,7 +117,14 @@ describe('phase 4 on the real kernel server', () => {
     const runId = await run(REAL_REQUEST);
     expect(s().runs[runId]!.verification).toMatchObject({ reviewUsd: expect.any(Number) });
     const node = 'implementation';
-    await replayNode(runId, node, { model: { provider: 'mock-alpha', model: 'm1' } });
+    // P4-F5: the estimate first (nothing spent), then that plan runs once.
+    const planned = await planReplay(runId, node, {
+      model: { provider: 'mock-alpha', model: 'm1' },
+    });
+    if (!planned.ok) throw new Error(planned.error);
+    expect(planned.plan.estimate.capUsd).toBeGreaterThan(0);
+    expect(s().replays[`${runId}:${node}`]).toBeUndefined();
+    await runReplay(planned.plan);
     const replay = s().replays[`${runId}:${node}`];
     expect(replay?.pending).toBe(false);
     if (replay && !replay.pending) {

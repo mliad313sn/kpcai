@@ -175,7 +175,7 @@ describe('manual grades', () => {
     expect(localAuthor()).toMatch(/\S/);
   });
 
-  it('journals the author and weighs the last grade of each human', () => {
+  it('journals the author; only the latest grade of the node weighs (P4-F9)', () => {
     const s = new Script();
     s.authorCritic('run-123456', { author: 'a/m', critic: 'b/m', approve: true });
     const r = recordGrade(s.j, {
@@ -192,13 +192,36 @@ describe('manual grades', () => {
       source: 'human',
       note: 'wrong file',
     });
-    recordGrade(s.j, { run: 'run-123456', nodeId: 'n1', grade: 'good', author: 'alice' });
+    const alice = recordGrade(s.j, {
+      run: 'run-123456',
+      nodeId: 'n1',
+      grade: 'good',
+      author: 'alice',
+    });
     recordGrade(s.j, { run: 'run-123456', nodeId: 'n1', grade: 'bad', author: 'bob' });
+    const { grades, ignored } = gradeJournal(s.j);
+    const g = of(grades, 'a/m');
+    expect(g?.signals.filter((x) => x.kind === 'manual').map((x) => x.value)).toEqual([0]);
+    // critic 1 (w 1) + bob's latest 0 (w 3) → 1/4
+    expect(g?.grade).toBeCloseTo(1 / 4);
+    expect(ignored).toEqual([
+      { runKey: 'run-123456', nodeId: 'n1', seq: r.event.seq, reason: 'superseded' },
+      { runKey: 'run-123456', nodeId: 'n1', seq: alice.event.seq, reason: 'superseded' },
+    ]);
+  });
+
+  it('caps manual weight at one grade even under spoofed author names (P4-F9)', () => {
+    const s = new Script();
+    s.authorCritic('run-1', { author: 'a/m', critic: 'b/m', approve: false });
+    // Grade events written past the server, each under a new name.
+    const grade = { action: 'grade', runId: 'run-1', nodeId: 'n1', source: 'human' };
+    for (let i = 0; i < 5; i++) s.note({ ...grade, grade: 'good', author: `fan-${i}` });
     const g = of(gradeJournal(s.j).grades, 'a/m');
-    const manual = g?.signals.filter((x) => x.kind === 'manual').map((x) => x.value);
-    expect(manual).toEqual([1, 0]);
-    // critic 1 (w 1) + alice 1 (w 3) + bob 0 (w 3) → 4/7
-    expect(g?.grade).toBeCloseTo(4 / 7);
+    const manual = g?.signals.filter((x) => x.kind === 'manual') ?? [];
+    expect(manual.map((x) => [x.value, x.weight])).toEqual([[1, SIGNAL_WEIGHTS.manual]]);
+    // critic 0 (w 1) + one manual 1 (w 3) → 3/4, not 15/16.
+    expect(g?.grade).toBeCloseTo(3 / 4);
+    expect(gradeJournal(s.j).ignored.filter((i) => i.reason === 'superseded')).toHaveLength(4);
   });
 
   it('refuses a model grading its own work and unknown runs or nodes', () => {

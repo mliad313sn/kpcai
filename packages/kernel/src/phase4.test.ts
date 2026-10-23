@@ -207,7 +207,8 @@ describe('disputes fail closed (R-405)', () => {
       ],
     };
     const hook = disputeHook((r) => (seen.push(r), Promise.resolve('accept')));
-    expect(await hook(question)).toBe('accept');
+    // Shown cut, so it cannot be chosen (P4-F11; run-deps.test.ts).
+    expect(await hook(question)).toBeNull();
     const r = seen[0] as { kind: string; runId: string; dispute: DisputeInfo };
     expect(r).toMatchObject({ kind: 'dispute', runId: 'r' });
     expect(r.dispute.options[0]!.text.length).toBe(20_000);

@@ -10,7 +10,15 @@ export {
   type PendingFact,
   type Provenance,
 } from './types.js';
-export { encodeValue, decodeValue, formatAttrs, isFactId, parseAttrs } from './attrs.js';
+export {
+  encodeValue,
+  decodeValue,
+  formatAttrs,
+  isEvidence,
+  isFactId,
+  isSource,
+  parseAttrs,
+} from './attrs.js';
 export {
   appendFact,
   emptyDoc,
@@ -33,7 +41,9 @@ export {
 } from './store.js';
 export {
   DEFAULT_MEMORY_TOKENS,
+  REPOSITORY_PROVENANCE,
   buildMemoryContext,
+  tagOf,
   tokensOf,
   type BuildOptions,
   type FactTrust,
@@ -50,3 +60,13 @@ export {
   type ExtractedProposal,
   type Extraction,
 } from './proposals.js';
+export {
+  LOCAL_ONLY_MARK,
+  LocalTaint,
+  MIN_FACT_CHARS,
+  MIN_QUOTE_CHARS,
+  localOnlyRedactor,
+  redactDeep,
+  type Redactor,
+  type TaintNode,
+} from './local-only.js';

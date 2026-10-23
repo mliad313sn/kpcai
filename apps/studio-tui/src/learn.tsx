@@ -1,14 +1,15 @@
 /**
  * Phase 4 in the terminal: a disputed node's options (R-405), a model's proposed memory
  * fact (ADR-0027), the plan's memory and estimate accuracy, and the run's verification
- * ROI. Model text is shown as plain text, each quoted line prefixed with "│ ".
+ * ROI. Model text is shown as plain text, each quoted line prefixed with "│ ". A dispute
+ * option is quoted a few lines; once picked it is shown in full, a window at a time, and
+ * only an option read to the end and not cut by the kernel can be chosen (P4-F11).
  */
 import { Box, Text } from 'ink';
 import { t } from '../../studio/src/i18n/core';
 import { memoryLines, verificationText } from '../../studio/src/store/summaries';
 import type { ConfirmView, PlanView, RunView } from '../../studio/src/store/types';
-
-const MAX_QUOTE = 6;
+import { MAX_QUOTE, WINDOW, quoteLines } from './dispute';
 
 /**
  * Model text must never drive the terminal: ESC shows as ␛ and other control characters
@@ -36,8 +37,59 @@ export function Quote({ text }: { text: string }) {
   );
 }
 
-/** The options of a dispute, numbered; the picked one is marked. Default: reject. */
-export function DisputeBody({ c, choice }: { c: ConfirmView; choice?: number }) {
+/** The picked option in full, one window at a time, with where the window is (P4-F11). */
+function Scrolled({ text, top, n }: { text: string; top: number; n: number }) {
+  const lines = quoteLines(text);
+  const shown = lines.slice(top, top + WINDOW);
+  return (
+    <Box flexDirection="column" paddingLeft={1}>
+      {shown.map((l, i) => (
+        <Text key={top + i}>│ {inert(l)}</Text>
+      ))}
+      {lines.length > WINDOW ? (
+        <Text bold>
+          {t('tui.disputeWindow', {
+            n,
+            from: top + 1,
+            to: top + shown.length,
+            total: lines.length,
+          })}
+        </Text>
+      ) : null}
+    </Box>
+  );
+}
+
+type Option = NonNullable<ConfirmView['dispute']>['options'][number];
+
+/** One option: its label and backers, then its text (in full when picked). */
+function OptionView(props: { o: Option; i: number; picked: boolean; scroll: number }) {
+  const { o, i, picked, scroll } = props;
+  const cut = o.truncated === true;
+  return (
+    <Box flexDirection="column">
+      <Text bold={picked} inverse={picked}>
+        {picked ? '◉' : '○'} {i + 1}. {inert(o.label)}
+        {o.backers.length
+          ? ` ${t('dispute.backers', { models: inert(o.backers.join(', ')) })}`
+          : ''}
+      </Text>
+      {cut ? <Text color="yellow">⚠ {t('dispute.truncated')}</Text> : null}
+      {picked && !cut ? <Scrolled text={o.text} top={scroll} n={i + 1} /> : <Quote text={o.text} />}
+    </Box>
+  );
+}
+
+/** The options of a dispute, numbered; the picked one is marked and shown in full. */
+export function DisputeBody({
+  c,
+  choice,
+  scroll = 0,
+}: {
+  c: ConfirmView;
+  choice?: number;
+  scroll?: number;
+}) {
   const d = c.dispute!;
   return (
     <Box flexDirection="column">
@@ -53,15 +105,7 @@ export function DisputeBody({ c, choice }: { c: ConfirmView; choice?: number }) 
         </Box>
       ))}
       {d.options.map((o, i) => (
-        <Box key={o.id} flexDirection="column">
-          <Text bold={choice === i} inverse={choice === i}>
-            {choice === i ? '◉' : '○'} {i + 1}. {inert(o.label)}
-            {o.backers.length
-              ? ` ${t('dispute.backers', { models: inert(o.backers.join(', ')) })}`
-              : ''}
-          </Text>
-          <Quote text={o.text} />
-        </Box>
+        <OptionView key={o.id} o={o} i={i} picked={choice === i} scroll={scroll} />
       ))}
       <Text bold>{t('tui.disputeKeys', { count: d.options.length })}</Text>
     </Box>

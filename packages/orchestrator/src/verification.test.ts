@@ -51,6 +51,9 @@ describe('verification ROI (R-404)', () => {
     expect(v.acceptedFindings).toBe(2);
     expect(v.acceptedRevisions).toBe(1);
     expect(v.usdPerAcceptedFinding).toBeCloseTo(CALL, 9);
+    expect(v.revisedVerdicts).toBe(1);
+    expect(v.majorFindings).toBe(1);
+    expect(v.usdPerRevisedVerdict).toBeCloseTo(2 * CALL, 9);
     expect(v.nodes.map((n) => n.nodeId)).toEqual(['n1', 'n2']);
     expect(v.nodes[1]).toEqual({
       nodeId: 'n2',
@@ -58,6 +61,8 @@ describe('verification ROI (R-404)', () => {
       issuesRaised: 0,
       acceptedFindings: 0,
       acceptedRevisions: 0,
+      revisedVerdicts: 0,
+      majorFindings: 0,
     });
   });
 
@@ -72,6 +77,8 @@ describe('verification ROI (R-404)', () => {
       acceptedFindings: 0,
       acceptedRevisions: 0,
       usdPerAcceptedFinding: null,
+      revisedVerdicts: 0,
+      usdPerRevisedVerdict: null,
     });
     expect(r.verification.reviewUsd).toBeCloseTo(2 * CALL, 9);
   });
@@ -81,6 +88,7 @@ describe('verification ROI (R-404)', () => {
       totalUsd: 0,
       share: 0,
       usdPerAcceptedFinding: null,
+      usdPerRevisedVerdict: null,
     });
     const ref = { provider: 'b', model: 'm' };
     const reject = {
@@ -108,7 +116,50 @@ describe('verification ROI (R-404)', () => {
       issuesRaised: 2,
       acceptedFindings: 1,
       acceptedRevisions: 1,
+      revisedVerdicts: 1,
     });
     expect(nodeVerification({ ...res, ok: false })).toMatchObject({ acceptedFindings: 0 });
+  });
+
+  it('a verbose critic inflates acceptedFindings but not revisedVerdicts (P4-F12)', () => {
+    const ref = { provider: 'b', model: 'm' };
+    const major = (text: string) => ({ severity: 'major' as const, text });
+    const minor = (text: string) => ({ severity: 'minor' as const, text });
+    // One defect padded into nine issues: the same major issue three times, six nitpicks.
+    const verbose = {
+      approve: false,
+      issues: [
+        major('No bounds check'),
+        major('no  bounds check'),
+        major(' NO BOUNDS CHECK '),
+        ...Array.from({ length: 6 }, (_, i) => minor(`nit ${i}`)),
+      ],
+      summary: '',
+    };
+    const terse = { approve: false, issues: [major('no bounds check')], summary: '' };
+    const approve = { approve: true, issues: [], summary: '' };
+    const node = (verdict: typeof terse, id: string): ProtocolResult => ({
+      nodeId: id,
+      protocol: 'author_critic',
+      output: 'o',
+      ok: true,
+      approved: true,
+      costUsd: 0.4,
+      contributions: [
+        { role: 'author', ref, text: 'a', costUsd: 0.1 },
+        { role: 'critic', ref, text: 'v', costUsd: 0.1, verdict },
+        { role: 'revision', ref, text: 'r', costUsd: 0.1 },
+        { role: 'critic', ref, text: 'v', costUsd: 0.1, verdict: approve },
+      ],
+    });
+    const loud = verificationRoi([node(verbose, 'n1')]);
+    const quiet = verificationRoi([node(terse, 'n1')]);
+    expect(loud.acceptedFindings).toBe(9);
+    expect(quiet.acceptedFindings).toBe(1);
+    // The robust figures do not move with the critic's verbosity.
+    for (const v of [loud, quiet]) {
+      expect(v).toMatchObject({ revisedVerdicts: 1, majorFindings: 1, usdPerRevisedVerdict: 0.2 });
+    }
+    expect(loud.usdPerAcceptedFinding).toBeCloseTo(0.2 / 9, 6);
   });
 });

@@ -55,7 +55,11 @@ export async function guardWorkspace(env: Env, cwd: string, confirm: Confirm): P
  * since the runner is then never reached. A scope from the repository file is used only
  * after the human confirms it.
  */
-export async function gatherScope(journal: Journal, confirm: Confirm, p: Plan): Promise<unknown> {
+export async function gatherScope(
+  journal: Journal,
+  confirm: Confirm,
+  p: Pick<Plan, 'scope' | 'sessionId'>,
+): Promise<unknown> {
   const s = p.scope;
   if (s.required.length === 0 && s.problems.length === 0) return undefined;
   const refuse = (why: string): never => {

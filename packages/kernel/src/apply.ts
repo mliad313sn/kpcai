@@ -5,7 +5,9 @@ import type { Confirm } from './confirm.js';
 import { kpaiHome } from './env.js';
 import { homeZones } from './home-zone.js';
 import type { Patch } from './patches.js';
-import type { ApplyResult, ArtifactApplyResult, KernelHost } from './types.js';
+import { busPacks } from './packs.js';
+import type { ApplyResult, ArtifactApplyResult, KernelHost, Plan } from './types.js';
+import { WT_SUFFIX, type WorkspaceOps } from './workspace-ops.js';
 
 export interface ApplyContext {
   host: KernelHost;
@@ -21,6 +23,33 @@ export interface ApplyContext {
   packs?: PackZoneOptions;
   /** Approve the git.apply write without asking (separate from `yes`, review P2-F15). */
   yesApply?: boolean;
+}
+
+/**
+ * Writes go to the run's tree, each after a checkpoint of that tree (R-305, R-307), under
+ * the run's pack zones.
+ */
+export function runApplyContext(
+  base: Pick<ApplyContext, 'host' | 'journal' | 'confirm'> & {
+    workspace: Pick<WorkspaceOps, 'before'>;
+  },
+  run: { runId: string; workRoot?: string; plan: Pick<Plan, 'sessionId' | 'packs'> },
+  yesApply: boolean | undefined,
+): ApplyContext {
+  const root = run.workRoot ?? base.host.cwd;
+  const ns = run.workRoot ? run.runId + WT_SUFFIX : run.runId;
+  const sessionId = run.plan.sessionId;
+  return {
+    host: base.host,
+    journal: base.journal,
+    confirm: base.confirm,
+    sessionId,
+    runId: run.runId,
+    root,
+    checkpoint: (label) => base.workspace.before(root, ns, label, sessionId),
+    packs: busPacks(run.plan.packs, sessionId),
+    ...(yesApply ? { yesApply: true } : {}),
+  };
 }
 
 async function withBus<T>(c: ApplyContext, f: (bus: LocalToolBus) => Promise<T>): Promise<T> {

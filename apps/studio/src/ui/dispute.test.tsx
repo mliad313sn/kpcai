@@ -57,6 +57,32 @@ async function running() {
 }
 
 describe('dispute dialog (R-405)', () => {
+  it('shows a cut option in full but never lets it be chosen (P4-F11)', async () => {
+    await running();
+    // The protocol schema may not carry the flag yet: set it on the queued question.
+    const c = studio.getState().confirms[0]!;
+    const options = c.dispute!.options.map((o, i) => (i === 0 ? { ...o, truncated: true } : o));
+    studio.setState({ confirms: [{ ...c, dispute: { ...c.dispute!, options } }] });
+    const dialog = await screen.findByRole('alertdialog');
+    expect(within(dialog).getByText(/This answer was cut by the kernel/)).toBeTruthy();
+    const cut = within(dialog).getByRole('radio', { name: /redis/ });
+    expect(cut).toHaveProperty('disabled', true);
+    const user = userEvent.setup();
+    await user.click(cut);
+    expect(within(dialog).getByRole('button', { name: 'Choose this answer' })).toHaveProperty(
+      'disabled',
+      true,
+    );
+    await user.click(within(dialog).getByRole('radio', { name: /postgres/ }));
+    await user.click(within(dialog).getByRole('button', { name: 'Choose this answer' }));
+    await until(() => kernel!.calls('confirm.answer').length === 1);
+    expect(kernel!.calls('confirm.answer')[0]).toEqual({
+      confirmId: 'd1',
+      ok: true,
+      choice: 'choice-2',
+    });
+  });
+
   it('quotes positions and options, starts on Reject, and sends the chosen option', async () => {
     const dialog = await running();
     const user = userEvent.setup();

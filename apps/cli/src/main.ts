@@ -168,7 +168,21 @@ function nodeOptions(v: Values, rest: string[]): NodeCliOptions {
     ...(v['over-budget'] ? { overBudget: true } : {}),
     ...(v['allow-same-provider'] ? { allowSameProvider: true } : {}),
     ...(v.isolated ? { isolated: true } : {}),
+    // Routing: the kernel holds these to the original run's as a floor (P4-F2).
+    ...(v['local-only'] ? { localOnly: true } : {}),
+    ...(v.profile ? { profile: v.profile } : {}),
+    ...(exclusions(v.exclude) ? { exclude: exclusions(v.exclude) } : {}),
+    ...(v.scope ? { scopeFile: v.scope } : {}),
   };
+}
+
+/** `--exclude a,b` as a list; undefined when absent or empty. */
+function exclusions(raw: string | undefined): string[] | undefined {
+  const list = raw
+    ?.split(',')
+    .map((x) => x.trim())
+    .filter(Boolean);
+  return list?.length ? list : undefined;
 }
 
 function askOptions(v: Values, rest: string[]): Parameters<typeof askCommand>[1] {

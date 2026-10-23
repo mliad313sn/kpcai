@@ -52,3 +52,39 @@ node ran with. A replay could therefore not be faithful.
 - `run.replay`, `run.forkPlan` and `run.fork` go through the normal budget gate and cap.
 - Reused fork nodes offer no patches, artifacts or memory proposals again.
 - Run records never appear in the history, in `kpai log` or in the Markdown export.
+
+## Addendum (phase 4 review, D-024: P4-F2, F4, F5, F6)
+
+Status: proposed by S1, for the PO.
+
+- **The run's routing is a floor (P4-F2).** `run started` now journals `routing`:
+  `localOnly`, `exclude`, the resolved `profile` and `allowTest`. A replay and a fork apply it
+  as a floor. `localOnly` stays on. Excluded providers stay excluded, and the given ones are
+  added. Test providers stay refused if the run refused them. The run's profile applies
+  unless one is given. Options can only make routing stricter. A pinned model outside the
+  floor is unroutable. A run journaled before this change has no record, so its replays and
+  forks use the options as given. `run.replay` and `run.forkPlan` take optional `options`.
+  The CLI passes `--local-only`, `--exclude`, `-p` and `--scope` to `kpai replay` and `kpai fork`.
+- **Only runs of this project (P4-F4).** The run's session `cwd` must equal the kernel's
+  `cwd` after `realpath`. Otherwise the answer is `not_found`, the same as an unknown run,
+  so the journal does not reveal another project's runs. The replay is journaled in the
+  run's session, which is then of this project.
+- **Estimate first, cancellable (P4-F5).** A replay is planned first (`Kernel.replayPlan`,
+  protocol `run.replayPlan`), which spends nothing, and then started once
+  (`Kernel.startReplay`, `run.replay {planId}`). The plan id is also the replay id.
+  `run.cancel` with that id aborts the replay. Its confirmations are closed, and a
+  `replay cancelled` event is journaled. Before any spend, the cap (the band's top) is
+  checked against the budget exactly like a graph (`capCheck`, shared with runs; D-021). It
+  asks above the threshold, and it blocks without `--over-budget`. `kpai replay` prints the
+  likely cost and the cap, then needs `--yes` or a y. That yes stands for the cap question,
+  and Ctrl+C cancels. `run.replay` without `planId` still plans and runs in one call,
+  with the cap checked.
+- **Scope gate (P4-F6).** A replay goes through the runner's scope gate (`admitScope`,
+  shared with `GraphRunner.run`), with the packs selected now and the time now. A scope
+  read from `.kpstudio/scope.yaml` is confirmed by the human first, as for a run. A refusal
+  is journaled as `replay refused` with the run and replay ids, and no provider is called.
+  The node's `authorisedScope` boundary is stamped afresh.
+- **Consequence:** confirmations raised by a replay carry the replay id as `runId`. Dispute
+  questions inside a replay still carry the original run's id, so cancelling a replay does
+  not close an open dispute dialog. That dialog then times out and fails closed. This is
+  backlogged.

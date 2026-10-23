@@ -1,6 +1,5 @@
 /** Running an approved plan: whole-graph budget, GraphRunner, patches collected at the end. */
 import type { GraphEvent, GraphResult } from '@kernelpai/core';
-import { Governor, JournalLedger } from '@kernelpai/budget';
 import type { Journal } from '@kernelpai/journal';
 import {
   GraphRunner,
@@ -11,7 +10,7 @@ import {
 } from '@kernelpai/orchestrator';
 import type { GateHost } from './budget-gate.js';
 import type { Choose } from './confirm.js';
-import { budgetLimits, formatMoney } from './env.js';
+import { capCheck } from './cap-check.js';
 import { collectArtifacts } from './artifacts.js';
 import { queueProposals } from './memory-proposals.js';
 import { collect } from './patches.js';
@@ -19,7 +18,7 @@ import { runnable } from './planning.js';
 import { recordOutcome } from './run-record.js';
 import { annotate } from './routing-info.js';
 import { runDeps } from './run-deps.js';
-import type { GraphOptions } from './setup.js';
+import { routingRecord, type GraphOptions } from './setup.js';
 import type { KernelHost, Plan, RunOutcome, RunState } from './types.js';
 import { isGitTree, type WorkspaceOps } from './workspace-ops.js';
 
@@ -204,44 +203,19 @@ function track(run: ActiveRun, e: GraphEvent): void {
   if (e.contribution.verdict) run.verdicts.set(e.nodeId, e.contribution.verdict.approve);
 }
 
-/**
- * Principle 6 on the whole graph before anything runs (each step is gated again later).
- * Returns why the graph does not run, or undefined to go ahead.
- */
-async function graphBudget(c: RunContext, run: ActiveRun): Promise<string | undefined> {
-  const { plan: p, flags: o } = run;
-  const env = c.host.env;
-  const sessionId = p.sessionId;
-  const governor = new Governor(budgetLimits(env), new JournalLedger(c.journal));
-  // D-021: the figure approved and checked is the cap (the band's top), not the likely cost.
+/** Principle 6 on the whole graph before anything runs (D-021): the band's top is checked. */
+function graphBudget(c: RunContext, run: ActiveRun): Promise<string | undefined> {
+  const { plan: p, flags } = run;
   const { capUsd, expectedUsd } = p.estimate;
-  const v = governor.check(capUsd, { sessionId, project: c.host.cwd, now: new Date() });
-  if (v.action === 'allow') return undefined;
-  const likely = `likely ${formatMoney(expectedUsd, p.m)}`;
-  const why =
-    v.action === 'block'
-      ? `graph blocked by ${v.scope} budget: ${formatMoney(v.projectedUsd, p.m)} > ${formatMoney(v.limitUsd, p.m)} (cap; ${likely})`
-      : `graph estimate up to ${formatMoney(capUsd, p.m)} (cap; ${likely}) is above your confirmation threshold`;
-  if (v.action === 'block' && !o.overBudget) {
-    c.gateHost.say(`not run — ${why}. Use --over-budget, -p economy, or a smaller request\n`);
-  } else if (
-    o.yes ||
-    o.overBudget ||
-    (await c.gateHost.confirm({ kind: 'budget', question: `${why}. Continue?`, runId: run.runId }))
-  ) {
-    c.journal.append({
-      sessionId,
-      type: 'intervention',
-      payload: { action: `graph accepted: ${why}` },
-    });
-    return undefined;
-  }
-  c.journal.append({
-    sessionId,
-    type: 'intervention',
-    payload: { action: `graph not run: ${why}`, verdict: v },
+  return capCheck(c.gateHost, c.journal, {
+    what: 'graph',
+    sessionId: p.sessionId,
+    runId: run.runId,
+    capUsd,
+    expectedUsd,
+    m: p.m,
+    flags,
   });
-  return why;
 }
 
 async function runGraph(c: RunContext, run: ActiveRun): Promise<RunResult> {
@@ -271,6 +245,8 @@ async function runGraph(c: RunContext, run: ActiveRun): Promise<RunResult> {
       // Packs and scope: the runner refuses without a valid scope and journals it (S4).
       packs: p.packs.selected,
       ...(run.scope !== undefined ? { scope: run.scope } : {}),
+      // Its replays and forks keep these as a floor (P4-F2).
+      routing: routingRecord(c.host.env, p.options),
     };
     // A fork's graph already carries the rules and memory it recorded (R-403): as is.
     if (p.fork) return await runFork(run.runner, p.fork, opts);

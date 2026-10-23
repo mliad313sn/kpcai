@@ -5,7 +5,7 @@
  * item without provenance is a fact the human wrote, and nothing is ever dropped.
  */
 import { createHash } from 'node:crypto';
-import { formatAttrs, isFactId, parseAttrs } from './attrs.js';
+import { encodeValue, formatAttrs, isFactId, parseAttrs } from './attrs.js';
 import type { Fact, Layer, MemoryProblem, Provenance } from './types.js';
 
 export type DocLine = { kind: 'raw'; text: string } | { kind: 'fact'; fact: Fact };
@@ -108,7 +108,8 @@ function closeItem(b: Building): void {
   if (!parsed) report('no provenance: read as a fact you wrote');
   for (const m of parsed?.problems ?? []) report(m);
   let id = parsed?.id;
-  if (id !== undefined && !isFactId(id)) report(`id "${id.slice(0, 40)}" is not valid; replaced`);
+  if (id !== undefined && !isFactId(id))
+    report(`id "${encodeValue(id.slice(0, 40))}" is not valid; replaced`);
   if (id !== undefined && isFactId(id) && b.ids.has(id)) report(`id ${id} repeated; replaced`);
   if (id === undefined || !isFactId(id) || b.ids.has(id)) id = derivedId(text, b.ids);
   b.ids.add(id);

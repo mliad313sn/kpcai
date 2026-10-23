@@ -86,7 +86,14 @@ export {
   type ProductivityInput,
   type ProductivityView,
 } from './learning.js';
-export { KernelReplays, type NodeEdit, type ReplayHost } from './replay.js';
+export {
+  KernelReplays,
+  type NodeEdit,
+  type ReplayFlags,
+  type ReplayHandle,
+  type ReplayHost,
+  type ReplayPlan,
+} from './replay.js';
 export { disputeHook, disputeInfo, runDeps, type DepsInput, type RunDeps } from './run-deps.js';
 export { forPeople } from './queries.js';
 export {

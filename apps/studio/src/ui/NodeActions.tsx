@@ -9,7 +9,8 @@ import { gradeNode, nodeKey } from '../store/learning';
 import { isTerminal } from '../store/reducer';
 import { useStudio } from '../store/store';
 import type { NodeRun, RunView } from '../store/types';
-import { NodeEditDialog, type EditMode } from './NodeEditDialog';
+import { ForkDialog, type EditMode } from './NodeEditDialog';
+import { ReplayDialog } from './ReplayDialog';
 import { RunControls } from './RunControls';
 import { InstructBox, Redirect } from './Steer';
 import { RUN_LIVE } from './view';
@@ -54,13 +55,11 @@ export function RunActions({ run, nodeId, n }: { run: RunView; nodeId: string; n
         </p>
       )}
       {live && notStarted && <InstructBox runId={run.runId} nodeId={nodeId} />}
-      {dialog && (
-        <NodeEditDialog
-          mode={dialog}
-          runId={run.runId}
-          nodeId={nodeId}
-          onClose={() => setDialog(undefined)}
-        />
+      {dialog === 'replay' && (
+        <ReplayDialog runId={run.runId} nodeId={nodeId} onClose={() => setDialog(undefined)} />
+      )}
+      {dialog === 'fork' && (
+        <ForkDialog runId={run.runId} nodeId={nodeId} onClose={() => setDialog(undefined)} />
       )}
     </>
   );

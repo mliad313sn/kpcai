@@ -17,7 +17,7 @@ import { BudgetGate, type GateHost } from './budget-gate.js';
 import type { Choose, DisputeInfo } from './confirm.js';
 import { kpaiHome } from './env.js';
 import { homeZones } from './home-zone.js';
-import { NO_MEMORY, memoryResolver } from './memory.js';
+import { NO_MEMORY, localTaint, memoryJournal, memoryResolver, taintConstraint } from './memory.js';
 import { busPacks } from './packs.js';
 import { RouterTap, UsageTap } from './routing-info.js';
 import type { GraphOptions } from './setup.js';
@@ -47,20 +47,38 @@ export interface RunDeps {
   close(): Promise<void>;
 }
 
-const MAX_OPTION_CHARS = 20_000;
+export const MAX_OPTION_CHARS = 20_000;
+const MAX_LABEL_CHARS = 200;
+export const TRUNCATED_NOTE = ' [too long to show in full: cannot be chosen]';
 
-/** A dispute as the confirm channel carries it; model text is capped, never interpreted. */
-export function disputeInfo(q: DisputeQuestion): DisputeInfo {
+/** An option as offered to the human; `truncated` ones are shown cut and never accepted. */
+export type OfferedOption = DisputeInfo['options'][number] & { truncated?: true };
+
+/**
+ * A dispute as the confirm channel carries it; model text is capped, never interpreted.
+ * An option longer than the cap is shown cut, marked `truncated` and labelled so in any
+ * client: what the human sees must be what is chosen (P4-F11), so it cannot be picked.
+ */
+export function disputeInfo(q: DisputeQuestion): Omit<DisputeInfo, 'options'> & {
+  options: OfferedOption[];
+} {
   return {
     nodeId: q.nodeId,
     kind: q.kind,
     reason: q.reason,
-    options: q.options.map((o) => ({
-      id: o.id,
-      label: o.label,
-      text: o.text.slice(0, MAX_OPTION_CHARS),
-      backers: o.backers.map(refToString),
-    })),
+    options: q.options.map((o): OfferedOption => {
+      const cut = o.text.length > MAX_OPTION_CHARS;
+      const label = cut
+        ? `${o.label.slice(0, MAX_LABEL_CHARS - TRUNCATED_NOTE.length)}${TRUNCATED_NOTE}`
+        : o.label;
+      return {
+        id: o.id,
+        label,
+        text: o.text.slice(0, MAX_OPTION_CHARS),
+        backers: o.backers.map(refToString),
+        ...(cut ? { truncated: true as const } : {}),
+      };
+    }),
     positions: q.positions.map((p) => ({
       ref: refToString(p.ref),
       role: p.role,
@@ -70,18 +88,26 @@ export function disputeInfo(q: DisputeQuestion): DisputeInfo {
   };
 }
 
-/** R-405: the human picks an option or rejects; silence, an error or no human rejects. */
+/**
+ * R-405: the human picks an option or rejects; silence, an error or no human rejects. The
+ * choice must be an option offered in full: an unknown id or a `truncated` option is
+ * refused here, whatever the client sent, and the node fails closed.
+ */
 export function disputeHook(choose: Choose): DisputeHook {
   return async (q) => {
     const question = `Node ${q.nodeId} is disputed (${q.reason}). Pick one answer or reject them all.`;
+    const dispute = disputeInfo(q);
     try {
-      return await choose({
+      const choice = await choose({
         kind: 'dispute',
         question,
         runId: q.runId,
         risk: 'write',
-        dispute: disputeInfo(q),
+        dispute,
       });
+      if (choice === null) return null;
+      const offered = dispute.options.find((o) => o.id === choice);
+      return offered && !offered.truncated ? choice : null;
     } catch {
       return null;
     }
@@ -91,11 +117,25 @@ export function disputeHook(choose: Choose): DisputeHook {
 export async function runDeps(i: DepsInput): Promise<RunDeps> {
   const { plan: p, gateHost: host } = i;
   const sessionId = i.sessionId ?? p.sessionId;
+  // Local-only memory (ADR-0027 §6, P4-F3): local providers get the facts; a node that saw
+  // them, and its dependents, stay on local providers; every quote of one is withheld from
+  // non-local providers and from the journal.
+  const memory = p.memory ?? NO_MEMORY;
+  const taint = localTaint(memory, p.graph.nodes);
+  const isLocal = (provider: string): boolean => {
+    try {
+      return p.setup.registry.get(provider).descriptor.kind === 'local';
+    } catch {
+      return false;
+    }
+  };
+  const journal = memoryJournal(i.journal, memory, taint, isLocal);
   const { bus, mcpErrors, policyError } = await createToolBus({
     kpaiHome: kpaiHome(host.env),
     // $KPAI_HOME/memory/** when the home is inside the workspace (ADR-0030).
     policyOptions: { forbiddenPaths: homeZones(host.env, host.cwd) },
-    journal: i.journal,
+    // Tool calls and results are journaled with local-only quotes withheld too.
+    journal,
     env: host.env,
     // The run's domain packs: additions always, approved relaxations journaled (D-020).
     packs: busPacks(p.packs, sessionId),
@@ -113,10 +153,11 @@ export async function runDeps(i: DepsInput): Promise<RunDeps> {
     candidates: p.setup.candidates,
     constraints: p.setup.constraints,
     // Local providers also get the local-only memory facts (ADR-0027).
-    resolve: memoryResolver((ref) => p.setup.registry.get(ref.provider), p.memory ?? NO_MEMORY),
+    resolve: memoryResolver((ref) => p.setup.registry.get(ref.provider), memory),
+    nodeConstraints: taintConstraint(taint),
     // Per-call estimates use the same calibrated output sizes as routing (S8 finding).
     executor: { expectedOutput: outputCalibration(i.journal) },
-    journal: usage.wrap(i.journal),
+    journal: usage.wrap(journal),
     sessionId,
     budget: (cand, label) => gate.allow(cand, label),
     tools: bus,

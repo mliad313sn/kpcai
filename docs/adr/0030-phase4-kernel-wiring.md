@@ -46,3 +46,22 @@ Phase 4 left five gaps at the kernel boundary:
 
 - A `$KPAI_HOME/config` file collects the kernel settings.
 - The tool bus journals a `runId` on tool events, so the learning split no longer needs the preceding intervention.
+
+## Addendum (phase 4 review, D-024: P4-F9, P4-F11)
+
+Status: proposed by S1, for the PO.
+
+- **The grade author is not chosen by the client (P4-F9).** The `grade` protocol method no
+  longer has an `author` field: zod strips it, so an older client still parses. The server
+  records the local user it runs as (`localAuthor()`). `kpai grade --author` stays, because
+  the CLI runs locally as that user. S3 counts at most one manual signal per node.
+- **A dispute option that cannot be shown whole cannot be chosen (P4-F11).** `kpai`
+  shows every option in full. Only positions, which cannot be chosen, are still cut at
+  2,000 characters. The kernel hands hosts option text capped at 20,000 characters
+  (`disputeInfo`). An option at that length may have been cut, so the CLI says so and
+  does not offer it. The console shows option text in full. The TUI shows only the first
+  `MAX_QUOTE` lines but still lets them be picked; that is handed to S6. A cleaner kernel
+  fix is open: drop the option, or mark it `truncated`, in `run-deps.ts` (S7's file).
+- **Review headline (P4-F12 follow-up).** The run summary, `kpai stats --productivity` and
+  the demo lead with "review $X (N%) for K revised verdict(s), $Y each" and show the raw
+  accepted findings second, as "(N issues)".

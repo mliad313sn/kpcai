@@ -7,7 +7,8 @@ import { refToString, type ModelRef } from '@kernelpai/core';
 import type { JournalEvent } from '@kernelpai/journal';
 import { accepted, parseVerdict } from '@kernelpai/orchestrator';
 import type { RunRecord } from './runs.js';
-import { ACTIONS, NOT_ANSWERED, PRODUCER_ROLES, isTestCommand } from './signals.js';
+import { ACTIONS, NOT_ANSWERED, PRODUCER_ROLES } from './signals.js';
+import { isTestCommand, testRunOutcome } from './test-runs.js';
 
 export interface Verdict {
   author: ModelRef;
@@ -93,7 +94,11 @@ function onResponse(w: NodeWork, e: JournalEvent, call: CallInfo | undefined): v
   if (call?.taskType) w.taskType = call.taskType;
 }
 
-/** The outcome of a test run journaled by `shell.run` (or a future `test.run` tool). */
+/**
+ * The outcome of a test run journaled by `shell.run` (or a future `test.run` tool): only a
+ * command that really runs tests counts, and a pass needs evidence where the output is
+ * whole (P4-F10, `test-runs.ts`).
+ */
 function testOutcome(e: JournalEvent): boolean | undefined {
   const p = e.payload;
   const decision = str(p.decision);
@@ -104,10 +109,7 @@ function testOutcome(e: JournalEvent): boolean | undefined {
   const args = Array.isArray(input.args) ? input.args.map(String) : [];
   if (typeof input.command !== 'string' || !isTestCommand(input.command, args)) return undefined;
   const meta = (p.meta ?? {}) as { exitCode?: unknown; timedOut?: unknown; aborted?: unknown };
-  if (meta.aborted === true) return undefined;
-  if (meta.timedOut === true) return false;
-  // No exit code: the program was missing or refused; that says nothing of the code.
-  return typeof meta.exitCode === 'number' ? meta.exitCode === 0 : undefined;
+  return testRunOutcome({ ...meta, result: p.result });
 }
 
 function duringRun(works: Map<string, NodeWork>, events: readonly JournalEvent[]): void {

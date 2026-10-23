@@ -1,7 +1,7 @@
 /**
  * WCAG 2.2 AA with axe-core on the phase 4 screens of KP Studio, in the dark and the light
- * theme: memory editor and memory question, dispute dialog, replay dialog and side-by-side
- * compare with the grade box, fork plan, and the accuracy and competence view. Zero
+ * theme: memory editor and memory question, dispute dialog, replay dialog (choice, then its
+ * estimate and inherited routing) and side-by-side compare with the grade box, fork plan, and the accuracy and competence view. Zero
  * serious or critical violations.
  */
 import { AxeBuilder } from '@axe-core/playwright';
@@ -78,7 +78,10 @@ for (const theme of ['dark', 'light'] as const) {
       const dialog = page.getByRole('dialog', { name: 'Replay node #implementation' });
       await dialog.getByLabel('Model').selectOption('mock-alpha/m1');
       found.push(...(await audit(page, 'replay dialog')));
-      await dialog.getByRole('button', { name: 'Replay' }).click();
+      await dialog.getByRole('button', { name: 'Estimate the replay' }).click();
+      await expect(dialog.getByRole('region', { name: 'Before anything is spent' })).toBeVisible();
+      found.push(...(await audit(page, 'replay dialog with its estimate and routing')));
+      await dialog.getByRole('button', { name: /^Run replay/ }).click();
       await expect(detail.getByRole('region', { name: 'Replay beside the original' })).toBeVisible({
         timeout: 45_000,
       });

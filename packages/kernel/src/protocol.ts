@@ -21,7 +21,8 @@ import {
   WorkspaceMethods,
 } from './protocol-workspace.js';
 import { MemoryConfirmSchema, MemoryMethods, MemorySummarySchema } from './protocol-memory.js';
-import { DisputeSchema, LearningMethods, NodeEdit } from './protocol-learning.js';
+import { DisputeSchema, LearningMethods } from './protocol-learning.js';
+import { replayMethods } from './protocol-replay.js';
 
 export {
   AccuracySchema,
@@ -335,26 +336,7 @@ export const Methods = {
   ...WorkspaceMethods,
   ...MemoryMethods,
   ...LearningMethods,
-  /** A fork from a node (R-403): reused nodes, nodes that run again, and their estimate. */
-  'run.forkPlan': {
-    params: z.object({
-      runId: Id,
-      nodeId: Id,
-      edit: z
-        .object({ ...NodeEdit, instruction: z.string().min(1).max(10_000).optional() })
-        .optional(),
-    }),
-    result: z.object({
-      planId: Id,
-      parent: z.object({ runId: Id, nodeId: Id }),
-      rerun: z.array(z.string()),
-      reused: z.array(z.string()),
-      edits: z.array(z.string()),
-      graph: GraphSchema,
-      /** Covers only the nodes that run again; the band's top is the cap (D-021). */
-      estimate: EstimateSchema,
-    }),
-  },
+  ...replayMethods({ RunOptionsSchema, EstimateSchema, GraphSchema, ScopeStatusSchema }),
 } as const;
 export type MethodName = keyof typeof Methods;
 export type MethodResult<M extends MethodName> = z.infer<(typeof Methods)[M]['result']>;

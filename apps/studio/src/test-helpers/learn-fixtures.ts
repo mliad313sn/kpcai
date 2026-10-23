@@ -63,6 +63,7 @@ export const MEMORY_SUMMARY = {
   distrusted: true,
   pending: 1,
   problems: ['memory/user.md line 3 kept as is'],
+  localOnlyRule: 'local-only facts are given to local providers only',
 };
 
 const row = (label: string, samples: number) => ({
@@ -118,6 +119,24 @@ const attempt = (provider: string, output: string, costUsd: number, approve: boo
   approved: approve,
 });
 
+/** `run.replayPlan` (P4-F5): the cost before anything is spent, and the inherited routing. */
+export const REPLAY_PLAN = {
+  planId: 'rpl1',
+  runId: 'r1',
+  nodeId: 'impl',
+  routing: { localOnly: true, exclude: ['openai', 'xai'], profile: 'economy', allowTest: false },
+  estimate: {
+    nodes: [],
+    minUsd: 0.01,
+    totalUsd: 0.04,
+    expectedUsd: 0.04,
+    capUsd: 0.09,
+    complete: true,
+    problems: [],
+    band: { lowUsd: 0.02, highUsd: 0.09, basis: 'heuristic' },
+  },
+};
+
 export const REPLAY = {
   replayId: 'rp1',
   runId: 'r1',
@@ -163,6 +182,9 @@ export const PRODUCTIVITY = {
     acceptedFindings: 2,
     acceptedRevisions: 1,
     usdPerAcceptedFinding: 0.02,
+    revisedVerdicts: 1,
+    majorFindings: 1,
+    usdPerRevisedVerdict: 0.04,
   },
   band: { runs: 3, inBand: 2, rate: 0.6667 },
 };
@@ -193,6 +215,7 @@ export function learnHandlers(): Record<string, (p: unknown) => unknown> {
     'stats.productivity': () => PRODUCTIVITY,
     competence: () => ({ entries: COMPETENCE }),
     grade: (p) => ({ ...(p as object), graded: 'openai/model-b', taskType: 'code_generation' }),
+    'run.replayPlan': () => REPLAY_PLAN,
     'run.replay': () => REPLAY,
     'run.forkPlan': () => forkPlan(),
     'run.fork': () => ({ runId: 'r2' }),

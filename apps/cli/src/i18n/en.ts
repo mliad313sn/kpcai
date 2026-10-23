@@ -86,7 +86,7 @@ Global: --db <path> (default $KPAI_HOME/journal.db, KPAI_HOME=~/.kernelpai)
   'prod.rework':
     '  rolled back {rolledBack} ({rollbackRate}) · reworked {reworked} ({reworkRate}) within {days} day(s) · restores not attributed: {unattributed}',
   'prod.review':
-    '  review {usd} for {findings} accepted finding(s), {each} each · {issues} issue(s) raised on {nodes} node(s)',
+    '  review {usd} for {verdicts} revised verdict(s), {each} each ({findings} issues) · {issues} issue(s) raised on {nodes} node(s)',
   'prod.band': '  billed cost inside the approved band: {inBand}/{runs} finished run(s) ({rate})',
   'error.productivityInvalid': 'kpai stats --productivity: {message}',
   'confirm.budget': 'Expected cost {expected} is above your threshold {threshold}. Continue?',

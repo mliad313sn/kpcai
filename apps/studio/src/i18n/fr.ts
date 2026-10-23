@@ -2,6 +2,7 @@
 import type { Catalogue } from './core';
 import { frApp } from './fr-app';
 import { frLearn } from './fr-learn';
+import { frReview } from './fr-review';
 import { frRun } from './fr-run';
 
-export const fr: Catalogue = { ...frApp, ...frRun, ...frLearn };
+export const fr: Catalogue = { ...frApp, ...frRun, ...frLearn, ...frReview };

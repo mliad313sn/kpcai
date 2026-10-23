@@ -7,7 +7,9 @@
  * - rollback rate: accepted changes undone by a checkpoint restore ÷ accepted changes;
  * - rework rate: accepted changes rolled back, or touched again by a later run within the
  *   rework window ÷ accepted changes;
- * - defects caught by review: accepted findings (R-404) recomputed from the run records;
+ * - defects caught by review: accepted findings (R-404, raw issues) and revised verdicts
+ *   (rejecting verdicts answered by an approved revision, robust to a verbose critic,
+ *   P4-F12), recomputed from the run records;
  * - band hit rate: finished runs whose billed cost fell inside the approved band (R-402).
  */
 import type { ProtocolResult } from '@kernelpai/core';
@@ -44,6 +46,12 @@ export interface ReviewYield {
   acceptedFindings: number;
   acceptedRevisions: number;
   usdPerAcceptedFinding: number | null;
+  /** Rejecting verdicts answered by an approved revision, one each (P4-F12, headline). */
+  revisedVerdicts: number;
+  /** Distinct major issues of those verdicts. */
+  majorFindings: number;
+  /** reviewUsd ÷ revisedVerdicts: the review cost per defect caught. */
+  usdPerRevisedVerdict: number | null;
 }
 
 export interface ProductivityReport {
@@ -123,7 +131,15 @@ function recordedResult(e: JournalEvent): ProtocolResult | undefined {
 }
 
 function reviewYield(runs: readonly RunRecord[]): ReviewYield {
-  const y = { nodes: 0, reviewUsd: 0, issuesRaised: 0, acceptedFindings: 0, acceptedRevisions: 0 };
+  const y = {
+    nodes: 0,
+    reviewUsd: 0,
+    issuesRaised: 0,
+    acceptedFindings: 0,
+    acceptedRevisions: 0,
+    revisedVerdicts: 0,
+    majorFindings: 0,
+  };
   for (const e of runs.flatMap((r) => r.events)) {
     const res = recordedResult(e);
     if (!res) continue;
@@ -133,11 +149,14 @@ function reviewYield(runs: readonly RunRecord[]): ReviewYield {
     y.issuesRaised += v.issuesRaised;
     y.acceptedFindings += v.acceptedFindings;
     y.acceptedRevisions += v.acceptedRevisions;
+    y.revisedVerdicts += v.revisedVerdicts;
+    y.majorFindings += v.majorFindings;
   }
   return {
     ...y,
     reviewUsd: r6(y.reviewUsd),
     usdPerAcceptedFinding: ratio(y.reviewUsd, y.acceptedFindings, r6),
+    usdPerRevisedVerdict: ratio(y.reviewUsd, y.revisedVerdicts, r6),
   };
 }
 

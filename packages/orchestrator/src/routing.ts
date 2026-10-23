@@ -8,7 +8,12 @@ import {
   type ScoredCandidate,
   type TaskNode,
 } from '@kernelpai/core';
-import { OrchestrationError, type OrchestratorOptions, type StepSpec } from './types.js';
+import {
+  OrchestrationError,
+  type NodeConstraint,
+  type OrchestratorOptions,
+  type StepSpec,
+} from './types.js';
 
 export const sameRef = (a: ModelRef, b: ModelRef): boolean =>
   a.provider === b.provider && a.model === b.model;
@@ -97,7 +102,74 @@ export function routeDiverse(
   spec: StepSpec,
   pin?: ModelRef,
 ): Routed {
-  const base: RoutingConstraints = o.constraints ?? {};
+  const nc = o.nodeConstraints?.(node.id);
+  if (!nc) return routeWith(o, o.constraints ?? {}, node, spec, pin);
+  try {
+    return routeWith(o, withNode(o.constraints, nc), node, spec, pin);
+  } catch (err) {
+    throw because(nc, err);
+  }
+}
+
+/** The run's constraints with a node's on top (lists added, other fields replaced). */
+function withNode(base: RoutingConstraints | undefined, nc: NodeConstraint): RoutingConstraints {
+  const b = base ?? {};
+  const c = nc.constraints;
+  const list = (k: 'deniedProviders' | 'deniedModels' | 'excludeProviders'): string[] => [
+    ...(b[k] ?? []),
+    ...(c[k] ?? []),
+  ];
+  return {
+    ...b,
+    ...c,
+    deniedProviders: list('deniedProviders'),
+    deniedModels: list('deniedModels'),
+    excludeProviders: list('excludeProviders'),
+  };
+}
+
+/** The error of a step a node constraint left without a model, with the constraint's reason. */
+function because(nc: NodeConstraint, err: unknown): Error {
+  const msg = `${nc.reason}: ${err instanceof Error ? err.message : String(err)}`;
+  return err instanceof OrchestrationError ? new OrchestrationError(msg) : new Error(msg);
+}
+
+/**
+ * A fixed decision (a retry, a revision on the author) kept to the candidates that meet the
+ * node's constraints, checked by the router; throws with the reason when none does.
+ */
+export function constrainDecision(
+  o: OrchestratorOptions,
+  node: TaskNode,
+  decision: RoutingDecision,
+): RoutingDecision {
+  const nc = o.nodeConstraints?.(node.id);
+  if (!nc) return decision;
+  const c = withNode(o.constraints, nc);
+  const ok = [decision.chosen, ...decision.fallbacks].filter((k) => {
+    try {
+      routePinned(o.router, node, o.candidates, c, k.ref);
+      return true;
+    } catch {
+      return false;
+    }
+  });
+  const [chosen, ...fallbacks] = ok;
+  if (!chosen) {
+    const refs = [decision.chosen, ...decision.fallbacks].map((k) => refToString(k.ref));
+    throw new Error(`${nc.reason}: ${refs.join(', ')} not allowed for this step`);
+  }
+  if (chosen === decision.chosen && fallbacks.length === decision.fallbacks.length) return decision;
+  return { ...decision, chosen, fallbacks };
+}
+
+function routeWith(
+  o: OrchestratorOptions,
+  base: RoutingConstraints,
+  node: TaskNode,
+  spec: StepSpec,
+  pin?: ModelRef,
+): Routed {
   const excluded = [...new Set(spec.exclude ?? [])];
   const merged: RoutingConstraints = {
     ...base,

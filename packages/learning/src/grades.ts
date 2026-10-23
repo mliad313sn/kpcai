@@ -11,7 +11,9 @@
  *   merge-back undid it (replaces the patch signal);
  * - cancelled: 0 at a low weight when the run was cancelled;
  * - bench: the bench's deterministic check of the node's answer, 1 or 0;
- * - manual: `kpai grade` good 1 / bad 0, the last grade of each human author.
+ * - manual: `kpai grade` good 1 / bad 0. A node carries at most one manual signal (weight
+ *   3), from its latest grade whoever the author: grading again, or under other names,
+ *   replaces it and never adds weight (P4-F9). Replaced grades are listed as `superseded`.
  */
 import { refToString, type ModelRef } from '@kernelpai/core';
 import type { Journal, JournalEvent } from '@kernelpai/journal';
@@ -40,7 +42,8 @@ export interface NodeGrade {
   seq: number;
 }
 
-export type IgnoredReason = 'self-review' | 'self-grade' | 'untrusted source' | 'unknown node';
+export type IgnoredReason =
+  'self-review' | 'self-grade' | 'untrusted source' | 'unknown node' | 'superseded';
 
 export interface IgnoredGrade {
   runKey: string;
@@ -56,7 +59,8 @@ export interface Grading {
 }
 
 interface Extra {
-  manual: Map<string, Signal>;
+  /** The node's latest manual grade: one at most, whoever graded (P4-F9). */
+  manual?: Signal;
   bench?: Signal;
 }
 
@@ -96,7 +100,7 @@ class Grader {
       this.ignore(run?.key ?? str(e.payload.runId) ?? '', nodeId, e.seq, 'unknown node');
       return;
     }
-    const extra: Extra = this.extras.get(w) ?? { manual: new Map() };
+    const extra: Extra = this.extras.get(w) ?? {};
     this.extras.set(w, extra);
     if (e.payload.action === ACTIONS.benchCheck) {
       if (e.payload.source !== 'bench')
@@ -110,7 +114,11 @@ class Grader {
       return this.ignore(run.key, nodeId, e.seq, 'untrusted source');
     }
     if (isSelf(author, w.producer)) return this.ignore(run.key, nodeId, e.seq, 'self-grade');
-    extra.manual.set(author.toLowerCase(), signal('manual', grade === 'good' ? 1 : 0, e.seq));
+    const next = signal('manual', grade === 'good' ? 1 : 0, e.seq);
+    const old = extra.manual;
+    if (old && old.seq > next.seq) return this.ignore(run.key, nodeId, next.seq, 'superseded');
+    extra.manual = next;
+    if (old) this.ignore(run.key, nodeId, old.seq, 'superseded');
   }
 
   private nodeSignals(run: RunRecord, w: NodeWork): Signal[] {
@@ -126,7 +134,7 @@ class Grader {
     if (run.cancelled) out.push(signal('cancelled', 0, run.outcome?.seq ?? 0));
     const extra = this.extras.get(w);
     if (extra?.bench) out.push(extra.bench);
-    if (extra) out.push(...extra.manual.values());
+    if (extra?.manual) out.push(extra.manual);
     return out;
   }
 

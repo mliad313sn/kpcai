@@ -25,7 +25,6 @@ async function gradedRun(c: Client, grade: 'good' | 'bad'): Promise<string> {
     runId,
     nodeId: 'look',
     grade,
-    author: 'e2e-human',
   });
   expect(g).toMatchObject({ graded: 'mock-alpha/m1', taskType: 'analysis' });
   return runId;
@@ -40,10 +39,15 @@ test('grades become evidence in the routing reason once there are enough of them
 
   const runs: string[] = [];
   for (let i = 0; i < 4; i++) runs.push(await gradedRun(c, 'good'));
-  // A model cannot grade its own work.
-  await expect(
-    c.call('grade', { runId: runs[0], nodeId: 'look', grade: 'good', author: 'mock-alpha/m1' }),
-  ).rejects.toThrow(/grade/);
+  // P4-F9: a client cannot name the author (the server records its local user), so a
+  // model's name here is dropped; grading a node again replaces its grade, never adds one.
+  const again = await c.call<{ graded: string }>('grade', {
+    runId: runs[0],
+    nodeId: 'look',
+    grade: 'good',
+    author: 'mock-alpha/m1',
+  });
+  expect(again.graded).toBe('mock-alpha/m1');
   const four = await c.call<Plan>('plan', { request: ASK, options: { isolated: false } });
   expect(lookReason(four)).not.toContain('evidence:'); // n < 5: the prior alone
 

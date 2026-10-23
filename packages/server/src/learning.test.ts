@@ -2,6 +2,7 @@
  * ADR-0028 and R-403/R-405 over the real protocol: grades, competence, accuracy, replay,
  * fork, and dispute answers through `confirm.answer {choice}`. Loopback only, no network.
  */
+import { userInfo } from 'node:os';
 import { afterEach, describe, expect, it } from 'vitest';
 import { parseResult, type MethodName } from '@kernelpai/kernel/protocol';
 import { REQ, recordingHost } from '../../kernel/src/test-helpers/fixture.js';
@@ -81,6 +82,61 @@ describe('learning, replay and fork over the protocol', () => {
     expect(forked.runId).not.toBe(runId);
     const missing = await c.call('run.fork', { planId: 'nope' });
     expect(missing.error?.code).toBe(-32004);
+  });
+});
+
+describe('review findings over the protocol (D-024)', () => {
+  it('P4-F9: a grade is always authored by the local user, never by the client', async () => {
+    const { c } = await boot();
+    const { runId } = await runToEnd(c, 'run.start', {
+      request: REQ,
+      options: { isolated: false },
+    });
+    await ok(c, 'grade', { runId, nodeId: 'implementation', grade: 'bad', author: 'mallory' });
+    const sessions = (await ok(c, 'sessions.list', {})) as { sessions: Array<{ id: string }> };
+    const events = await Promise.all(
+      sessions.sessions.map((s) => ok(c, 'sessions.events', { sessionId: s.id })),
+    );
+    const grades = events
+      .flatMap((e) => (e as { events: Array<{ payload?: Record<string, unknown> }> }).events)
+      .filter((e) => e.payload?.['grade'] === 'bad');
+    expect(grades).toHaveLength(1);
+    expect(grades[0]?.payload?.['author']).toBe(userInfo().username || 'user');
+  });
+
+  it('P4-F5/F2: run.replayPlan shows likely and cap; run.replay runs it; options add to the floor', async () => {
+    const { c } = await boot();
+    const { runId } = await runToEnd(c, 'run.start', {
+      request: REQ,
+      options: { isolated: false, exclude: ['mock-beta'] },
+    });
+    const plan = (await ok(c, 'run.replayPlan', {
+      runId,
+      nodeId: 'implementation',
+      options: { exclude: ['mock-alpha'] },
+    })) as {
+      planId: string;
+      routing: { exclude: string[] };
+      estimate: { expectedUsd: number; capUsd: number };
+    };
+    expect(plan.routing.exclude).toEqual(['mock-beta', 'mock-alpha']);
+    expect(plan.estimate.capUsd).toBeGreaterThanOrEqual(plan.estimate.expectedUsd);
+    const r = (await ok(c, 'run.replay', {
+      runId,
+      nodeId: 'implementation',
+      planId: plan.planId,
+    })) as { replayId: string; replay: { models: Array<{ provider: string }> } };
+    expect(r.replayId).toBe(plan.planId);
+    const used = r.replay.models.map((m) => m.provider);
+    expect(used.some((p) => p === 'mock-beta' || p === 'mock-alpha')).toBe(false);
+    const again = await c.call('run.replay', {
+      runId,
+      nodeId: 'implementation',
+      planId: plan.planId,
+    });
+    expect(again.error?.code).toBe(-32004);
+    const gone = await c.call('run.cancel', { runId: plan.planId });
+    expect(gone.error?.code).toBe(-32004);
   });
 });
 

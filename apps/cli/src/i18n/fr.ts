@@ -85,7 +85,7 @@ Global : --db <chemin> (par défaut $KPAI_HOME/journal.db, KPAI_HOME=~/.kernelpa
   'prod.rework':
     '  annulées {rolledBack} ({rollbackRate}) · reprises {reworked} ({reworkRate}) sous {days} jour(s) · restaurations non attribuées : {unattributed}',
   'prod.review':
-    '  relecture {usd} pour {findings} constat(s) accepté(s), {each} chacun · {issues} problème(s) soulevé(s) sur {nodes} nœud(s)',
+    '  relecture {usd} pour {verdicts} verdict(s) révisé(s), {each} chacun ({findings} problèmes) · {issues} problème(s) soulevé(s) sur {nodes} nœud(s)',
   'prod.band':
     '  coût facturé dans la fourchette approuvée : {inBand}/{runs} exécution(s) terminée(s) ({rate})',
   'error.productivityInvalid': 'kpai stats --productivity : {message}',

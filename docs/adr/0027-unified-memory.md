@@ -1,6 +1,6 @@
 # ADR-0027 — Unified memory: layers, provenance, propose → confirm, budgeted injection
 
-**Status:** Accepted by the PO (proposed by S1; phase 4 WP1, spec §3.1) · **Date:** 2026-10-23
+**Status:** Accepted by the PO (proposed by S1; phase 4 WP1, spec §3.1) · **Date:** 2026-10-23 · amended by S7 after review P4 (§6, §9)
 
 ## Context
 
@@ -50,10 +50,43 @@ R-306 treatment of repository content.
      counts, ids and sources, never the text.
    - When `$KPAI_HOME` is inside the workspace, model tools could have written the files,
      so every fact is labelled untrusted and the plan says so.
-6. **Local-only.** The nodes carry the cloud version of the message, which omits
-   `local-only` facts and says how many were withheld. The run's adapter resolver swaps in
-   the full version only for adapters whose descriptor is `kind: local`; `cloud`,
-   `aggregator` and `test` never get it. Exports to the repository leave them out.
+6. **Local-only** (amended after review P4-F3). The nodes carry the cloud version of the
+   message, which omits `local-only` facts and says how many were withheld. The run's
+   adapter resolver swaps in the full version only for adapters whose descriptor is
+   `kind: local`; `cloud`, `aggregator` and `test` never get it. Exports to the repository
+   leave them out. A local model may quote a fact it was given, so when local-only facts
+   exist:
+   - **Taint.** A node is tainted from its first model call to a `kind: local` provider (a
+     journaled `call`), and so is every node that depends on it, directly or not. Every
+     later step of a tainted node (critics, judges, voters, revisions, retries) is routed
+     with `localOnly`, through the orchestrator's `nodeConstraints` hook; a fixed decision
+     (a retry on the same model) is kept to the candidates that meet it. When no local
+     provider can serve the step, also because principle 2 needs another provider, the step
+     fails closed with the reason. Nobody is asked to waive it.
+   - **Redaction (defence in depth).** Every message sent to a provider that is not
+     `kind: local`, and every journal payload of the run (calls, responses, errors, tool
+     calls and results, node records), has each quote of a local-only fact replaced by
+     `[local-only fact withheld]`. A quote is the whole fact, or any run of at least 24
+     characters of it, with whitespace normalised and case ignored. Facts shorter than 6
+     characters are not redacted.
+   - **Proposals.** A proposal from a tainted node is queued as local-only, whatever the
+     model tagged.
+   - **Plan.** The memory summary carries `localOnlyRule` (journaled with the plan), and
+     the plan prints the rule.
+
+   **Guaranteed:** whenever a plan carries local-only facts, no request its run makes to a
+   non-local provider contains one verbatim, or any 24-character run of one, and the run's
+   journal holds none of them either. A tainted node and its dependents never reach a
+   non-local provider through routing. The same wiring (`runDeps`) serves runs, forks and
+   replays. A replay carries no memory of its own: it reruns the recorded messages, which
+   hold only the cloud version, so it gives no local-only fact to anyone.
+   **Not guaranteed:** a paraphrase, a translation, an encoding, or a quote shorter than
+   24 characters (for example a host name alone) in a local model's output. Only the taint
+   stops those, and it covers what the run routes. Outputs a fork reuses from its parent run
+   are not re-tainted: they reach the fork as recorded in the journal, so they are
+   redacted. Patches, artifacts, run results and the console stay on this machine and are
+   not redacted.
+
 7. **Proposals.** A node may end with a ` ```memory ` block of `- [project|user|session,
 local-only] fact` items. The kernel reads only successful nodes of runs that were not
    cancelled. It keeps at most 5 items per node and 10 per run, each at most 300
@@ -66,6 +99,17 @@ local-only] fact` items. The kernel reads only successful nodes of runs that wer
    `export` writes `.kpstudio/memory.md` after a checkpoint and refuses symlinks. The file
    is read back like the R-306 rule files: no symlink, at most 64 KiB, every fact screened
    and untrusted, and facts identical to the local project layer are not repeated.
+9. **Provenance is data, never prompt text** (review P4-F1, F7, F8).
+   - The parser validates what it decodes: `source` is `human` or `provider/model`;
+     `date`, `confirmed` and `edited` are real days; evidence is `run:`, `node:` or `event:`
+     and printable. An invalid value is dropped and reported as a problem, quoted encoded.
+   - Every tag put in a prompt is reduced to `[A-Za-z0-9._:/@+-]`.
+   - A repository file's provenance is ignored: `source=repository`, no date, no evidence,
+     never local-only.
+   - Every fact is screened again as it is injected: zones, the environment's secret
+     values, cleaning and the size cap. Refused facts are counted in the plan's problems.
+   - Repository facts are redacted with the environment's secret values.
+   - Zone mentions are also matched on words cut at `=:@`, percent-decoded and lower-cased.
 
 ## Consequences
 

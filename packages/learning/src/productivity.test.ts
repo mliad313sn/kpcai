@@ -49,6 +49,7 @@ describe('productivity (R-406): cost and time per accepted change', () => {
     expect(p.rollbackRate).toBeNull();
     expect(p.reworkRate).toBeNull();
     expect(p.review.usdPerAcceptedFinding).toBeNull();
+    expect(p.review.usdPerRevisedVerdict).toBeNull();
     expect(p.band).toEqual({ runs: 0, inBand: 0, rate: null });
   });
 
@@ -205,7 +206,36 @@ describe('productivity (R-406): review yield and band', () => {
       acceptedFindings: 2,
       acceptedRevisions: 1,
       usdPerAcceptedFinding: 0.025,
+      revisedVerdicts: 1,
+      majorFindings: 1,
+      usdPerRevisedVerdict: 0.05,
     });
+  });
+
+  it('a verbose critic multiplies findings, not revised verdicts (P4-F12)', () => {
+    const yieldOf = (issues: number) => {
+      const s = new Script();
+      run(s, 'r1', 0.1, () =>
+        s.record('r1', 'n1', {
+          protocol: 'author_critic',
+          ok: true,
+          approved: true,
+          contributions: [
+            { role: 'author', costUsd: 0.1 },
+            critic(false, issues, 0.02),
+            { role: 'revision', costUsd: 0.05 },
+            critic(true, 0, 0.02),
+          ],
+        }),
+      );
+      return productivity(s.j, P).review;
+    };
+    const [terse, verbose] = [yieldOf(1), yieldOf(8)];
+    expect([terse.acceptedFindings, verbose.acceptedFindings]).toEqual([1, 8]);
+    expect(verbose.usdPerAcceptedFinding).toBe(0.005);
+    for (const r of [terse, verbose]) {
+      expect(r).toMatchObject({ revisedVerdicts: 1, majorFindings: 1, usdPerRevisedVerdict: 0.04 });
+    }
   });
 
   function records(s: Script): void {

@@ -205,7 +205,13 @@ export function DiffPane({ run }: { run: RunView | undefined }) {
 }
 
 /** A confirmation: the question and any diff or content as text; the default is No. */
-export function ConfirmPane({ c, now, choice }: { c: ConfirmView; now: number; choice?: number }) {
+export function ConfirmPane(props: {
+  c: ConfirmView;
+  now: number;
+  choice?: number;
+  scroll?: number;
+}) {
+  const { c, now, choice, scroll } = props;
   const body = c.patch ?? c.content ?? '';
   const lines = body ? body.split('\n') : [];
   const left = Math.max(0, c.receivedAt + c.timeoutMs - now);
@@ -222,7 +228,9 @@ export function ConfirmPane({ c, now, choice }: { c: ConfirmView; now: number; c
       {lines.length > MAX_LINES ? (
         <Text dimColor>{t('tui.confirmMore', { count: lines.length - MAX_LINES })}</Text>
       ) : null}
-      {c.dispute ? <DisputeBody c={c} {...(choice !== undefined ? { choice } : {})} /> : null}
+      {c.dispute ? (
+        <DisputeBody c={c} {...(choice !== undefined ? { choice, scroll: scroll ?? 0 } : {})} />
+      ) : null}
       {c.memory ? <MemoryBody c={c} /> : null}
       <Text>
         {t(c.dispute ? 'dispute.timeout' : c.memory ? 'memory.timeout' : 'confirm.timeout', {

@@ -160,8 +160,12 @@ export interface EvidenceView {
   loading: boolean;
 }
 
-/** A replay of one node (R-403): in flight, or its side-by-side result. */
-export type ReplayEntry = { pending: true } | { pending: false; result: ReplayView };
+/**
+ * A replay of one node (R-403): in flight (cancellable by its plan id, P4-F5), or its
+ * side-by-side result.
+ */
+export type ReplayEntry =
+  { pending: true; planId?: string; cancelling?: boolean } | { pending: false; result: ReplayView };
 
 export interface GradeView {
   grade: 'good' | 'bad';
@@ -246,7 +250,14 @@ export interface ConfirmView {
     nodeId: string;
     kind: string;
     reason: string;
-    options: Array<{ id: string; label: string; text: string; backers: string[] }>;
+    /** `truncated`: the kernel cut the text; such an option cannot be chosen (P4-F11). */
+    options: Array<{
+      id: string;
+      label: string;
+      text: string;
+      backers: string[];
+      truncated?: boolean;
+    }>;
     positions: Array<{ ref: string; role: string; says: string; option?: string }>;
   };
   timeoutMs: number;

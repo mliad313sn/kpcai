@@ -53,45 +53,8 @@ export const ACTIONS = {
   patchRefused: 'patch refused: control characters',
 } as const;
 
-const RUNNERS = new Set([
-  'vitest',
-  'jest',
-  'mocha',
-  'ava',
-  'tap',
-  'pytest',
-  'py.test',
-  'phpunit',
-  'rspec',
-  'ctest',
-  'nose2',
-  'tox',
-]);
-const PACKAGE_MANAGERS = new Set(['npm', 'pnpm', 'yarn', 'bun', 'deno']);
-const BUILD_TOOLS = new Set(['cargo', 'go', 'dotnet', 'mvn', 'gradle', 'make', 'swift', 'mix']);
-
-const base = (cmd: string): string =>
-  (cmd.split(/[\\/]/).pop() ?? cmd).toLowerCase().replace(/\.(exe|cmd|bat)$/, '');
-
-/**
- * True when a `shell.run` call is a test run: a test runner (`vitest`, `pytest`, …), a
- * package manager's `test` script (`npm test`, `pnpm run test:unit`), `npx vitest`,
- * `python -m pytest`, or a build tool's `test` goal (`go test`, `cargo test`, `make test`).
- */
-export function isTestCommand(command: string, args: readonly string[]): boolean {
-  const cmd = base(command);
-  const first = (args[0] ?? '').toLowerCase();
-  if (RUNNERS.has(cmd)) return true;
-  if (cmd === 'npx' || cmd === 'pnpx' || cmd === 'bunx') return RUNNERS.has(base(first));
-  if (PACKAGE_MANAGERS.has(cmd)) {
-    if (first === 'test' || first === 't') return true;
-    const script = (args[1] ?? '').toLowerCase();
-    if (first === 'exec' || first === 'dlx') return RUNNERS.has(base(script));
-    return first === 'run' && /^test(:|$)/.test(script);
-  }
-  if (/^python(\d(\.\d+)?)?$/.test(cmd)) return first === '-m' && RUNNERS.has(args[1] ?? '');
-  return BUILD_TOOLS.has(cmd) && (first === 'test' || args.includes('test'));
-}
+/** Test-run detection lives in `test-runs.ts` (P4-F10); re-exported for compatibility. */
+export { isTestCommand } from './test-runs.js';
 
 /** Weighted mean of the signals; undefined without any weight. */
 export function weightedGrade(signals: readonly Signal[]): number | undefined {

@@ -117,9 +117,6 @@ export const enLearn = {
   'replay.title': 'Replay node #{id}',
   'replay.help':
     'Reruns this node from its recorded inputs with another model or protocol, beside the original. The original is never replaced.',
-  'replay.note':
-    'Pick a model, a protocol or both. Code nodes keep a critic from another provider. Spending goes through the budget gate.',
-  'replay.submit': 'Replay',
   'replay.running': 'Replaying #{id}…',
   'replay.compareTitle': 'Replay beside the original',
   'replay.same': 'Same output',
@@ -182,9 +179,6 @@ export const enLearn = {
   'verify.title': 'Verification:',
   'verify.spend': 'review {review} ({share} of {total})',
   'verify.issues': 'issues raised: {count}',
-  'verify.accepted': 'accepted findings: {count}',
-  'verify.perFinding': '{cost} per accepted finding',
-  'verify.noFinding': 'no accepted finding',
   'verify.section': 'Verification of the current run',
   'verify.none': 'No finished run in this window yet.',
   'evidence.refresh': 'Refresh',
@@ -228,12 +222,6 @@ export const enLearn = {
   'fail.replay': 'Replay failed: {error}',
   'fail.fork': 'Fork could not be planned: {error}',
   'error.badReplay': 'The kernel sent a replay result the console cannot read',
-  'tui.disputeKeys': {
-    one: '1 = pick the answer, then y = choose it · n, Esc or Enter = reject all (default)',
-    other:
-      '1–{count} = pick an answer, then y = choose it · n, Esc or Enter = reject all (default)',
-  },
-  'tui.disputePicked': 'Answer {n} picked: {label}. Press y to choose it.',
   'tui.disputePickFirst': 'Pick an answer by its number first, or press n to reject them all.',
   'tui.memoryKeys': 'y = keep · r = reject · n, Esc or Enter = not now (stays pending)',
   'tui.gradeSelect':
@@ -254,7 +242,6 @@ export const enLearn = {
   'productivity.rework': 'Reworked',
   'productivity.reworkValue': '{rate} (touched again within {days} days)',
   'productivity.review': 'Review',
-  'productivity.reviewValue': '{review} spent · {count} findings accepted · {per} per finding',
   'productivity.band': 'Runs inside the estimate band',
   'dispute.timeout': 'Rejects all automatically in {time}',
   'memory.timeout': 'Leaves it pending automatically in {time}',

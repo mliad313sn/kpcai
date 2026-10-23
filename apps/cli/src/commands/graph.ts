@@ -154,11 +154,15 @@ async function untilDone(io: Io, kernel: Kernel, handle: RunHandle): Promise<Run
   }
 }
 
-/** R-404: what review cost against the findings that were accepted, for the run summary. */
+/**
+ * R-404: what review cost against the defects it caught: the headline is the revised
+ * verdicts (rejections a revision answered) and their unit cost; raw accepted findings
+ * (issues) come second.
+ */
 export function verificationLine(result: unknown, m: Plan['m']): string {
   const v = (result as { verification?: VerificationRoi } | null)?.verification;
   if (!v || v.reviewUsd <= 0) return '';
   const each =
-    v.usdPerAcceptedFinding === null ? '' : `, ${formatMoney(v.usdPerAcceptedFinding, m)} each`;
-  return `review ${formatMoney(v.reviewUsd, m)} (${Math.round(v.share * 100)}%) for ${v.acceptedFindings} accepted finding(s)${each}`;
+    v.usdPerRevisedVerdict === null ? '' : `, ${formatMoney(v.usdPerRevisedVerdict, m)} each`;
+  return `review ${formatMoney(v.reviewUsd, m)} (${Math.round(v.share * 100)}%) for ${v.revisedVerdicts} revised verdict(s)${each} (${v.acceptedFindings} issues)`;
 }

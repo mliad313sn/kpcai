@@ -38,6 +38,21 @@ The router already had a `measured` hook (ADR-0011) that nothing filled.
    `go test`, …) or a future `test.run` tool. A run with no exit code (missing program,
    refusal) says nothing. A rollback replaces the patch signal.
 
+   The model still picks the test command. Every such `shell.run` call is confirmed by a
+   human: `shell.run` is `destructive`, so each call is asked. A command the user put on
+   the shell allow-list is asked once per batch instead. A human confirming a command does
+   not check that it runs tests, so the signal itself refuses a pass where nothing ran
+   (P4-F10, `test-runs.ts`):
+   - forms that run no test do not count: dry runs (`make -n`, `--dry-run`,
+     `--just-print`, `go test -n`, `gradle -m`), listings (`--list`, `--listTests`,
+     `--collect-only`, `vitest list`, `cargo test --no-run`), `--help`, `--version`,
+     `--passWithNoTests`, Maven `-DskipTests`, and a build tool whose subcommand is not
+     `test` (`go env test`);
+   - when the journal holds the whole output (≤ 200 characters), a pass also needs a runner
+     summary with at least one test passed (`3 passed`, `ok  pkg 0.01s`, `Ran 5 tests`);
+     output saying no test ran (`No test files found`, `collected 0 items`) says nothing,
+     whatever the exit code. A longer output is journaled cut, so the exit code decides.
+
 4. **Measured competence per repository.** `CompetenceStore.fromJournal(journal,
 { project: cwd })` groups grades by (model, task type) for that project. It keeps the
    last 100 nodes and reports `score = mean(g)`, `samples = n`, and the evidence:
@@ -61,7 +76,11 @@ The router already had a `measured` hook (ADR-0011) that nothing filled.
      are `tool` events. A grade must say `source: "human"` and carry an author.
    - An author naming the graded model is refused (`recordGrade`) or ignored
      (`self-grade`).
-   - The last grade of each author counts.
+   - A node carries at most one manual signal (w = 3): its latest grade, whoever the
+     author. A new grade replaces the last one, whether it comes from the same author or
+     another one, and never adds weight. The server sets the author (P4-F9). If grade
+     events were written past the server under made-up names, they still weigh no more than
+     one grade (`superseded` in the audit list).
    - A bench check must say `source: "bench"`.
    - Every ignored item is returned for audit.
 7. **Bench (`runBench`).** It scans small source files and skips:
@@ -93,6 +112,9 @@ The router already had a `measured` hook (ADR-0011) that nothing filled.
 - Concurrent runs sharing one session would interleave. The kernel opens one run at a time
   per session today. Tagging calls with the run id would remove the ambiguity (integration
   note).
+- One person's grade can replace another's on the same node; the audit list keeps both.
+- A test run whose output is too long for the journal preview is judged by its exit code.
+  Journaling a test count from the tool bus would close this gap (open item).
 - Bench checks are weak, heuristic signals (w = 1). The critic of another provider grades
   the same answers.
 - The store reads the last 100 000 journal events. Incremental caching is deferred until a

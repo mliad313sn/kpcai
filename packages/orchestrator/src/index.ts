@@ -123,6 +123,7 @@ export {
   type PlannedNode,
   type Reroute,
   type RunControlEvent,
+  type NodeConstraint,
   type OrchestratorOptions,
   type StepOutcome,
   type StepSpec,

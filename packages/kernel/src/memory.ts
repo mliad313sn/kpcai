@@ -8,15 +8,21 @@
  */
 import { lstat, readFile, realpath } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { ChatRequest, ProviderAdapter } from '@kernelpai/core';
+import type { ChatMessage, ChatRequest, ProviderAdapter } from '@kernelpai/core';
 import type { AdapterResolver } from '@kernelpai/executor';
+import type { Journal, JournalEventInput } from '@kernelpai/journal';
 import {
   DEFAULT_MEMORY_TOKENS,
+  LocalTaint,
   MemoryStore,
+  REPOSITORY_PROVENANCE,
   buildMemoryContext,
+  localOnlyRedactor,
   parseMemory,
+  redactDeep,
   screenFact,
   type Fact,
+  type Guard,
   type InjectedFact,
   type MemoryContext,
   type MemoryOrigin,
@@ -65,7 +71,19 @@ export interface MemorySummary {
   /** Proposals waiting for a human. */
   pending: number;
   problems: string[];
+  /**
+   * Set when local-only facts exist: the routing restriction they put on the run (P4-F3,
+   * ADR-0027 §6), shown with the plan and journaled with it.
+   */
+  localOnlyRule?: string;
 }
+
+/** The restriction local-only facts put on a run, as the plan states it. */
+export const LOCAL_ONLY_RULE =
+  'local-only facts are given to local providers only; a node a local provider serves, and ' +
+  'every node depending on it, keeps its later steps (critics, judges, voters, revisions) on ' +
+  'local providers, or fails with the reason; quotes of these facts are withheld from other ' +
+  'providers and from the journal';
 
 export interface LoadedMemory {
   /** The message every node gets (cloud-safe); empty when memory is off. */
@@ -75,6 +93,11 @@ export interface LoadedMemory {
   /** The facts without the proposal hint (for the model planner). */
   context: string;
   summary: MemorySummary;
+  /**
+   * The text of every local-only fact (screened), for redaction before anything reaches a
+   * non-local provider or the journal (P4-F3). Never shown, journaled or sent to the cloud.
+   */
+  localOnlyTexts?: readonly string[];
 }
 
 export const NO_MEMORY: LoadedMemory = {
@@ -114,10 +137,12 @@ export function memoryStore(env: Env, zones?: ZoneSet): MemoryStore {
 }
 
 /**
- * The exported file, if any: no symlink, size-capped, each fact screened (redacted, zones)
- * like a fact being stored. Facts already in the project layer are not repeated.
+ * The exported file, if any: no symlink, size-capped, each fact screened (redacted with the
+ * environment's secret values, zones) like a fact being stored (P4-F8). What the file says
+ * about provenance is ignored: source `repository`, no date or evidence, never local-only
+ * (P4-F1). Facts already in the project layer are not repeated.
  */
-async function repoFacts(root: string, zones: ZoneSet, known: readonly Fact[]): Promise<Fact[]> {
+async function repoFacts(root: string, guard: Guard, known: readonly Fact[]): Promise<Fact[]> {
   const dir = join(root, '.kpstudio');
   const file = join(root, REPO_MEMORY_FILE);
   for (const p of [dir, file]) {
@@ -129,7 +154,8 @@ async function repoFacts(root: string, zones: ZoneSet, known: readonly Fact[]): 
   return parseMemory(text, 'project').lines.flatMap((l) => {
     if (l.kind !== 'fact' || seen.has(`${l.fact.id}\n${l.fact.text}`)) return [];
     try {
-      return [{ ...l.fact, text: screenFact(l.fact.text, { zones }) }];
+      const text = screenFact(l.fact.text, guard);
+      return [{ ...l.fact, text, provenance: { ...REPOSITORY_PROVENANCE }, extra: {} }];
     } catch {
       return [];
     }
@@ -146,8 +172,9 @@ async function sources(
   env: Env,
   root: string,
   sessionId: string,
-  zones: ZoneSet,
+  guard: Guard & { zones: ZoneSet },
 ): Promise<{ sources: MemorySource[]; problems: string[]; pending: number }> {
+  const zones = guard.zones;
   const store = memoryStore(env, zones);
   const repo = await folderKey(root);
   const layers = await Promise.all([
@@ -158,7 +185,7 @@ async function sources(
   const problems = layers.flatMap((l) =>
     l.problems.map((p) => `${l.scope.layer} memory line ${p.line}: ${p.message}`),
   );
-  const fromRepo = await repoFacts(root, zones, layers[1].facts).catch((err: unknown) => {
+  const fromRepo = await repoFacts(root, guard, layers[1].facts).catch((err: unknown) => {
     problems.push(
       `${REPO_MEMORY_FILE} not read: ${err instanceof Error ? err.message : String(err)}`,
     );
@@ -211,23 +238,53 @@ export async function loadMemory(
   try {
     const budgetTokens = memoryBudget(env);
     if (budgetTokens === 0) return NO_MEMORY;
-    const s = await sources(env, root, sessionId, zones);
+    const guard = { zones, secrets: secretValues(env) };
+    const s = await sources(env, root, sessionId, guard);
     const distrustAll = await homeInJail(env, root);
-    const opts = { budgetTokens, distrustAll };
+    // Every fact is screened again as it is injected (hand edits, today's zones: P4-F1).
+    const opts = { budgetTokens, distrustAll, guard };
     const cloud = buildMemoryContext(s.sources, { ...opts, local: false });
     const local = buildMemoryContext(s.sources, { ...opts, local: true });
     const withHint = (c: MemoryContext): string =>
       [c.text, PROPOSAL_HINT].filter(Boolean).join('\n\n');
+    const refused = local.refused
+      ? [`${local.refused} fact(s) refused at injection (forbidden zone, size or empty)`]
+      : [];
     const summary = summarize(s.sources, cloud, {
       distrusted: distrustAll,
       pending: s.pending,
-      problems: s.problems,
+      problems: [...s.problems, ...refused],
     });
-    return { cloud: withHint(cloud), local: withHint(local), context: cloud.text, summary };
+    const texts = localOnlyTexts(s.sources, guard);
+    if (texts.length > 0) {
+      summary.localOnlyRule = LOCAL_ONLY_RULE;
+      say(`  – memory: ${texts.length} local-only fact(s): ${LOCAL_ONLY_RULE}\n`);
+    }
+    return {
+      cloud: withHint(cloud),
+      local: withHint(local),
+      context: cloud.text,
+      summary,
+      localOnlyTexts: texts,
+    };
   } catch (err) {
     say(`  – memory not read: ${err instanceof Error ? err.message : String(err)}\n`);
     return NO_MEMORY;
   }
+}
+
+/** The screened text of every local-only fact of the run's layers. */
+function localOnlyTexts(src: readonly MemorySource[], guard: Guard): string[] {
+  return src.flatMap((s) =>
+    s.facts.flatMap((f) => {
+      if (!f.provenance.localOnly) return [];
+      try {
+        return [screenFact(f.text, guard)];
+      } catch {
+        return [];
+      }
+    }),
+  );
 }
 
 /** A local provider's adapter: the cloud memory message is replaced by the local one. */
@@ -248,14 +305,93 @@ function localMemoryAdapter(inner: ProviderAdapter, m: LoadedMemory): ProviderAd
   };
 }
 
+/** A non-local provider's adapter: every quote of a local-only fact is withheld (P4-F3). */
+function redactingAdapter(inner: ProviderAdapter, redact: (t: string) => string): ProviderAdapter {
+  const clean = (m: ChatMessage): ChatMessage => redactDeep(m, redact);
+  const swap = (req: ChatRequest): ChatRequest => ({ ...req, messages: req.messages.map(clean) });
+  return {
+    descriptor: inner.descriptor,
+    capabilities: () => inner.capabilities(),
+    estimate: (req) => inner.estimate(swap(req)),
+    send: (req, options) => inner.send(swap(req), options),
+    cancel: (id) => inner.cancel(id),
+    detect: () => inner.detect(),
+  };
+}
+
+function hasLocalOnly(m: LoadedMemory): boolean {
+  return (m.localOnlyTexts?.length ?? 0) > 0 || (m.cloud !== '' && m.cloud !== m.local);
+}
+
 /**
- * The run's resolver: as is for every provider that is not `kind: local` (they get the
- * cloud message already in the node), else wrapped to receive the local-only facts too.
+ * The run's resolver. A `kind: local` provider gets the local-only facts (the cloud message
+ * swapped for the local one). Every other provider gets the cloud message already in the
+ * node, and, when local-only facts exist, requests with every quote of one withheld: what
+ * a local step wrote (dependency outputs, reviews, tool results) is not trusted to be free
+ * of them (P4-F3, defence in depth behind the taint).
  */
 export function memoryResolver(resolve: AdapterResolver, m: LoadedMemory): AdapterResolver {
-  if (!m.cloud || m.cloud === m.local) return resolve;
+  if (!hasLocalOnly(m)) return resolve;
+  const redact = localOnlyRedactor(m.localOnlyTexts ?? []);
+  const swapLocal = m.cloud !== '' && m.cloud !== m.local;
   return (ref) => {
     const a = resolve(ref);
-    return a.descriptor.kind === 'local' ? localMemoryAdapter(a, m) : a;
+    if (a.descriptor.kind === 'local') return swapLocal ? localMemoryAdapter(a, m) : a;
+    return redactingAdapter(a, redact);
   };
+}
+
+/**
+ * Taint (P4-F3): once local-only facts exist, a node one of whose calls went to a local
+ * provider, and every node depending on it, keeps all later steps on local providers
+ * (`nodeConstraints`), or fails closed with the reason.
+ */
+export function localTaint(
+  m: LoadedMemory,
+  nodes: ConstructorParameters<typeof LocalTaint>[0],
+): LocalTaint {
+  return new LocalTaint(nodes, hasLocalOnly(m));
+}
+
+export function taintConstraint(
+  taint: LocalTaint,
+): (nodeId: string) => { constraints: { localOnly: true }; reason: string } | undefined {
+  return (nodeId) => {
+    const from = taint.source(nodeId);
+    if (from === undefined) return undefined;
+    const via = from === nodeId ? '' : ` (through node ${from})`;
+    return {
+      constraints: { localOnly: true },
+      reason:
+        `node ${nodeId} has seen local-only memory facts${via}: its later steps run on ` +
+        'local providers only (ADR-0027 §6); add a local provider, or mark the facts shareable',
+    };
+  };
+}
+
+/**
+ * The run's journal: calls to a local provider taint their node, and every payload has the
+ * quotes of local-only facts withheld before it is written (P4-F3).
+ */
+export function memoryJournal(
+  journal: Journal,
+  m: LoadedMemory,
+  taint: LocalTaint,
+  isLocal: (provider: string) => boolean,
+): Journal {
+  if (!hasLocalOnly(m)) return journal;
+  const redact = localOnlyRedactor(m.localOnlyTexts ?? []);
+  return new Proxy(journal, {
+    get: (target, prop) => {
+      if (prop === 'append') {
+        return (input: JournalEventInput) => {
+          if (input.type === 'call' && input.nodeId && input.provider)
+            taint.observe(input.nodeId, isLocal(input.provider));
+          return target.append({ ...input, payload: redactDeep(input.payload, redact) });
+        };
+      }
+      const v: unknown = Reflect.get(target, prop, target);
+      return typeof v === 'function' ? (v as (...a: unknown[]) => unknown).bind(target) : v;
+    },
+  });
 }

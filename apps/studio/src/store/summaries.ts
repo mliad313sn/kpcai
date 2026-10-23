@@ -51,6 +51,10 @@ export function memoryLines(m: MemorySummary): SummaryLine[] {
     });
   if (m.localOnly > 0)
     lines.push({ text: t('plan.memoryLocalOnly', { count: m.localOnly }), tone: 'muted' });
+  // P4-F3: the routing restriction local-only facts put on the run (kernel text, as sent).
+  const rule = (m as { localOnlyRule?: unknown }).localOnlyRule;
+  if (typeof rule === 'string' && rule.trim())
+    lines.push({ text: t('plan.memoryLocalOnlyRule', { rule: rule.trim() }), tone: 'muted' });
   if (m.distrusted) lines.push({ text: t('plan.memoryDistrusted'), tone: 'warn' });
   for (const p of m.problems)
     lines.push({ text: t('plan.memoryProblem', { problem: p }), tone: 'warn' });
@@ -59,18 +63,24 @@ export function memoryLines(m: MemorySummary): SummaryLine[] {
   return lines;
 }
 
-/** R-404 in one line: review spend and its share, issues raised and accepted, their price. */
+/**
+ * R-404 in one line: review spend and its share, then the headline — revised verdicts and
+ * their price (P4-F12) — then the raw issues raised.
+ */
 export function verificationText(v: Verification): string {
+  const spend = t('verify.spend', {
+    review: formatUsd(v.reviewUsd),
+    share: formatPct(v.share),
+    total: formatUsd(v.totalUsd),
+  });
+  if (v.revisedVerdicts === undefined)
+    return [spend, t('verify.issues', { count: v.issuesRaised })].join(' · ');
   return [
-    t('verify.spend', {
-      review: formatUsd(v.reviewUsd),
-      share: formatPct(v.share),
-      total: formatUsd(v.totalUsd),
-    }),
-    t('verify.issues', { count: v.issuesRaised }),
-    t('verify.accepted', { count: v.acceptedFindings }),
-    v.usdPerAcceptedFinding === null
-      ? t('verify.noFinding')
-      : t('verify.perFinding', { cost: formatUsd(v.usdPerAcceptedFinding) }),
+    spend,
+    t('verify.revised', { count: v.revisedVerdicts }),
+    v.usdPerRevisedVerdict === null
+      ? t('verify.noRevised')
+      : t('verify.perRevised', { cost: formatUsd(v.usdPerRevisedVerdict) }),
+    t('verify.rawIssues', { count: v.issuesRaised }),
   ].join(' · ');
 }

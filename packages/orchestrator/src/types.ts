@@ -80,6 +80,20 @@ export interface OrchestratorOptions {
   dispute?: DisputeHook;
   /** Debate: judges wanted (each from a new provider). Default 1. */
   judges?: number;
+  /**
+   * Extra routing constraints for every later step of one node, asked before each step
+   * (e.g. local providers only once the node, or a node it depends on, has seen local-only
+   * memory: ADR-0027 §6). Routed steps are routed under them; a fixed step (a retry, the
+   * author's revision) runs only on a model that meets them. When none does, the step
+   * fails with `reason` (fail closed). Default: none.
+   */
+  nodeConstraints?: (nodeId: string) => NodeConstraint | undefined;
+}
+
+/** Constraints one node's steps must meet, and why (shown when nothing meets them). */
+export interface NodeConstraint {
+  constraints: RoutingConstraints;
+  reason: string;
 }
 
 /**

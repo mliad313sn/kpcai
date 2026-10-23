@@ -15,8 +15,10 @@ import {
   readRun,
   type RecordedNode,
   type RecordedRun,
+  type RunRouting,
 } from './run-journal.js';
-import { effectiveProtocol } from './runner.js';
+import { admitScope, effectiveProtocol, type RunOptions } from './runner.js';
+import { stampScope } from './scope-gate.js';
 import { StepRunner } from './step.js';
 import type { NodeRun, OrchestratorOptions, PlannedNode } from './types.js';
 
@@ -27,8 +29,19 @@ export interface ReplayEdit {
   protocol?: ProtocolName;
 }
 
-/** Everything a replay needs: the orchestrator options of a run, plus a cancel signal. */
-export type ReplayDeps = OrchestratorOptions & { signal?: AbortSignal };
+/**
+ * Everything a replay needs: the orchestrator options of a run, a cancel signal, and the
+ * run-start checks a run gets from `GraphRunner.run`: the selected packs and the authorised
+ * scope (checked now, with the current packs and time, P4-F6).
+ */
+export type ReplayDeps = OrchestratorOptions &
+  Pick<RunOptions, 'packs' | 'scope' | 'now'> & {
+    signal?: AbortSignal;
+    /** The replay's id (so it can be cancelled before it ends); default a new UUID. */
+    replayId?: string;
+    /** The routing constraints the replay ran under, journaled with it (P4-F2). */
+    routing?: RunRouting;
+  };
 
 /** One attempt of a node, as the side-by-side view shows it. */
 export interface AttemptView {
@@ -95,8 +108,11 @@ export async function replayNode(
   const { run, rec } = recorded(journal, runId, nodeId);
   const node = editedNode(rec.node, edit, deps);
   const protocol = effectiveProtocol(node);
-  const replayId = randomUUID();
+  const replayId = deps.replayId ?? randomUUID();
   const steps = new StepRunner(deps);
+  // The same scope gate as a run's start, before any call (P4-F6).
+  const scope = admitScope(steps, [node], deps, 'replay refused', { runId, replayId });
+  stampScope([node], scope.boundary);
   const links = { runStarted: run.eventId, nodeRecord: rec.eventId };
   steps.intervention(nodeId, {
     action: REPLAY_STARTED,
@@ -105,18 +121,9 @@ export async function replayNode(
     links,
     ...(edit.model ? { model: refToString(edit.model) } : {}),
     protocol,
+    ...(deps.routing ? { routing: deps.routing } : {}),
   });
-  const nodeRun: NodeRun = {
-    node,
-    context: rec.context,
-    signal: deps.signal,
-    upstream: rec.upstream,
-    contributions: [],
-    costUsd: 0,
-    pin: node.model,
-    tags: { replayId, replayOf: runId },
-  };
-  const out = await execNode(steps, runId, nodeRun, protocol);
+  const out = await execNode(steps, runId, nodeRunOf(node, rec, deps, replayId, runId), protocol);
   const replay = view(protocol, out.result, out.durationMs, out.dispute);
   const original = view(rec.protocol, rec.result, rec.durationMs, rec.dispute);
   const comparison = compare(original, replay);
@@ -132,6 +139,26 @@ export async function replayNode(
     ...(out.dispute ? { dispute: out.dispute } : {}),
   });
   return { replayId, runId, nodeId, links, original, replay, comparison };
+}
+
+/** The replayed node's run: its recorded context and upstream, the replay's tags. */
+function nodeRunOf(
+  node: PlannedNode,
+  rec: RecordedNode,
+  deps: ReplayDeps,
+  replayId: string,
+  runId: string,
+): NodeRun {
+  return {
+    node,
+    context: rec.context,
+    signal: deps.signal,
+    upstream: rec.upstream,
+    contributions: [],
+    costUsd: 0,
+    pin: node.model,
+    tags: { replayId, replayOf: runId },
+  };
 }
 
 function recorded(

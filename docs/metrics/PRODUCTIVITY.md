@@ -45,6 +45,9 @@ Let R be the runs of the project in the window, A the accepted changes of R.
 | `reworkRate`                   | \|{a ∈ A : rolled back, or touched again}\| ÷ \|A\|                                                                   | \|A\| = 0  |
 | `review.acceptedFindings`      | Σ over run records of R (reused fork nodes excluded) of `nodeVerification(result).acceptedFindings` (R-404)           | —          |
 | `review.usdPerAcceptedFinding` | Σ critic and judge spend ÷ `acceptedFindings`                                                                         | 0 findings |
+| `review.revisedVerdicts`       | Σ over the same records of rejecting verdicts answered by a revision on an approved node, one per verdict             | —          |
+| `review.majorFindings`         | Σ over those nodes of the distinct major issues of those verdicts (case and spacing ignored)                          | —          |
+| `review.usdPerRevisedVerdict`  | Σ critic and judge spend ÷ `revisedVerdicts`: the headline review cost per defect caught                              | 0 verdicts |
 | `band.rate`                    | finished, uncancelled runs with a journaled plan whose billed cost is in [band low, band high] ÷ such runs (as R-402) | no run     |
 
 - **Rolled back.** A workspace `restore` intervention that wrote or deleted at least one
@@ -61,6 +64,12 @@ Let R be the runs of the project in the window, A the accepted changes of R.
   events rather than from `run.done.verification`, which is not journaled): the issues of
   rejecting critic verdicts that were followed by a revision, on nodes whose final version
   was approved by a critic or by a human settling a dispute.
+  Two figures are published (P4-F12). `acceptedFindings` counts the issues a critic
+  listed, so a verbose critic that splits one defect into nine issues counts nine.
+  `revisedVerdicts` counts each rejecting verdict once, however many issues it lists, and
+  `majorFindings` counts its distinct major issues. Cost per defect is quoted on
+  `revisedVerdicts` (`usdPerRevisedVerdict`). `usdPerAcceptedFinding` is kept for
+  comparison.
 
 Ratios are rounded to 4 decimals, money to 6.
 

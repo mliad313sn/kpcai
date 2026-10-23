@@ -83,7 +83,8 @@ describe('memory Markdown parser', () => {
     const facts = factsOf(doc);
     expect(facts).toHaveLength(4);
     expect(facts[0]!.extra).toEqual({ flavour: 'mint', shiny: '' });
-    expect(facts[0]!.provenance.date).toBe('yesterday');
+    // Invalid known attributes are dropped and reported (P4-F1).
+    expect(facts[0]!.provenance.date).toBe('');
     expect(facts[1]!.provenance.source).toBe('unknown');
     expect(facts[2]!.id).not.toBe('m-dddd4444');
     expect(facts[3]!.text).toBe('four <!-- a plain comment -->');
@@ -92,7 +93,7 @@ describe('memory Markdown parser', () => {
       expect.arrayContaining([
         '1: unknown provenance attribute "flavour" kept as is',
         '1: unknown provenance flag "shiny" kept as is',
-        '1: date "yesterday" is not YYYY-MM-DD',
+        '1: date "yesterday" is not YYYY-MM-DD; dropped',
         '1: id "bad" is not valid; replaced',
         '2: provenance has no source: treated as untrusted',
         '3: id m-dddd4444 repeated; replaced',
@@ -101,7 +102,7 @@ describe('memory Markdown parser', () => {
     );
     const text = serializeMemory(doc);
     expect(text).toContain('flavour=mint shiny');
-    expect(text).toContain('date=yesterday');
+    expect(text).not.toContain('date=yesterday');
     expect(text).toMatch(/^- *$/m);
   });
 
@@ -147,18 +148,18 @@ describe('provenance attributes', () => {
     expect(decodeValue(encodeValue(v))).toBe(v);
     expect(decodeValue('%E0%A4%A')).toBe('%E0%A4%A');
     const c = formatAttrs('m-1234', {
-      source: 'p/m 1',
+      source: 'p/m:1',
       date: '2026-10-23',
       evidence: ['run:a,b'],
       localOnly: false,
       edited: '2026-10-24',
     });
     expect(c).toBe(
-      '<!-- kpai id=m-1234 source=p/m%201 date=2026-10-23 evidence=run:a%2Cb edited=2026-10-24 -->',
+      '<!-- kpai id=m-1234 source=p/m:1 date=2026-10-23 evidence=run:a%2Cb edited=2026-10-24 -->',
     );
     const back = parseAttrs(c.slice('<!-- kpai'.length, -3));
     expect(back.provenance.evidence).toEqual(['run:a,b']);
-    expect(back.provenance.source).toBe('p/m 1');
+    expect(back.provenance.source).toBe('p/m:1');
     expect(back.provenance.edited).toBe('2026-10-24');
   });
 });
