@@ -184,6 +184,48 @@ describe('LocalToolBus', () => {
     expect(close).toHaveBeenCalledTimes(1);
   });
 
+  it('shows what prepare() describes, sanitised, redacted and capped at 20 lines', async () => {
+    const t = tool({
+      def: { ...tool().def, risk: 'destructive' },
+      prepare: async () => ({
+        summary: `write x.txt \x1b[2J(${SECRET})`,
+        preview: Array.from({ length: 30 }, (_, i) => `line ${i}\x07`).join('\n'),
+      }),
+    });
+    const { b } = bus([t]);
+    const ctx = makeCtx('/ws', { answers: [true] });
+    await b.call(call('demo.echo', { text: 'a' }), ctx);
+    const q = ctx.questions[0] as string;
+    expect(q).toMatch(
+      /^Allow demo\.echo \(destructive\) for mock\/m1 on node n1\?\nwrite x\.txt \(\[redacted\]\)\nline 0\n/,
+    );
+    expect(q).toContain('line 19\n… (10 more lines)');
+    expect(q).not.toContain('line 20');
+    // eslint-disable-next-line no-control-regex
+    expect(q).not.toMatch(/[\x07\x1b]/);
+  });
+
+  it('refuses without asking when prepare() fails', async () => {
+    const run = vi.fn();
+    for (const [err, re] of [
+      [new ToolError('bad patch'), /^bad patch$/],
+      [new Error('crash'), /^tool failed: crash$/],
+    ] as const) {
+      const t = tool({
+        def: { ...tool().def, risk: 'write' },
+        prepare: () => Promise.reject(err),
+        run,
+      });
+      const { b, journal } = bus([t]);
+      const ctx = makeCtx('/ws', { answers: [true] });
+      const res = await b.call(call('demo.echo', { text: 'a' }), ctx);
+      expect(res).toEqual({ content: expect.stringMatching(re), isError: true });
+      expect(ctx.questions).toHaveLength(0);
+      expect(journal.last().payload.decision).toBe('refused');
+    }
+    expect(run).not.toHaveBeenCalled();
+  });
+
   it('writes hash-chained tool events into the real journal', async () => {
     const journal = Journal.open(':memory:');
     const sessionId = journal.startSession('tools', '/ws');

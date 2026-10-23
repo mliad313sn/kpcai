@@ -101,6 +101,14 @@ const fsWrite: LocalTool = {
     risk: 'write',
     source: 'builtin',
   },
+  async prepare(input, ctx) {
+    const j = await jailWrite(ctx, input.path);
+    const content = String(input.content);
+    const bytes = Buffer.byteLength(content, 'utf8');
+    const lines = content === '' ? 0 : content.split(/\r?\n/).length;
+    const action = j.exists ? 'overwrite' : 'create';
+    return { summary: `${action} ${j.rel} (${bytes} bytes, ${lines} lines)`, preview: content };
+  },
   async run(input, ctx) {
     const j = await jailWrite(ctx, input.path);
     const content = String(input.content);
@@ -125,6 +133,14 @@ const fsDelete: LocalTool = {
     },
     risk: 'destructive',
     source: 'builtin',
+  },
+  async prepare(input, ctx) {
+    const j = await jailWrite(ctx, input.path);
+    if (!j.exists) throw new ToolError(`not found: ${j.rel}`);
+    const st = await lstat(j.abs);
+    const what = st.isDirectory() ? 'directory' : `file, ${st.size} bytes`;
+    const how = input.recursive === true ? ', recursive' : '';
+    return { summary: `delete ${j.rel} (${what}${how})` };
   },
   async run(input, ctx) {
     const j = await jailWrite(ctx, input.path);

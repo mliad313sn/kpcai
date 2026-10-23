@@ -183,8 +183,11 @@ export function matchesForbidden(
     .filter((s) => s !== '' && s !== '.');
   const prefixes = parts.map((_, i) => parts.slice(0, i + 1).join('/'));
   return globs.some((glob) => {
-    const re = globToRegExp(glob, caseInsensitive);
-    if (!glob.replace(/\/+$/, '').includes('/')) return parts.some((s) => re.test(s));
-    return prefixes.some((p) => re.test(p));
+    const g = glob.replace(/\/+$/, '');
+    const re = globToRegExp(g, caseInsensitive);
+    if (!g.includes('/')) return parts.some((s) => re.test(s));
+    // `x/**` also covers the folder `x` itself (so it cannot even be listed).
+    const base = g.endsWith('/**') ? globToRegExp(g.slice(0, -3), caseInsensitive) : undefined;
+    return prefixes.some((p) => re.test(p) || base?.test(p) === true);
   });
 }

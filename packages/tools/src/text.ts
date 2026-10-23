@@ -67,3 +67,11 @@ export function summarizeInput(value: unknown, depth = 0, key = ''): unknown {
   }
   return out;
 }
+
+/** First lines of a text for a confirmation prompt (the caller strips control characters). */
+export function previewLines(text: string, max = 20, width = 160): string {
+  const lines = text.split(/\r?\n/);
+  const shown = lines.slice(0, max).map((l) => (l.length > width ? `${l.slice(0, width)}…` : l));
+  if (lines.length > max) shown.push(`… (${lines.length - max} more lines)`);
+  return shown.join('\n');
+}

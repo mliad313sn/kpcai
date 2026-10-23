@@ -18,6 +18,36 @@ export interface GradedPolicyOptions {
   denyByModel?: Readonly<Record<string, readonly string[]>>;
   /** Forbidden path globs (spec §6, deepened in phase 6): any matching path is refused. */
   forbiddenPaths?: readonly string[];
+  /** Prepend {@link DEFAULT_FORBIDDEN_PATHS} (default true; principle 5). */
+  defaultForbiddenPaths?: boolean;
+}
+
+/**
+ * Credential files that never reach a model through a tool (review P2-F10).
+ * A glob without `/` matches a path segment at any depth; `x/**` also matches `x`.
+ */
+export const DEFAULT_FORBIDDEN_PATHS: readonly string[] = [
+  '.env',
+  '.env.*',
+  '*.pem',
+  '*.key',
+  'id_rsa*',
+  'id_ed25519*',
+  '**/.aws/**',
+  '**/.ssh/**',
+  '**/.gnupg/**',
+  '.npmrc',
+  '.netrc',
+  '**/credentials*',
+  '**/*secret*',
+];
+
+/** The policy in force, for `kpai tools` / the console to show. */
+export interface ActivePolicy {
+  forbiddenPaths: string[];
+  denyByModel: Record<string, string[]>;
+  /** Write confirmations are remembered per session + node + model + root. */
+  batchScope: string;
 }
 
 /** Optional hook the bus calls after a human said yes, so a batch is confirmed once. */
@@ -95,21 +125,31 @@ function scopeKey(...parts: string[]): string {
 
 /**
  * Spec §3.3 graded permissions: read → allow; write → confirm once per batch
- * (session + node), unless trusted for this session on this root; destructive →
+ * (session + node + model), unless trusted for this session on this root; destructive →
  * confirm every call. Per-model deny and forbidden paths refuse outright.
  */
 export class GradedPermissionPolicy implements ConfirmAwarePolicy {
   private readonly trusted = new Set<string>();
   private readonly batches = new Set<string>();
-  private readonly deny: { model: string; tools: RegExp[] }[];
+  private readonly deny: { model: string; globs: string[]; tools: RegExp[] }[];
   private readonly forbidden: readonly string[];
 
   constructor(options: GradedPolicyOptions = {}) {
     this.deny = Object.entries(options.denyByModel ?? {}).map(([model, tools]) => ({
       model,
+      globs: [...tools],
       tools: tools.map(toolGlob),
     }));
-    this.forbidden = options.forbiddenPaths ?? [];
+    const defaults = options.defaultForbiddenPaths === false ? [] : DEFAULT_FORBIDDEN_PATHS;
+    this.forbidden = [...new Set([...defaults, ...(options.forbiddenPaths ?? [])])];
+  }
+
+  describe(): ActivePolicy {
+    return {
+      forbiddenPaths: [...this.forbidden],
+      denyByModel: Object.fromEntries(this.deny.map((d) => [d.model, [...d.globs]])),
+      batchScope: 'session + node + model + root',
+    };
   }
 
   decide(def: ToolDefinition, call: ToolCall, ctx: ToolContext): PermissionDecision {
@@ -138,8 +178,9 @@ export class GradedPermissionPolicy implements ConfirmAwarePolicy {
     if (def.risk === 'write') this.batches.add(this.batchKey(ctx));
   }
 
+  /** A write batch is one node of one session, for one model (review P2-F14). */
   private batchKey(ctx: ToolContext): string {
-    return scopeKey(ctx.sessionId, ctx.nodeId, rootKey(ctx.root));
+    return scopeKey(ctx.sessionId, ctx.nodeId, refToString(ctx.model), rootKey(ctx.root));
   }
 
   private modelDenied(tool: string, model: string): boolean {

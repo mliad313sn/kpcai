@@ -118,6 +118,8 @@ describe('fs built-ins', () => {
     expect(
       (await bus.call(call('fs.delete', { path: '.git', recursive: true }), ctx)).content,
     ).toMatch(/\.git/);
-    expect(ctx.questions).toHaveLength(5);
+    // Refusals found by prepare (missing file, .git) never reach the human.
+    expect(ctx.questions).toHaveLength(3);
+    expect(ctx.questions[0]).toMatch(/\ndelete src\/a\.ts \(file, 20 bytes\)$/);
   });
 });

@@ -1,62 +1,10 @@
-import { realpath } from 'node:fs/promises';
 import type { ToolContext } from '@kernelpai/core';
-import { scrubEnv, type Env } from '../env.js';
-import { checkLexical, resolveInRoot, touchesGitDir } from '../paths.js';
-import { runProcess, type RunResult } from '../process.js';
-import { fail, ok, ToolError, type LocalTool, type ToolOutcome } from '../types.js';
+import { resolveInRoot } from '../paths.js';
+import type { LocalTool } from '../types.js';
+import { gitApplyTool } from './git-apply.js';
+import { git, outcome, type GitToolOptions } from './git-exec.js';
 
-export interface GitToolOptions {
-  env?: Env;
-  timeoutMs?: number;
-  gitBinary?: string;
-}
-
-const GIT_TIMEOUT_MS = 30_000;
-const GIT_MAX_OUTPUT = 1024 * 1024;
-/**
- * Repo config must not run programs on our behalf: no fsmonitor, no pager, and
- * diff/log get --no-ext-diff --no-textconv. status/diff/log/apply run no hooks.
- */
-const HARDENING = [
-  '-c',
-  'core.fsmonitor=false',
-  '-c',
-  'core.pager=cat',
-  '--no-pager',
-  '--literal-pathspecs',
-];
-
-async function git(
-  opts: GitToolOptions,
-  ctx: ToolContext,
-  args: string[],
-  stdin?: string,
-  cwdOverride?: string,
-): Promise<RunResult> {
-  const cwd = cwdOverride ?? (await realpath(ctx.root));
-  const env: Record<string, string> = {
-    ...scrubEnv(opts.env ?? process.env),
-    GIT_TERMINAL_PROMPT: '0',
-  };
-  return runProcess({
-    command: opts.gitBinary ?? 'git',
-    args: [...HARDENING, ...args],
-    cwd,
-    env,
-    timeoutMs: opts.timeoutMs ?? GIT_TIMEOUT_MS,
-    maxOutputBytes: GIT_MAX_OUTPUT,
-    stdin,
-    signal: ctx.signal,
-  });
-}
-
-function outcome(r: RunResult, meta: Record<string, unknown> = {}): ToolOutcome {
-  const m = { ...meta, exitCode: r.code, timedOut: r.timedOut, truncated: r.truncated };
-  if (r.error) return fail(`git failed to start: ${r.error}`, m);
-  if (r.timedOut) return fail('git timed out', m);
-  if (r.code !== 0) return fail(`git exited with ${r.code}\n${r.stderr || r.stdout}`.trim(), m);
-  return ok(r.stdout === '' ? '(no output)' : r.stdout, m);
-}
+export type { GitApplyRules, GitToolOptions } from './git-exec.js';
 
 /** Jails optional pathspecs; returns them root-relative, after a `--`. */
 async function pathspecs(ctx: ToolContext, p: unknown): Promise<string[]> {
@@ -67,88 +15,6 @@ async function pathspecs(ctx: ToolContext, p: unknown): Promise<string[]> {
 }
 
 const optPath = { type: 'string' } as const;
-
-/** Files a patch touches, from `a/…` / `b/…` headers; refuses anything else. */
-export function patchTargets(patch: string): string[] {
-  const out = new Set<string>();
-  for (const line of patch.split(/\r?\n/)) {
-    if (/^(new|old|deleted) (file )?mode 120000/.test(line)) {
-      throw new ToolError('patches that create or change symlinks are refused');
-    }
-    const h = /^(---|\+\+\+) (.+?)(\t.*)?$/.exec(line);
-    if (h) {
-      const name = h[2] as string;
-      if (name === '/dev/null') continue;
-      if (!/^[ab]\//.test(name))
-        throw new ToolError(`patch paths must start with a/ or b/: ${name}`);
-      out.add(name.slice(2));
-    }
-    const r = /^(?:rename|copy) (?:from|to) (.+)$/.exec(line);
-    if (r) out.add(r[1] as string);
-  }
-  if (out.size === 0) throw new ToolError('no file headers (--- a/… +++ b/…) found in the patch');
-  return [...out];
-}
-
-async function checkTargets(ctx: ToolContext, patch: string): Promise<string[]> {
-  const targets = patchTargets(patch);
-  for (const t of targets) {
-    checkLexical(t);
-    const j = await resolveInRoot(ctx.root, t, { noFinalSymlink: true });
-    if (touchesGitDir(j.rel)) throw new ToolError(`patch may not touch .git: ${t}`);
-  }
-  return targets;
-}
-
-/**
- * Where to run `git apply` so patch paths are root-relative in every case. From a
- * repo subdirectory git resolves `diff --git` patches against the top level and
- * silently skips paths outside the cwd, while plain patches are cwd-relative. So
- * when the root is a subdirectory we run from the top level with
- * `--directory=<prefix>`: both formats then land under the root, and the user's
- * repository config (e.g. core.autocrlf) still applies.
- */
-async function applyLocation(
-  opts: GitToolOptions,
-  ctx: ToolContext,
-): Promise<{ cwd?: string; args: string[] }> {
-  const r = await git(opts, ctx, ['rev-parse', '--show-toplevel', '--show-prefix']);
-  if (r.code !== 0) return { args: [] };
-  const [top = '', prefix = ''] = r.stdout.split(/\r?\n/);
-  if (prefix === '' || top === '') return { args: [] };
-  return { cwd: await realpath(top), args: [`--directory=${prefix}`] };
-}
-
-function gitApply(opts: GitToolOptions): LocalTool {
-  return {
-    def: {
-      name: 'git.apply',
-      description:
-        'Apply a unified diff (with a/ and b/ prefixes) to the workspace. Checked with `git apply --check` first.',
-      inputSchema: {
-        type: 'object',
-        properties: { patch: { type: 'string', minLength: 1 } },
-        required: ['patch'],
-        additionalProperties: false,
-      },
-      risk: 'write',
-      source: 'builtin',
-    },
-    async run(input, ctx) {
-      const patch = String(input.patch);
-      const files = await checkTargets(ctx, patch);
-      const meta = { files, bytes: Buffer.byteLength(patch, 'utf8') };
-      const at = await applyLocation(opts, ctx);
-      const check = await git(opts, ctx, ['apply', '--check', ...at.args, '-'], patch, at.cwd);
-      if (check.code !== 0 || check.error || check.timedOut) {
-        return outcome(check, { ...meta, stage: 'check' });
-      }
-      const applied = await git(opts, ctx, ['apply', ...at.args, '-'], patch, at.cwd);
-      if (applied.code !== 0) return outcome(applied, { ...meta, stage: 'apply' });
-      return ok(`applied patch to ${files.length} file(s): ${files.join(', ')}`, meta);
-    },
-  };
-}
 
 const LOG_FORMAT = ['--no-ext-diff', '--format=%h %ad %an %s', '--date=short'];
 
@@ -194,5 +60,5 @@ function readTools(opts: GitToolOptions): LocalTool[] {
 }
 
 export function gitTools(opts: GitToolOptions = {}): LocalTool[] {
-  return [...readTools(opts), gitApply(opts)];
+  return [...readTools(opts), gitApplyTool(opts)];
 }

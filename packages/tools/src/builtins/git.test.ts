@@ -5,7 +5,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { LocalToolBus } from '../bus.js';
 import { GradedPermissionPolicy } from '../policy.js';
 import { call, makeCtx, tempDir } from '../test-helpers/ctx.js';
-import { gitTools, patchTargets } from './git.js';
+import { gitTools } from './git.js';
+import { parsePatch } from './patch.js';
 
 function git(cwd: string, ...args: string[]): string {
   const opts = ['-c', 'user.name=t', '-c', 'user.email=t@e', '-c', 'core.autocrlf=false'];
@@ -146,7 +147,10 @@ describe('git built-ins', () => {
       expect(r.isError).toBe(true);
       expect(r.content).toMatch(re);
     }
-    expect(() => patchTargets('rename from x\nrename to y\n--- a/x\n+++ b/y\n')).not.toThrow();
+    const renamed = parsePatch(
+      'diff --git a/x b/y\nsimilarity index 100%\nrename from x\nrename to y\n',
+    );
+    expect(renamed[0]).toMatchObject({ paths: ['x', 'y', 'x', 'y'], renamed: true, hunks: 0 });
   });
 
   it('asks before applying when the folder is not trusted', async () => {

@@ -5,6 +5,14 @@ export interface ToolOutcome extends ToolResult {
   meta?: Record<string, unknown>;
 }
 
+/** What the human is shown before confirming a call (already sanitised by the bus). */
+export interface PreparedCall {
+  /** Paths, sizes, files touched: one or two lines. */
+  summary: string;
+  /** Optional content preview (at most 20 lines). */
+  preview?: string;
+}
+
 /** A tool implementation registered on the {@link LocalToolBus}. */
 export interface LocalTool {
   readonly def: ToolDefinition;
@@ -12,6 +20,12 @@ export interface LocalTool {
   riskFor?(input: Record<string, unknown>): ToolRisk;
   /** True when this call must be confirmed whatever the policy says (unsandboxed shell). */
   alwaysConfirm?(input: Record<string, unknown>): boolean;
+  /**
+   * Validates the call against the workspace and describes it for the confirmation
+   * question. Runs only when the human will be asked, before asking; a throw
+   * refuses the call without asking.
+   */
+  prepare?(input: Record<string, unknown>, ctx: ToolContext): Promise<PreparedCall>;
   /** Runs an already validated and permitted call. May throw; the bus turns it into isError. */
   run(input: Record<string, unknown>, ctx: ToolContext): Promise<ToolOutcome>;
   /** Releases resources (MCP connections). */

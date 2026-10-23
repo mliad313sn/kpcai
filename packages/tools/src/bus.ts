@@ -15,12 +15,13 @@ import { GradedPermissionPolicy, isConfirmAware } from './policy.js';
 import { validateInput } from './schema.js';
 import {
   DEFAULT_MAX_RESULT_BYTES,
+  previewLines,
   stripControls,
   summarize,
   summarizeInput,
   truncateBytes,
 } from './text.js';
-import { ToolError, type LocalTool, type ToolOutcome } from './types.js';
+import { ToolError, type LocalTool, type PreparedCall, type ToolOutcome } from './types.js';
 
 /** The slice of `Journal` the bus needs (so tests can pass a recorder). */
 export interface ToolJournal {
@@ -38,9 +39,9 @@ export interface LocalToolBusOptions {
   env?: Env;
 }
 
-/** How the permission step ended, as journaled. */
+/** How the permission step ended, as journaled; `refused`: the tool's own pre-checks failed. */
 export type ToolDecision =
-  'allow' | 'confirmed' | 'declined' | 'deny' | 'invalid' | 'unknown' | 'cancelled';
+  'allow' | 'confirmed' | 'declined' | 'deny' | 'refused' | 'invalid' | 'unknown' | 'cancelled';
 
 interface Trace {
   call: ToolCall;
@@ -116,12 +117,14 @@ export class LocalToolBus implements ToolBus {
     const input = call.input as Record<string, unknown>;
     const def = tool.riskFor ? { ...tool.def, risk: tool.riskFor(input) } : tool.def;
     trace.def = def;
-    const allowed = await this.permit(trace, def, tool.alwaysConfirm?.(input) === true);
-    if (!allowed)
-      return {
-        content: `permission ${trace.decision}: ${trace.reason ?? ''}`.trim(),
-        isError: true,
-      };
+    const allowed = await this.permit(trace, def, tool, input);
+    if (!allowed) {
+      const refused = trace.decision === 'refused';
+      const content = refused
+        ? (trace.reason ?? 'refused')
+        : `permission ${trace.decision}: ${trace.reason ?? ''}`.trim();
+      return { content, isError: true };
+    }
     try {
       return await tool.run(input, ctx);
     } catch (err) {
@@ -138,35 +141,75 @@ export class LocalToolBus implements ToolBus {
   }
 
   /** Applies the policy (and the forced confirmation of unsandboxed tools); records the decision. */
-  private async permit(trace: Trace, def: ToolDefinition, forceConfirm: boolean): Promise<boolean> {
+  private async permit(
+    trace: Trace,
+    def: ToolDefinition,
+    tool: LocalTool,
+    input: Record<string, unknown>,
+  ): Promise<boolean> {
     const { call, ctx } = trace;
-    let decision = safeDecide(this.policy, def, call, ctx);
+    const decision = safeDecide(this.policy, def, call, ctx);
     if (decision === 'deny') {
       trace.decision = 'deny';
       trace.reason = isConfirmAware(this.policy) ? this.policy.reason?.(def, call, ctx) : undefined;
       trace.reason ??= `${def.name} is not permitted`;
       return false;
     }
-    const policyAsked = decision === 'confirm';
-    if (decision === 'allow' && forceConfirm) decision = 'confirm';
-    if (decision === 'allow') {
+    if (decision === 'allow' && tool.alwaysConfirm?.(input) !== true) {
       trace.decision = 'allow';
       return true;
     }
-    const yes = await ctx.confirm(this.question(def, call, ctx)).catch(() => false);
+    const prepared = await this.prepare(trace, tool, input);
+    if (prepared === undefined) return false;
+    const yes = await ctx.confirm(this.question(def, call, ctx, prepared)).catch(() => false);
     trace.decision = yes ? 'confirmed' : 'declined';
     if (!yes) {
       trace.reason = 'declined by the user';
       return false;
     }
-    if (policyAsked && isConfirmAware(this.policy)) this.policy.confirmed(def, call, ctx);
+    if (decision === 'confirm' && isConfirmAware(this.policy)) {
+      this.policy.confirmed(def, call, ctx);
+    }
     return true;
   }
 
-  private question(def: ToolDefinition, call: ToolCall, ctx: ToolContext): string {
+  /** Lets the tool validate and describe the call before the human is asked. */
+  private async prepare(
+    trace: Trace,
+    tool: LocalTool,
+    input: Record<string, unknown>,
+  ): Promise<PreparedCall | null | undefined> {
+    if (!tool.prepare) return null;
+    try {
+      return await tool.prepare(input, trace.ctx);
+    } catch (err) {
+      const known = err instanceof JailError || err instanceof ToolError;
+      trace.decision = 'refused';
+      trace.reason = known ? err.message : `tool failed: ${errorText(err)}`;
+      return undefined;
+    }
+  }
+
+  /**
+   * The confirmation question: tool, risk, model, node, then what the tool says
+   * it will touch (paths, size, ≤ 20 preview lines) or a compact input summary.
+   * Every line is stripped of control characters and secrets.
+   */
+  private question(
+    def: ToolDefinition,
+    call: ToolCall,
+    ctx: ToolContext,
+    prepared: PreparedCall | null,
+  ): string {
+    const head = `Allow ${def.name} (${def.risk}) for ${refToString(ctx.model)} on node ${ctx.nodeId}?`;
+    const clean = (t: string): string => stripControls(redact(t, this.secrets));
+    if (prepared) {
+      const body = [clean(prepared.summary).slice(0, 1000)];
+      if (prepared.preview) body.push(clean(previewLines(prepared.preview)));
+      return `${head}\n${body.join('\n')}`;
+    }
     const input = JSON.stringify(redactDeep(summarizeInput(call.input) ?? null, this.secrets));
-    const shown = stripControls(input).slice(0, 600);
-    return `Allow ${def.name} (${def.risk}) for ${refToString(ctx.model)} on node ${ctx.nodeId}? ${shown}`;
+    return `${head} ${stripControls(input).slice(0, 600)}`;
   }
 
   private finish(trace: Trace, outcome: ToolOutcome): ToolResult {

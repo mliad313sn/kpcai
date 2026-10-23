@@ -48,13 +48,25 @@ const TOKEN_PATTERNS: readonly RegExp[] = [
   /xox[abprs]-[A-Za-z0-9-]{10,}/g,
   /AKIA[0-9A-Z]{16}/g,
   /AIza[0-9A-Za-z_-]{30,}/g,
-  /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(-----END [A-Z ]*PRIVATE KEY-----|$)/g,
+  // Any PEM/PGP private key block: RSA, EC, OPENSSH, ENCRYPTED, "PGP PRIVATE KEY BLOCK"…
+  /-----BEGIN [A-Z0-9 ]*PRIVATE KEY[A-Z0-9 ]*-----[\s\S]*?(?:-----END [A-Z0-9 ]*PRIVATE KEY[A-Z0-9 ]*-----|$)/g,
 ];
+
+/**
+ * `aws_secret_access_key = …`, `"client_secret": "…"`, `DB_PASSWORD=…`: the value
+ * is redacted, the key kept. Only credential-shaped values (16+ chars of
+ * [A-Za-z0-9/+=_-] with a digit, no dots) so code like `password = env.DB_PASSWORD`
+ * is left intact and a model never writes `[redacted]` back into source.
+ */
+const KEY_VALUE =
+  /\b([A-Za-z0-9_-]*(?:secret|passw(?:or)?d|api[_-]?key|access[_-]?key|private[_-]?key|token)[A-Za-z0-9_-]*["']?\s*[:=]\s*["']?)([A-Za-z0-9/+=_-]{16,})/gi;
 
 /** Replaces known token shapes and the given secret values with `[redacted]`. */
 export function redact(text: string, secrets: readonly string[] = []): string {
   let out = text;
   for (const s of secrets) out = out.split(s).join('[redacted]');
   for (const re of TOKEN_PATTERNS) out = out.replace(re, '[redacted]');
-  return out;
+  return out.replace(KEY_VALUE, (all, key: string, value: string) =>
+    /\d/.test(value) ? `${key}[redacted]` : all,
+  );
 }

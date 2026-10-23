@@ -145,6 +145,11 @@ export function shellTool(options: ShellToolOptions = {}): LocalTool {
       return listed ? 'write' : 'destructive';
     },
     alwaysConfirm: () => !sandbox.isolating,
+    async prepare(input, ctx) {
+      await resolveCommand(ctx, String(input.command));
+      const shown = [String(input.command), ...argList(input)].map((a) => JSON.stringify(a));
+      return { summary: `run ${shown.join(' ')} in the workspace (sandbox: ${sandbox.mode})` };
+    },
     run: (input, ctx) => runShell(options, sandbox, input, ctx),
   };
 }
