@@ -3,7 +3,7 @@
  * repositories, mock providers, no network.
  */
 import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { isAbsolute, join, relative } from 'node:path';
 import { BaseAdapter, type ChatRequest } from '@kernelpai/core';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -90,8 +90,10 @@ describe('isolated runs (R-307)', () => {
     const seen = answer(c, ['patch']);
     const { runId, done } = await run(c, REQ, { allowTest: true });
     const worktree = done.worktree as string;
-    // Real paths: on macOS the temp folder /var is a symlink to /private/var.
-    expect(realpathSync(worktree).startsWith(realpathSync(host.home))).toBe(true);
+    // Native real paths: macOS /var is a symlink to /private/var, and Windows mixes 8.3
+    // short names (RUNNER~1) with the long names git reports.
+    const inside = relative(realpathSync.native(host.home), realpathSync.native(worktree));
+    expect(inside !== '' && !inside.startsWith('..') && !isAbsolute(inside)).toBe(true);
     const applied = await c.call('patches.apply', { runId });
     expect(applied.result).toMatchObject({ results: [{ ok: true }, { ok: true }] });
     expect(existsSync(join(worktree, 'src/s.ts'))).toBe(true);
