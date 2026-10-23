@@ -1,0 +1,23 @@
+{
+  "name": "@kernelpai/kernel",
+  "version": "0.0.1",
+  "private": true,
+  "license": "UNLICENSED",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./protocol": {
+      "types": "./dist/protocol.d.ts",
+      "default": "./dist/protocol.js"
+    }
+  },
+  "dependencies": {
+    "@kernelpai/core": "workspace:*",
+    "zod": "^4.1.0"
+  }
+}

@@ -13,6 +13,8 @@ export default defineConfig({
       '@kernelpai/budget': src('./packages/budget/src/index.ts'),
       '@kernelpai/executor': src('./packages/executor/src/index.ts'),
       '@kernelpai/tools': src('./packages/tools/src/index.ts'),
+      '@kernelpai/kernel/protocol': src('./packages/kernel/src/protocol.ts'),
+      '@kernelpai/kernel': src('./packages/kernel/src/index.ts'),
       '@kernelpai/orchestrator': src('./packages/orchestrator/src/index.ts'),
     },
   },
