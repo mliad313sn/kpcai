@@ -30,6 +30,12 @@
     },
     {
       "path": "../../packages/orchestrator"
+    },
+    {
+      "path": "../../packages/kernel"
+    },
+    {
+      "path": "../../packages/server"
     }
   ]
 }

@@ -23,6 +23,12 @@
     "@kernelpai/budget": "workspace:*",
     "@kernelpai/executor": "workspace:*",
     "@kernelpai/tools": "workspace:*",
-    "@kernelpai/orchestrator": "workspace:*"
+    "@kernelpai/orchestrator": "workspace:*",
+    "@kernelpai/kernel": "workspace:*",
+    "@kernelpai/server": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.18.2",
+    "ws": "^8.22.0"
   }
 }

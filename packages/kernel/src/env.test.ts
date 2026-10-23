@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { budgetLimits, formatMoney, money, routingProfile } from './config.js';
+import { budgetLimits, formatMoney, money, routingProfile } from './env.js';
 
-describe('cli config', () => {
+describe('kernel env', () => {
   it('reads the routing profile from flag, env or default', () => {
     expect(routingProfile({})).toBe('balanced');
     expect(routingProfile({ KPAI_PROFILE: 'economy' })).toBe('economy');

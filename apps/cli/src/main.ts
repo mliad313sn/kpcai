@@ -6,8 +6,9 @@ import { providersCommand } from './commands/providers.js';
 import { routeCommand, runCommand, type RunOptions } from './commands/run.js';
 import { statsCommand } from './commands/stats.js';
 import { doCommand, planCommand } from './commands/graph.js';
+import { studioCommand } from './commands/studio.js';
 import { toolsCommand } from './commands/tools.js';
-import type { GraphOptions } from './graph/setup.js';
+import type { GraphCliOptions as GraphOptions } from './commands/graph.js';
 import type { Io } from './io.js';
 
 export const USAGE = `KernelPAI (phase 2)
@@ -19,6 +20,7 @@ Usage:
       [--planner template|model] [--apply] [--yes-apply] [--allow-same-provider]
       --yes accepts cost prompts only; writes need --yes-apply or a y at the prompt
   kpai tools                           Tools models can use, their risk and source
+  kpai studio [--port N]               Start KP Studio's local kernel server, print its URL
   kpai run <request>                   Classify, route by competence, budget-check,
                                        run with automatic fallback, journal everything
   kpai route <request>                 Same plan and routing, dry run (nothing sent)
@@ -59,6 +61,7 @@ const OPTIONS = {
   'yes-apply': { type: 'boolean' },
   'allow-same-provider': { type: 'boolean' },
   verbose: { type: 'boolean', short: 'v' },
+  port: { type: 'string' },
 } as const;
 
 function positiveInt(name: string, raw: string | undefined): number | undefined {
@@ -69,6 +72,14 @@ function positiveInt(name: string, raw: string | undefined): number | undefined 
 }
 
 class UsageError extends Error {}
+
+function portNumber(raw: string | undefined): number | undefined {
+  if (raw === undefined) return undefined;
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n < 0 || n > 65535)
+    throw new UsageError('--port must be a port number (0 picks a free one)');
+  return n;
+}
 
 const TASK_TYPES = [
   'analysis',
@@ -161,6 +172,7 @@ const COMMANDS: Readonly<Record<string, Handler>> = {
   run: (io, v, rest) => runCommand(io, runOptions(v, rest)),
   route: (io, v, rest) => routeCommand(io, runOptions(v, rest)),
   tools: (io) => toolsCommand(io),
+  studio: (io, v) => studioCommand(io, { db: v.db, port: portNumber(v.port) }),
   stats: (io, v) => statsCommand(io, { db: v.db, session: v.session }),
   providers: (io) => providersCommand(io),
   ask: (io, v, rest) => askCommand(io, askOptions(v, rest)),

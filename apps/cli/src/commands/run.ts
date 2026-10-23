@@ -18,7 +18,8 @@ import { candidates as scanCandidates } from '@kernelpai/providers';
 import { buildRegistry, openJournal } from '../context.js';
 import type { Io } from '../io.js';
 import { renderPlan, renderRejections } from '../render.js';
-import { BudgetGate, execute } from './run-exec.js';
+import { budgetGate } from '../host.js';
+import { execute } from './run-exec.js';
 
 export interface RunOptions {
   prompt: string;
@@ -113,7 +114,7 @@ export async function runCommand(io: Io, o: RunOptions): Promise<number> {
   try {
     const sessionId = sessionFor(io, journal, o);
     journalRouting(journal, sessionId, p);
-    const gate = new BudgetGate(io, journal, { sessionId, nodeId: p.node.id, m: p.m }, o);
+    const gate = budgetGate(io, journal, { sessionId, nodeId: p.node.id, m: p.m }, o);
     if (!(await gate.allow(p.decision.chosen, 'first choice'))) return 4;
     return await execute({ io, journal, sessionId, p, gate });
   } finally {

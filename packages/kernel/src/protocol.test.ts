@@ -39,3 +39,70 @@ describe('console protocol', () => {
     );
   });
 });
+
+describe('protocol results and extensions (ADR-0019)', () => {
+  it('validates the results clients depend on', async () => {
+    const { parseResult } = await import('./protocol.js');
+    expect(parseResult('run.start', { runId: 'r' })).toMatchObject({ ok: true });
+    expect(parseResult('run.start', {})).toMatchObject({ ok: false });
+    expect(
+      parseResult('providers.list', {
+        providers: [{ id: 'p', available: true, models: [{ id: 'm', extra: 1 }] }],
+      }),
+    ).toMatchObject({ ok: true, value: { providers: [{ models: [{ extra: 1 }] }] } });
+    expect(
+      parseResult('sessions.list', { sessions: [{ id: 's', createdAt: 't', title: 'x' }] }),
+    ).toMatchObject({ ok: true });
+    const estimate = {
+      nodes: [
+        {
+          nodeId: 'n',
+          protocol: 'solo',
+          ref: null,
+          minUsd: 0,
+          expectedUsd: 0,
+          reason: 'r',
+          score: 1,
+        },
+      ],
+      minUsd: 0,
+      totalUsd: 0,
+      complete: true,
+      problems: [],
+      band: { lowUsd: 0, highUsd: 1, basis: 'heuristic' },
+    };
+    const graph = { id: 'g', request: 'r', nodes: [], createdBy: 'template', reason: '' };
+    expect(parseResult('plan', { planId: 'p', graph, estimate })).toMatchObject({ ok: true });
+  });
+
+  it('carries routing data, tokens, patches and control events', async () => {
+    const { parseNotification, parseParams } = await import('./protocol.js');
+    const ev = { type: 'contribution', nodeId: 'n', usage: { inputTokens: 1, outputTokens: 2 } };
+    expect(parseNotification('run.event', { runId: 'r', event: ev })).toMatchObject({
+      ok: true,
+      value: { event: { usage: { outputTokens: 2 } } },
+    });
+    expect(parseNotification('run.event', { runId: 'r', event: { nodeId: 'n' } }).ok).toBe(false);
+    expect(
+      parseNotification('confirm.request', {
+        confirmId: 'c',
+        kind: 'patch',
+        question: 'q',
+        patch: 'diff',
+        timeoutMs: 1,
+      }),
+    ).toMatchObject({ ok: true, value: { patch: 'diff' } });
+    expect(parseNotification('run.control', { runId: 'r', event: { type: 'run_paused' } }).ok).toBe(
+      true,
+    );
+    expect(parseParams('run.instruct', { runId: 'r', nodeId: 'n', text: '' }).ok).toBe(false);
+    expect(parseParams('plan.validate', { planId: 'p', graph: { nodes: [] } }).ok).toBe(false);
+    expect(
+      parseParams('run.start', {
+        request: 'x',
+        planId: 'p',
+        graph: { nodes: [{ id: 'a', model: { provider: 'p', model: 'm' } }] },
+      }).ok,
+    ).toBe(true);
+  });
+});

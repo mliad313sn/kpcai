@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { GraphResult, ProtocolResult, TaskGraph } from '@kernelpai/core';
-import { collect } from './apply.js';
-import { serialized } from '../io.js';
+import { collect } from './patches.js';
+import { serialized } from './confirm.js';
 
 const DIFF = (f: string, line = 'hi') =>
   `diff --git a/${f} b/${f}\nnew file mode 100644\n--- /dev/null\n+++ b/${f}\n@@ -0,0 +1 @@\n+${line}\n`;

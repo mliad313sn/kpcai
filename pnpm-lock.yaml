@@ -50,6 +50,9 @@ importers:
       '@kernelpai/journal':
         specifier: workspace:*
         version: link:../../packages/journal
+      '@kernelpai/kernel':
+        specifier: workspace:*
+        version: link:../../packages/kernel
       '@kernelpai/orchestrator':
         specifier: workspace:*
         version: link:../../packages/orchestrator
@@ -59,9 +62,19 @@ importers:
       '@kernelpai/router':
         specifier: workspace:*
         version: link:../../packages/router
+      '@kernelpai/server':
+        specifier: workspace:*
+        version: link:../../packages/server
       '@kernelpai/tools':
         specifier: workspace:*
         version: link:../../packages/tools
+    devDependencies:
+      '@types/ws':
+        specifier: ^8.18.2
+        version: 8.18.2
+      ws:
+        specifier: ^8.22.0
+        version: 8.22.0
 
   apps/studio:
     dependencies:
@@ -147,9 +160,30 @@ importers:
 
   packages/kernel:
     dependencies:
+      '@kernelpai/budget':
+        specifier: workspace:*
+        version: link:../budget
       '@kernelpai/core':
         specifier: workspace:*
         version: link:../core
+      '@kernelpai/executor':
+        specifier: workspace:*
+        version: link:../executor
+      '@kernelpai/journal':
+        specifier: workspace:*
+        version: link:../journal
+      '@kernelpai/orchestrator':
+        specifier: workspace:*
+        version: link:../orchestrator
+      '@kernelpai/providers':
+        specifier: workspace:*
+        version: link:../providers
+      '@kernelpai/router':
+        specifier: workspace:*
+        version: link:../router
+      '@kernelpai/tools':
+        specifier: workspace:*
+        version: link:../tools
       zod:
         specifier: ^4.1.0
         version: 4.6.7
@@ -177,6 +211,18 @@ importers:
       '@kernelpai/tools':
         specifier: workspace:*
         version: link:../tools
+      zod:
+        specifier: ^4.1.0
+        version: 4.6.7
+
+  packages/packs:
+    dependencies:
+      '@kernelpai/core':
+        specifier: workspace:*
+        version: link:../core
+      yaml:
+        specifier: ^2.8.0
+        version: 2.9.1
       zod:
         specifier: ^4.1.0
         version: 4.6.7
@@ -225,6 +271,25 @@ importers:
       '@kernelpai/core':
         specifier: workspace:*
         version: link:../core
+
+  packages/server:
+    dependencies:
+      '@kernelpai/core':
+        specifier: workspace:*
+        version: link:../core
+      '@kernelpai/kernel':
+        specifier: workspace:*
+        version: link:../kernel
+      ws:
+        specifier: ^8.22.0
+        version: 8.22.0
+      zod:
+        specifier: ^4.1.0
+        version: 4.6.7
+    devDependencies:
+      '@types/ws':
+        specifier: ^8.18.2
+        version: 8.18.2
 
   packages/tools:
     dependencies:

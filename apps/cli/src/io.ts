@@ -1,5 +1,8 @@
 import { createInterface } from 'node:readline/promises';
-import type { Env } from '@kernelpai/providers';
+import { serialized, type Env } from '@kernelpai/kernel';
+
+/** Confirmations are asked one at a time (review P2-F7); see the kernel's `serialized`. */
+export { serialized };
 
 /** Everything the CLI touches in the outside world, injectable for tests. */
 export interface Io {
@@ -32,19 +35,6 @@ function interruptBus(): Io['onInterrupt'] {
       const i = handlers.lastIndexOf(handler);
       if (i >= 0) handlers.splice(i, 1);
     };
-  };
-}
-
-/**
- * Confirmations are asked one at a time: parallel steps must never share one keystroke
- * (review P2-F7). Each question waits for the previous answer.
- */
-export function serialized(ask: (q: string) => Promise<boolean>): (q: string) => Promise<boolean> {
-  let tail: Promise<unknown> = Promise.resolve();
-  return (q) => {
-    const next = tail.then(() => ask(q));
-    tail = next.catch(() => undefined);
-    return next;
   };
 }
 

@@ -3,15 +3,24 @@
  * kernel server and its clients (web, desktop, TUI). Every message is validated with these
  * schemas on both sides; anything that does not parse is rejected.
  *
- * Client → server: requests (`Methods`). Server → client: notifications (`Notifications`)
- * and confirmation requests the client must answer with `confirm.answer`.
+ * Client → server: requests (`Methods`), each with a params and a result schema.
+ * Server → client: notifications (`Notifications`), including confirmation requests the
+ * client answers with the `confirm.answer` method.
+ *
+ * Connection: the WebSocket subprotocols are `[SUBPROTOCOL, BEARER_PREFIX + token]`; the
+ * server echoes `SUBPROTOCOL` only, and closes with `CloseCodes.unauthorized` (4401) when
+ * the token is refused. Non-browser clients may send `Authorization: Bearer <token>`.
  */
 import { z } from 'zod';
 
 export const PROTOCOL_VERSION = 1;
+export const SUBPROTOCOL = 'kernelpai.v1';
+export const BEARER_PREFIX = 'kernelpai.bearer.';
+export const CloseCodes = { unauthorized: 4401, policy: 1008 } as const;
 
 const Ref = z.object({ provider: z.string(), model: z.string() });
 const Id = z.string().min(1).max(100);
+const Usd = z.number();
 
 export const RunOptionsSchema = z.object({
   planner: z.enum(['template', 'model']).optional(),
@@ -24,18 +33,136 @@ export const RunOptionsSchema = z.object({
 });
 export type RunOptions = z.infer<typeof RunOptionsSchema>;
 
-/** Request params and results, by method name. Results are typed loosely (`unknown` parts are
- * kernel objects defined in core/journal) and validated where clients depend on them. */
+/** Why a node goes to its model (R-303): the router's one line, score and runner-up. */
+const Routing = {
+  reason: z.string().optional(),
+  score: z.number().optional(),
+  parts: z.record(z.string(), z.number().nullable()).optional(),
+  runnerUp: z.object({ ref: Ref, score: z.number() }).optional(),
+};
+
+/** Kernel objects are lenient on extra fields: a newer kernel does not break a client. */
+export const GraphSchema = z.looseObject({
+  id: z.string(),
+  request: z.string(),
+  nodes: z.array(
+    z.looseObject({ id: z.string(), title: z.string(), dependsOn: z.array(z.string()) }),
+  ),
+  createdBy: z.string(),
+  reason: z.string(),
+});
+
+/** Low–high cost from the calibration spread (R-302). */
+export const BandSchema = z.object({
+  lowUsd: Usd,
+  highUsd: Usd,
+  basis: z.enum(['calibrated', 'heuristic', 'mixed']),
+});
+
+export const NodeEstimateSchema = z.looseObject({
+  nodeId: z.string(),
+  protocol: z.string(),
+  ref: Ref.nullable(),
+  minUsd: Usd,
+  expectedUsd: Usd,
+  error: z.string().optional(),
+  band: BandSchema.optional(),
+  ...Routing,
+});
+
+export const EstimateSchema = z.looseObject({
+  nodes: z.array(NodeEstimateSchema),
+  minUsd: Usd,
+  totalUsd: Usd,
+  complete: z.boolean(),
+  problems: z.array(z.string()),
+  band: BandSchema.optional(),
+});
+
+/**
+ * A plan's graph as the user edited it (R-301): models, protocol, criticality, budget,
+ * nodes added or removed. Only the envelope is checked here; the kernel validates every
+ * field (untrusted input) and re-estimates before anything runs. `model` pins a node's
+ * first step to that model, with no automatic fallback (ADR-0019).
+ */
+export const EditedGraphSchema = z.looseObject({
+  nodes: z
+    .array(z.looseObject({ id: z.string().min(1).max(100), model: Ref.optional() }))
+    .min(1)
+    .max(100),
+});
+
+/** Steering events of a run (pause, resume, cancel, redirect, instruction, refusal). */
+export const ControlEventSchema = z.looseObject({
+  type: z.enum([
+    'run_paused',
+    'run_resumed',
+    'run_cancelled',
+    'node_redirected',
+    'instruction_added',
+    'control_refused',
+  ]),
+  nodeId: z.string().optional(),
+  reason: z.string().optional(),
+});
+
+/**
+ * A core `GraphEvent` (packages/core graph.ts), with optional kernel extras: `reason` and
+ * `score` on `node_state` events that name a model (R-303), `usage` token counts on
+ * `contribution` events (spec §4.4).
+ */
+export const RunEventSchema = z.looseObject({
+  /** `node_state`, `text`, `contribution` or `graph_done` today; clients drop types they do
+   * not know (a string here so a newer kernel's event types reach an older client). */
+  type: z.string().min(1).max(50),
+  nodeId: z.string().optional(),
+  reason: z.string().optional(),
+  score: z.number().optional(),
+  usage: z.object({ inputTokens: z.number(), outputTokens: z.number() }).optional(),
+});
+
+const ProviderSchema = z.looseObject({
+  id: z.string(),
+  available: z.boolean(),
+  models: z.array(z.looseObject({ id: z.string() })),
+});
+
+const SessionSchema = z.looseObject({ id: z.string(), createdAt: z.string(), title: z.string() });
+const Ok = z.object({ ok: z.literal(true) });
+
+/** Request params and results, by method name. */
 export const Methods = {
   'kernel.hello': {
     params: z.object({ client: z.string().max(100), protocol: z.number().int() }),
+    result: z.object({ protocol: z.number().int(), server: z.string() }),
   },
-  'providers.list': { params: z.object({}).optional() },
-  'tools.list': { params: z.object({}).optional() },
+  'providers.list': {
+    params: z.object({}).optional(),
+    result: z.object({ providers: z.array(ProviderSchema) }),
+  },
+  'tools.list': {
+    params: z.object({}).optional(),
+    result: z.object({
+      tools: z.array(z.looseObject({ name: z.string(), risk: z.string(), source: z.string() })),
+      errors: z.array(z.object({ server: z.string(), message: z.string() })),
+    }),
+  },
   plan: {
     params: z.object({
       request: z.string().min(1).max(100_000),
       options: RunOptionsSchema.optional(),
+    }),
+    result: z.object({ planId: Id, graph: GraphSchema, estimate: EstimateSchema }),
+  },
+  /** Checks an edited plan and re-estimates it; runs nothing (R-301). */
+  'plan.validate': {
+    params: z.object({ planId: Id, graph: EditedGraphSchema }),
+    result: z.object({
+      ok: z.boolean(),
+      problems: z.array(z.string()),
+      warnings: z.array(z.string()),
+      changes: z.array(z.string()),
+      estimate: EstimateSchema.optional(),
     }),
   },
   'run.start': {
@@ -43,40 +170,65 @@ export const Methods = {
       request: z.string().min(1).max(100_000),
       /** The plan the user saw; when omitted the kernel plans again. */
       planId: Id.optional(),
+      /** The plan as edited and approved (needs `planId`); validated again by the kernel. */
+      graph: EditedGraphSchema.optional(),
       options: RunOptionsSchema.optional(),
     }),
+    result: z.object({ runId: Id }),
   },
-  'run.cancel': { params: z.object({ runId: Id }) },
-  'run.pause': { params: z.object({ runId: Id }) },
-  'run.resume': { params: z.object({ runId: Id }) },
+  'run.cancel': { params: z.object({ runId: Id }), result: z.object({ cancelled: z.boolean() }) },
+  'run.pause': { params: z.object({ runId: Id }), result: Ok },
+  'run.resume': { params: z.object({ runId: Id }), result: Ok },
   /** Principle 4: move a node to another model; finished work is kept. */
-  'run.redirect': { params: z.object({ runId: Id, nodeId: Id, to: Ref }) },
-  'patches.apply': { params: z.object({ runId: Id, nodeIds: z.array(Id).optional() }) },
+  'run.redirect': { params: z.object({ runId: Id, nodeId: Id, to: Ref }), result: Ok },
+  /** R-304: add an instruction to a node that has not started. */
+  'run.instruct': {
+    params: z.object({ runId: Id, nodeId: Id, text: z.string().min(1).max(10_000) }),
+    result: Ok,
+  },
+  'patches.apply': {
+    params: z.object({ runId: Id, nodeIds: z.array(Id).optional() }),
+    result: z.object({
+      results: z.array(z.object({ nodeId: Id, ok: z.boolean(), message: z.string() })),
+    }),
+  },
   'confirm.answer': {
     params: z.object({ confirmId: Id, ok: z.boolean(), trustSession: z.boolean().optional() }),
+    /** False when the confirmation was unknown, already answered or expired. */
+    result: z.object({ accepted: z.boolean() }),
   },
-  'sessions.list': { params: z.object({ limit: z.number().int().min(1).max(1000).optional() }) },
+  'sessions.list': {
+    params: z.object({ limit: z.number().int().min(1).max(1000).optional() }),
+    result: z.object({ sessions: z.array(SessionSchema) }),
+  },
   'sessions.events': {
     params: z.object({ sessionId: Id, limit: z.number().int().min(1).max(100_000).optional() }),
+    result: z.object({ events: z.array(z.looseObject({ seq: z.number(), type: z.string() })) }),
   },
-  stats: { params: z.object({ sessionId: Id.optional() }).optional() },
-  'journal.verify': { params: z.object({}).optional() },
+  stats: {
+    params: z.object({ sessionId: Id.optional() }).optional(),
+    result: z.looseObject({}),
+  },
+  'journal.verify': {
+    params: z.object({}).optional(),
+    result: z.looseObject({ ok: z.boolean(), checked: z.number() }),
+  },
 } as const;
 export type MethodName = keyof typeof Methods;
+export type MethodResult<M extends MethodName> = z.infer<(typeof Methods)[M]['result']>;
 
-/** Server → client notifications. `run.event` carries a core `GraphEvent`. */
+const PatchSchema = z.object({ nodeId: Id, patch: z.string(), files: z.array(z.string()) });
+
+/** Server → client notifications. */
 export const Notifications = {
   'run.planned': z.object({ runId: Id, planId: Id, graph: z.unknown(), estimate: z.unknown() }),
-  'run.event': z.object({ runId: Id, event: z.unknown() }),
+  'run.event': z.object({ runId: Id, event: RunEventSchema }),
   'run.state': z.object({
     runId: Id,
     state: z.enum(['running', 'paused', 'cancelling', 'done', 'failed', 'cancelled']),
   }),
-  'run.done': z.object({
-    runId: Id,
-    result: z.unknown(),
-    patches: z.array(z.object({ nodeId: Id, patch: z.string(), files: z.array(z.string()) })),
-  }),
+  'run.control': z.object({ runId: Id, event: ControlEventSchema }),
+  'run.done': z.object({ runId: Id, result: z.unknown(), patches: z.array(PatchSchema) }),
   /** The client must answer with `confirm.answer`; silence for `timeoutMs` means "no". */
   'confirm.request': z.object({
     confirmId: Id,
@@ -84,6 +236,8 @@ export const Notifications = {
     kind: z.enum(['budget', 'tool', 'patch']),
     question: z.string().max(10_000),
     risk: z.enum(['read', 'write', 'destructive']).optional(),
+    /** For `patch`: the exact diff that would be written, apart from the question. */
+    patch: z.string().max(2_000_000).optional(),
     timeoutMs: z.number().int().positive(),
   }),
   log: z.object({ level: z.enum(['info', 'warn', 'error']), message: z.string().max(10_000) }),
@@ -105,22 +259,50 @@ export const ErrorCodes = {
   internal: -32603,
   unauthorized: -32001,
   budget: -32002,
+  /** Not possible in the current state (applying after a cancel, a finished run…). */
+  refused: -32003,
   notFound: -32004,
+  /** The kernel does not offer this yet (for example pause before phase 3 WP2). */
+  unsupported: -32005,
+  /** The working directory is not a project. */
+  workspace: -32006,
+  /** Some nodes of the plan cannot be routed. */
+  unroutable: -32007,
 } as const;
+
+type Check<T> = { ok: true; value: T } | { ok: false; error: string };
+
+function check<T>(schema: z.ZodType, value: unknown): Check<T> {
+  const r = schema.safeParse(value);
+  return r.success
+    ? { ok: true, value: r.data as T }
+    : {
+        ok: false,
+        error: r.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '),
+      };
+}
 
 /** Validates params for a method; returns an error message instead of throwing. */
 export function parseParams<M extends MethodName>(
   method: M,
   params: unknown,
-): { ok: true; value: z.infer<(typeof Methods)[M]['params']> } | { ok: false; error: string } {
-  const schema: z.ZodType = Methods[method].params;
-  const r = schema.safeParse(params);
-  return r.success
-    ? { ok: true, value: r.data as z.infer<(typeof Methods)[M]['params']> }
-    : {
-        ok: false,
-        error: r.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '),
-      };
+): Check<z.infer<(typeof Methods)[M]['params']>> {
+  return check(Methods[method].params, params);
+}
+
+/** Validates a method's result before it is sent (server) or used (client). */
+export function parseResult<M extends MethodName>(
+  method: M,
+  result: unknown,
+): Check<MethodResult<M>> {
+  return check(Methods[method].result, result);
+}
+
+export function parseNotification<N extends NotificationName>(
+  name: N,
+  params: unknown,
+): Check<z.infer<(typeof Notifications)[N]>> {
+  return check(Notifications[name], params);
 }
 
 export function isMethod(name: string): name is MethodName {

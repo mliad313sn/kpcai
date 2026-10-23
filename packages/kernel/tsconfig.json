@@ -3,5 +3,14 @@
   "compilerOptions": { "rootDir": "src", "outDir": "dist" },
   "include": ["src"],
   "exclude": ["src/**/*.test.ts", "src/**/test-helpers/**"],
-  "references": [{ "path": "../core" }]
+  "references": [
+    { "path": "../core" },
+    { "path": "../journal" },
+    { "path": "../providers" },
+    { "path": "../router" },
+    { "path": "../budget" },
+    { "path": "../executor" },
+    { "path": "../tools" },
+    { "path": "../orchestrator" }
+  ]
 }

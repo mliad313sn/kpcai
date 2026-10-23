@@ -29,6 +29,9 @@
       "path": "packages/kernel"
     },
     {
+      "path": "packages/server"
+    },
+    {
       "path": "apps/cli"
     },
     {

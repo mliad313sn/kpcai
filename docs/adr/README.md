@@ -23,3 +23,5 @@ Status values: Accepted, Superseded by ADR-NNNN.
 | [0016](0016-sessions-fallback-budget-calibration.md) | Sessions, budget-checked fallbacks, stall timeouts, calibration | Accepted |
 | [0017](0017-graph-protocols-and-tool-contracts.md)   | Task graph, protocols and tool contracts                        | Accepted |
 | [0018](0018-graph-cli.md)                            | `kpai plan` / `kpai do`: planning, gating and patches           | Accepted |
+| [0019](0019-kernel-service-and-console-server.md)    | Kernel service layer and console server protocol                | Accepted |
+| [0020](0020-run-control-and-pinned-models.md)        | Run control and user-chosen models                              | Accepted |

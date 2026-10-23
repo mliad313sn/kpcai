@@ -1,24 +1,23 @@
-import { metrics } from '@kernelpai/executor';
+import { Kernel, KernelError } from '@kernelpai/kernel';
 import { money } from '../config.js';
-import { openJournal } from '../context.js';
+import { kernelHost } from '../host.js';
 import type { Io } from '../io.js';
 import { renderMetrics } from '../render.js';
 
 /** `kpai stats [--session id]`: phase metrics computed from the journal. */
-export function statsCommand(io: Io, opts: { db?: string; session?: string }): number {
-  const journal = openJournal(io.env, opts.db);
+export async function statsCommand(
+  io: Io,
+  opts: { db?: string; session?: string },
+): Promise<number> {
+  const kernel = new Kernel(kernelHost(io, opts.db ? { db: opts.db } : {}));
   try {
-    let sessionId: string | undefined;
-    if (opts.session) {
-      sessionId = journal.findSession(opts.session)?.id;
-      if (!sessionId) {
-        io.err(`No session starting with "${opts.session}"\n`);
-        return 1;
-      }
-    }
-    io.out(renderMetrics(metrics(journal, sessionId ? { sessionId } : {}), money(io.env)));
+    io.out(renderMetrics(kernel.stats(opts.session), money(io.env)));
     return 0;
+  } catch (err) {
+    if (!(err instanceof KernelError && err.code === 'not_found')) throw err;
+    io.err(`${err.message}\n`);
+    return 1;
   } finally {
-    journal.close();
+    await kernel.close();
   }
 }
