@@ -11,12 +11,16 @@ export interface ZoneFilter {
   caseInsensitive: boolean;
 }
 
-/** Our glob → git `:(glob)` pathspecs. A glob without `/` matches a segment at any depth. */
+/**
+ * Our glob → git `:(glob)` pathspecs. A glob without `/` matches a segment at any depth.
+ * Like `matchesForbidden`, a glob also covers everything under a matching directory
+ * (the `*secret*` default hides `config/secrets/prod.yaml`, review NF-1).
+ */
 function gitGlobs(glob: string): string[] {
   const g = glob.replace(/\\/g, '/').replace(/^\.\//, '').replace(/\/+$/, '');
   if (g === '') return [];
   if (!g.includes('/')) return [`**/${g}`, `**/${g}/**`];
-  return g.endsWith('/**') ? [g, g.slice(0, -3)] : [g];
+  return g.endsWith('/**') ? [g, g.slice(0, -3)] : [g, `${g}/**`];
 }
 
 /** `:(exclude,glob[,icase])<pattern>` for every forbidden glob. */
@@ -34,15 +38,18 @@ function omitted(n: number): string {
   return n === 0 ? '' : `[${n} entr${n === 1 ? 'y' : 'ies'} in forbidden zones omitted]\n`;
 }
 
-/** Drops `diff --git` sections whose a/ or b/ path is in a forbidden zone. */
+/**
+ * Drops `diff --git` sections whose a/ or b/ path is in a forbidden zone. A section
+ * whose header cannot be parsed is dropped too: fail closed (review NF-1).
+ */
 export function filterDiff(out: string, zones: ZoneFilter): string {
   if (zones.globs.length === 0) return out;
   const parts = out.split(/^(?=diff --git )/m);
   let dropped = 0;
   const kept = parts.filter((part) => {
     const m = /^diff --git "?a\/(.+?)"? "?b\/(.+?)"?$/m.exec(part.split('\n')[0] ?? '');
-    if (!part.startsWith('diff --git ') || !m) return true;
-    const hit = forbidden(m[1] as string, zones) || forbidden(m[2] as string, zones);
+    if (!part.startsWith('diff --git ')) return true;
+    const hit = !m || forbidden(m[1] as string, zones) || forbidden(m[2] as string, zones);
     if (hit) dropped += 1;
     return !hit;
   });

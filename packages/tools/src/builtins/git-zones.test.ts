@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { mkdir, stat, writeFile } from 'node:fs/promises';
+import { mkdir, stat, utimes, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { LocalToolBus } from '../bus.js';
@@ -89,6 +89,45 @@ describe('forbidden zones stay out of git output (N2)', () => {
     expect(filterStatus(status, { globs: [], caseInsensitive: false })).toBe(status);
   });
 
+  it('hides files under a forbidden directory even with diff.noprefix or mnemonicPrefix (NF-1)', async () => {
+    await mkdir(path.join(root, 'config', 'secrets'));
+    await writeFile(path.join(root, 'config', 'secrets', 'prod.yaml'), 'base\n');
+    git(root, 'add', 'config/secrets');
+    git(root, 'commit', '-qm', 'secrets dir');
+    await writeFile(path.join(root, 'config', 'secrets', 'prod.yaml'), 'PROD_PW=hunter3\n');
+    const bus = new LocalToolBus({ tools: gitTools() });
+    for (const setting of ['diff.noprefix', 'diff.mnemonicPrefix']) {
+      git(root, 'config', setting, 'true');
+      const r = await bus.call(call('git.diff', {}), makeCtx(root));
+      expect(r.content).toContain('+port: 2');
+      expect(r.content).not.toMatch(/hunter3|prod\.yaml/);
+      git(root, 'config', '--unset', setting);
+    }
+  });
+
+  it('fails closed on a diff header it cannot parse', () => {
+    const zones = { globs: ['.env'], caseInsensitive: false };
+    const out = filterDiff('diff --git weird header\n+leak\n', zones);
+    expect(out).not.toContain('+leak');
+    expect(out).toContain('1 entry in forbidden zones omitted');
+  });
+
+  it('git.status runs no repository hook, even when the index is stale (NF-2)', async () => {
+    await writeFile(path.join(root, 'clean.txt'), 'clean\n');
+    git(root, 'add', 'clean.txt');
+    git(root, 'commit', '-qm', 'clean');
+    // Installed after the test's own git calls, which would otherwise fire it.
+    const marker = path.join(root, 'HOOK_RAN');
+    const hook = path.join(root, '.git', 'hooks', 'post-index-change');
+    await mkdir(path.dirname(hook), { recursive: true });
+    await writeFile(hook, `#!/bin/sh\necho x > "${marker.replace(/\\/g, '/')}"\n`, { mode: 0o755 });
+    const old = new Date('2020-01-01');
+    await utimes(path.join(root, 'clean.txt'), old, old);
+    const bus = new LocalToolBus({ tools: gitTools() });
+    expect((await bus.call(call('git.status', {}), makeCtx(root))).isError).toBe(false);
+    await expect(stat(marker)).rejects.toThrow();
+  });
+
   it('turns globs into git exclude pathspecs', () => {
     expect(
       excludePathspecs({
@@ -103,6 +142,7 @@ describe('forbidden zones stay out of git output (N2)', () => {
       ':(exclude,glob,icase)private/**',
       ':(exclude,glob,icase)private',
       ':(exclude,glob,icase)a/b.txt',
+      ':(exclude,glob,icase)a/b.txt/**',
     ]);
   });
 });

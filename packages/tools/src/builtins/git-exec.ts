@@ -1,4 +1,7 @@
+import { randomUUID } from 'node:crypto';
 import { realpath } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import type { ToolContext } from '@kernelpai/core';
 import { scrubEnv, type Env } from '../env.js';
 import { runProcess, type RunResult } from '../process.js';
@@ -34,11 +37,25 @@ const GIT_MAX_OUTPUT = 1024 * 1024;
  * Repository config must not run programs on our behalf (review P2-F13, N4):
  * no fsmonitor, pager, external diff, signature verification (gpg.program),
  * and every configured filter driver is blanked per call (see filterArgs).
- * diff/log also pass --no-ext-diff/--no-textconv. status, diff, log and apply
- * run no hooks, so core.hooksPath is irrelevant; no tool talks to a remote, so
- * core.sshCommand / credential helpers are never reached.
+ * diff/log also pass --no-ext-diff/--no-textconv. Hooks point at a directory
+ * that does not exist, and --no-optional-locks stops status from rewriting the
+ * index (which fires post-index-change, review NF-2). Diff prefixes are forced
+ * to a/ b/ so the zone filter can always parse headers (NF-1). No tool talks to
+ * a remote, so core.sshCommand / credential helpers are never reached.
  */
+const NO_HOOKS = path.join(tmpdir(), `kpai-no-hooks-${randomUUID()}`);
 const HARDENING = [
+  '--no-optional-locks',
+  '-c',
+  `core.hooksPath=${NO_HOOKS}`,
+  '-c',
+  'diff.noprefix=false',
+  '-c',
+  'diff.mnemonicPrefix=false',
+  '-c',
+  'diff.srcPrefix=a/',
+  '-c',
+  'diff.dstPrefix=b/',
   '-c',
   'core.fsmonitor=false',
   '-c',
