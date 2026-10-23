@@ -9,6 +9,7 @@ import { applyPatches } from '../graph/apply.js';
 import { renderEvent, renderGraphPlan, renderOutputs } from '../graph/render.js';
 import { graphSetup, plannerFor, type GraphOptions, type GraphSetup } from '../graph/setup.js';
 import type { Io } from '../io.js';
+import { workspaceProblem } from '../graph/workspace.js';
 import { BudgetGate } from './run-exec.js';
 
 interface Planned {
@@ -68,6 +69,11 @@ export async function doCommand(io: Io, o: GraphOptions): Promise<number> {
       nodeId: p.graph.id,
       payload: { plan: p.graph, estimate: p.est },
     });
+    const rootProblem = workspaceProblem(io.cwd);
+    if (rootProblem) {
+      io.err(`not run — ${rootProblem}\n`);
+      return 2;
+    }
     if (!p.est.complete) {
       io.err('not run — some nodes cannot be routed (see the plan above)\n');
       return 1;
@@ -127,12 +133,13 @@ async function runGraph(
   p: Planned,
   o: GraphOptions,
 ): Promise<GraphResult> {
-  const { bus, mcpErrors } = await createToolBus({
+  const { bus, mcpErrors, policyError } = await createToolBus({
     kpaiHome: kpaiHome(io.env),
     journal,
     env: io.env,
   });
   for (const e of mcpErrors) io.err(`  – mcp ${e.server}: ${e.message}\n`);
+  if (policyError) io.err(`  – policy.json ignored (defaults apply): ${policyError}\n`);
   const gate = new BudgetGate(io, journal, { sessionId, nodeId: p.graph.id, m: p.m }, o);
   const ctl = new AbortController();
   const unregister = io.onInterrupt(() => {

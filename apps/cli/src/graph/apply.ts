@@ -1,6 +1,7 @@
 import type { GraphResult, TaskGraph } from '@kernelpai/core';
 import type { Journal } from '@kernelpai/journal';
 import { createToolBus } from '@kernelpai/tools';
+import { kpaiHome } from '../context.js';
 import type { Io } from '../io.js';
 import { extractPatches, hasHiddenBytes, patchFiles } from './patches.js';
 import type { GraphOptions } from './setup.js';
@@ -56,7 +57,8 @@ async function applyAll(
   patches: Patch[],
   o: GraphOptions,
 ): Promise<string> {
-  const { bus } = await createToolBus({ journal, env: io.env });
+  // Same policy as the run: user forbidden zones from $KPAI_HOME/policy.json apply to writes too.
+  const { bus } = await createToolBus({ kpaiHome: kpaiHome(io.env), journal, env: io.env });
   try {
     let applied = 0;
     for (const p of patches) {
