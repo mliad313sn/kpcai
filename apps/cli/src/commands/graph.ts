@@ -61,6 +61,12 @@ export async function doCommand(io: Io, o: GraphOptions): Promise<number> {
       ? journal.startSession(o.request.slice(0, 80), io.cwd)
       : (journal.resumableSession(io.cwd, 30 * 60_000, new Date())?.id ??
         journal.startSession(o.request.slice(0, 80), io.cwd));
+    const rootProblem = workspaceProblem(io.cwd);
+    if (rootProblem) {
+      io.err(`not run — ${rootProblem}\n`);
+      return 2;
+    }
+    // Before planning: a --planner model call is already a paid call (review N6).
     const p = await planGraph(io, o, journal, sessionId);
     io.err(renderGraphPlan(p.graph, p.est, p.m));
     journal.append({
@@ -69,11 +75,6 @@ export async function doCommand(io: Io, o: GraphOptions): Promise<number> {
       nodeId: p.graph.id,
       payload: { plan: p.graph, estimate: p.est },
     });
-    const rootProblem = workspaceProblem(io.cwd);
-    if (rootProblem) {
-      io.err(`not run — ${rootProblem}\n`);
-      return 2;
-    }
     if (!p.est.complete) {
       io.err('not run — some nodes cannot be routed (see the plan above)\n');
       return 1;

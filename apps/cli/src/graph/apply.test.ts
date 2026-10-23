@@ -90,3 +90,12 @@ describe('serialized confirmations (review P2-F7)', () => {
     expect(log).toEqual(['ask A', 'answer A', 'ask B', 'answer B']);
   });
 });
+
+describe('bidi overrides (review N5)', () => {
+  it('refuses Trojan-Source bidi characters like other hidden bytes', async () => {
+    const { hasHiddenBytes } = await import('./patches.js');
+    expect(hasHiddenBytes('+const ok = true; ‮// tricky\n')).toBe(true);
+    expect(hasHiddenBytes('+const s = "⁦x⁩";\n')).toBe(true);
+    expect(hasHiddenBytes('+const fine = "héllo — 你好";\r\n')).toBe(false);
+  });
+});
