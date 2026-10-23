@@ -37,6 +37,8 @@ describe('KP Studio in the terminal on the real kernel server', () => {
     const frame = () => ui!.lastFrame() ?? '';
     await until(() => expect(frame()).toMatch(/Thread · ✓ done/), 10_000);
     if (process.env['KP_TUI_FRAME']) process.stdout.write(`\n${frame()}\n`);
-    expect(s().runs[s().activeRunId!]?.patches.length).toBe(2);
+    // `run.state` (shown as done) and `run.done` (which carries the patches) are separate
+    // notifications: wait for the patches rather than assume they arrived with the frame.
+    await until(() => expect(s().runs[s().activeRunId!]?.patches.length).toBe(2), 10_000);
   });
 });
