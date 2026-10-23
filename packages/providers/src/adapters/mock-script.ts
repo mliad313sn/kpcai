@@ -1,4 +1,4 @@
-import type { ChatRequest, TaskGraph, ToolCall, Verdict } from '@kernelpai/core';
+import type { ChatRequest, ToolCall, Verdict } from '@kernelpai/core';
 import { parseToolInput } from '../tool-calls.js';
 import { creationDiff, defaultPlan, jsonMarker, plannerRequest } from './mock-plan.js';
 

@@ -1,11 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
-  ChatMessageSchema,
   TaskTypeSchema,
   type ChatMessage,
   type ProviderDescriptor,
   type StreamEvent,
-  type TaskGraph,
   type Verdict,
 } from '@kernelpai/core';
 import { MockAdapter } from './mock.js';
