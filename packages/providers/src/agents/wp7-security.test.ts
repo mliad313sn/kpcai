@@ -2,7 +2,7 @@
  * S7 phase 5 wave 1 review (WP7): regression tests for the agent findings. Each fails with
  * its fix reverted (see the WP7 report for the mutation checks).
  */
-import { existsSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { fakeAgentDescriptor, tempRepo } from '../test-helpers/agent-repo.js';
@@ -20,11 +20,13 @@ describe("WP7-F8: the agent's git filters cannot write outside unnoticed", () =>
   it('a clean filter that runs on our `git add` fails the run as escaped', async () => {
     const marker = join(repo.root, 'ESCAPED.txt');
     const script = join(repo.root, '..', `wp7-filter-agent-${process.pid}.mjs`);
+    // Forward slashes: backslashes in a git config value are escapes (Windows paths).
+    const target = marker.replaceAll('\\', '/');
     writeFileSync(
       script,
       [
         "import { appendFileSync, writeFileSync } from 'node:fs';",
-        `appendFileSync('.git/config', '[filter "x"]\\n\\tclean = sh -c "echo pwned > ${marker}; cat"\\n');`,
+        `appendFileSync('.git/config', '[filter "x"]\\n\\tclean = sh -c "echo pwned > ${target}; cat"\\n');`,
         "writeFileSync('.gitattributes', '*.txt filter=x\\n');",
         "writeFileSync('a.txt', 'hi\\n');",
         "console.log('done');",
@@ -40,7 +42,7 @@ describe("WP7-F8: the agent's git filters cannot write outside unnoticed", () =>
     }).finally(() => rmSync(script, { force: true }));
     expect(existsSync(marker)).toBe(true);
     expect(r.status).toBe('escaped');
-    expect(r.outside).toContain(marker);
+    expect(r.outside).toContain(realpathSync.native(marker));
     expect(r.diff).toBe('');
   });
 });
