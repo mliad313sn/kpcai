@@ -37,30 +37,32 @@ describe('MockAdapter role scripting: planner', () => {
     const out = await text([
       user('Role: planner\nRequest: add an OAuth state validator with tests'),
     ]);
-    const g = JSON.parse(out) as TaskGraph;
-    expect(g.request).toBe('add an OAuth state validator with tests');
-    expect(g.createdBy).toBe('model');
-    expect(g.nodes.map((n) => [n.id, n.type, n.protocol, n.dependsOn])).toEqual([
+    const g = JSON.parse(out) as { reason: string; nodes: Array<Record<string, unknown>> };
+    expect(g.reason).toBe('mock planner: code template');
+    expect(g.nodes.map((n) => [n['id'], n['type'], n['protocol'], n['dependsOn']])).toEqual([
       ['n1', 'analysis', 'solo', []],
       ['n2', 'code_generation', 'author_critic', ['n1']],
       ['n3', 'test', 'author_critic', ['n2']],
       ['n4', 'critique', 'solo', ['n3']],
     ]);
     for (const n of g.nodes) {
-      expect(TaskTypeSchema.safeParse(n.type).success).toBe(true);
-      expect(n.criticality).toBe('normal');
-      expect(n.title.length).toBeGreaterThan(0);
-      for (const m of n.messages) expect(ChatMessageSchema.safeParse(m).success).toBe(true);
+      expect(TaskTypeSchema.safeParse(n['type']).success).toBe(true);
+      expect(n['criticality']).toBe('normal');
+      expect(String(n['prompt'])).toContain('add an OAuth state validator with tests');
     }
   });
 
   it('plans anything else as one solo node, using the whole prompt as request', async () => {
-    const g = JSON.parse(
-      await text([sys('Role: planner'), user('summarise the meeting')]),
-    ) as TaskGraph;
-    expect(g.request).toBe('summarise the meeting');
+    const g = JSON.parse(await text([sys('Role: planner'), user('summarise the meeting')])) as {
+      nodes: Array<Record<string, unknown>>;
+    };
     expect(g.nodes).toHaveLength(1);
-    expect(g.nodes[0]).toMatchObject({ id: 'n1', protocol: 'solo', dependsOn: [] });
+    expect(g.nodes[0]).toMatchObject({
+      id: 'n1',
+      protocol: 'solo',
+      dependsOn: [],
+      prompt: 'Answer the request: summarise the meeting',
+    });
   });
 });
 
@@ -116,23 +118,28 @@ describe('MockAdapter role scripting: critic and author', () => {
 });
 
 describe('MockAdapter role scripting: judge and voter', () => {
-  it('judge picks the first answer unless [[judge:1]]', async () => {
+  it('judge answers {winner: 1|2}; [[judge:2]] picks the second', async () => {
     expect(JSON.parse(await text([sys('Role: judge'), user('A or B')]))).toEqual({
-      winner: 0,
-      reason: 'mock judge picked answer 0',
-    });
-    expect(JSON.parse(await text([user('Role: judge\nA or B [[judge:1]]')]))).toMatchObject({
       winner: 1,
+      reason: 'mock judge picked answer 1',
+    });
+    expect(JSON.parse(await text([user('Role: judge\nA or B [[judge:2]]')]))).toMatchObject({
+      winner: 2,
     });
   });
 
-  it('voter picks the first option unless [[vote:<option>@<provider>]] targets it', async () => {
+  it('voter answers {choice} with the first option unless [[vote:<option>(@provider)]]', async () => {
     const prompt = 'Role: voter\nPick one.\nOptions: red | green | blue';
-    expect(await text([user(prompt)])).toBe('red');
-    const forced = `${prompt}\n[[vote:blue@v2]]`;
-    expect(await text([user(forced)], 'v2')).toBe('blue');
-    expect(await text([user(forced)], 'v1')).toBe('red');
-    expect(await text([user('Role: voter\n[[vote:green]]')])).toBe('green');
+    expect(JSON.parse(await text([user(prompt)]))).toMatchObject({ choice: 'red' });
+    expect(JSON.parse(await text([user(`${prompt} [[vote:blue@mock]]`)]))).toMatchObject({
+      choice: 'blue',
+    });
+    expect(JSON.parse(await text([user(`${prompt} [[vote:blue@other]]`)]))).toMatchObject({
+      choice: 'red',
+    });
+    expect(JSON.parse(await text([user('Role: voter\n[[vote:green]]')]))).toMatchObject({
+      choice: 'green',
+    });
   });
 
   it('a voter without options falls back to the echo', async () => {

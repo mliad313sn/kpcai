@@ -1,4 +1,4 @@
-import type { GraphNode, TaskGraph, TaskType } from '@kernelpai/core';
+import type { GraphNode, TaskType } from '@kernelpai/core';
 
 /**
  * Finds `[[<tag><head> {json}]]` and returns the head and the raw JSON object text,
@@ -57,29 +57,38 @@ const CODE_STEPS: ReadonlyArray<[TaskType, string, GraphNode['protocol']]> = [
   ['critique', 'Review the result', 'solo'],
 ];
 
+/** A node of the plan JSON the orchestrator's ModelPlanner accepts. */
+export interface MockPlanNode {
+  id: string;
+  title: string;
+  type: TaskType;
+  protocol: GraphNode['protocol'];
+  dependsOn: string[];
+  criticality: 'normal';
+  prompt: string;
+}
+
 /**
- * Default mock plan: analysis → code_generation → test → critique for code
- * requests (a chain, ids n1..n4), otherwise one solo analysis node `n1`.
+ * Default mock plan, in the orchestrator's planner format (`{reason, nodes[{…, prompt}]}`):
+ * analysis → code_generation → test → critique for code requests (a chain, ids n1..n4),
+ * otherwise one solo analysis node `n1`.
  */
-export function defaultPlan(request: string): TaskGraph {
+export function defaultPlan(request: string): { reason: string; nodes: MockPlanNode[] } {
   const steps = CODE_REQUEST.test(request)
     ? CODE_STEPS
     : ([['analysis', 'Answer the request', 'solo']] as const);
-  const nodes: GraphNode[] = steps.map(([type, title, protocol], i) => ({
+  const nodes: MockPlanNode[] = steps.map(([type, title, protocol], i) => ({
     id: `n${i + 1}`,
     title,
     type,
     protocol,
     dependsOn: i === 0 ? [] : [`n${i}`],
     criticality: 'normal',
-    messages: [{ role: 'user', content: `${title}: ${request}` }],
+    prompt: `${title}: ${request}`,
   }));
   return {
-    id: 'mock-plan',
-    request,
-    nodes,
-    createdBy: 'model',
     reason: nodes.length > 1 ? 'mock planner: code template' : 'mock planner: single step',
+    nodes,
   };
 }
 

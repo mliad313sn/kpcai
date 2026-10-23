@@ -53,7 +53,7 @@ function targeted(text: string, tag: string, provider: string): string | undefin
 function planner(scope: Scope): string {
   const marker = jsonMarker(scope.markers, 'plan:');
   if (marker?.json) return marker.json;
-  const plan: TaskGraph = defaultPlan(plannerRequest(scope.lastUser));
+  const plan = defaultPlan(plannerRequest(scope.lastUser));
   return JSON.stringify(plan);
 }
 
@@ -71,20 +71,23 @@ function critic(scope: Scope): string {
   return JSON.stringify(verdict);
 }
 
+/** Judge reply in the orchestrator's format: winner 1 or 2 (`[[judge:2]]` picks the second). */
 function judge(scope: Scope): string {
-  const pick = /\[\[judge:(\d+)\]\]/.exec(scope.markers);
-  const winner = pick ? Number(pick[1]) : 0;
+  const pick = /\[\[judge:([12])\]\]/.exec(scope.markers);
+  const winner = pick ? Number(pick[1]) : 1;
   return JSON.stringify({ winner, reason: `mock judge picked answer ${winner}` });
 }
 
+/** Voter reply in the orchestrator's format: `{"choice": …}`. */
 function voter(scope: Scope): string | undefined {
-  const forced = targeted(scope.markers, 'vote', scope.provider);
-  if (forced) return forced.trim();
+  const forced = targeted(scope.markers, 'vote', scope.provider)?.trim();
   const line = /^Options:\s*(.+)$/m.exec(scope.markers);
-  return line?.[1]
+  const first = line?.[1]
     ?.split('|')
     .map((o) => o.trim())
     .find((o) => o.length > 0);
+  const choice = forced || first;
+  return choice ? JSON.stringify({ choice, reason: `mock voter ${scope.provider}` }) : undefined;
 }
 
 function toolCall(scope: Scope): MockReply | undefined {
