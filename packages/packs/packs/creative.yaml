@@ -1,0 +1,81 @@
+id: creative
+name: Creative writing, music and generative art
+description: >-
+  Fiction, scripts, worldbuilding, lyrics, music and generative art pipelines. Plans draft,
+  get an editorial critique from another model, and revise; your voice stays yours.
+profiles: [novelist, screenwriter, songwriter, musician, generative artist]
+markers:
+  - { glob: '*.fountain', why: Screenplay }
+  - { glob: '*.scriv', why: Scrivener project }
+  - { glob: 'manuscript/**', why: Manuscript folder }
+  - { glob: 'chapters/**', why: Chapters folder }
+  - { glob: '*.ly', why: LilyPond score }
+  - { glob: '*.musicxml', why: MusicXML score }
+  - { glob: '*.mid', optIn: true, why: MIDI file }
+  - { glob: '*.pde', why: Processing sketch }
+  - { glob: '*.scd', why: SuperCollider code }
+plans:
+  - id: draft-revise
+    title: Draft, critique, revise
+    when: [chapter, story, novel, scene, poem, lyrics, script, screenplay, worldbuilding, character]
+    nodes:
+      - {
+          id: context,
+          title: Read the work so far,
+          type: analysis,
+          protocol: solo,
+          tools: [fs.list, fs.read],
+          deliverable: answer,
+          instruction: 'Summarise voice, tense, characters and open threads from the existing files.',
+        }
+      - {
+          id: draft,
+          title: Draft,
+          type: writing,
+          protocol: author_critic,
+          dependsOn: [context],
+          deliverable: report,
+        }
+  - id: generative
+    title: Generative pipeline
+    when: [generative, sketch, shader, processing, p5, supercollider, pattern]
+    nodes:
+      - { id: idea, title: Concept, type: writing, protocol: solo, deliverable: answer }
+      - {
+          id: code,
+          title: Sketch code,
+          type: code_generation,
+          protocol: author_critic,
+          dependsOn: [idea],
+          tools: [fs.list, fs.read],
+          deliverable: patch,
+        }
+proposedTaskTypes:
+  - {
+      id: creative_writing,
+      description: 'Fiction, poetry and scripts judged on voice and craft, not correctness',
+      mapsTo: writing,
+    }
+reviewCriteria:
+  - Keeps the author's voice, tense and point of view.
+  - Continuity with earlier chapters (names, timeline, facts of the world).
+  - Editorial notes are specific and kind; no generic praise.
+tools:
+  - {
+      name: LilyPond,
+      kind: cli,
+      purpose: Engrave scores from text,
+      url: 'https://lilypond.org',
+      verified: false,
+    }
+safety:
+  limits:
+    - Your drafts are yours; nothing is published or shared by KP Studio.
+glossary:
+  - {
+      term: Critic,
+      meaning: 'A second model acting as an editor: it comments, the first one revises.',
+    }
+tips:
+  - Put your chapters in a folder; KP Studio reads them for continuity.
+  - Choose the Solo protocol for quick ideas; it costs less.

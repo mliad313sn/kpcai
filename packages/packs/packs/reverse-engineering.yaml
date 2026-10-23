@@ -1,0 +1,141 @@
+id: reverse-engineering
+name: Reverse engineering
+description: >-
+  Understand binaries, protocols and file formats you are allowed to study: for
+  interoperability, malware analysis, vulnerability research on your own products, and
+  CTF challenges. Work happens inside a declared, authorised scope.
+profiles: [reverse engineer, malware analyst, CTF player, interoperability engineer]
+markers:
+  - { glob: '*.gpr', why: Ghidra project }
+  - { glob: '*.i64', why: IDA database }
+  - { glob: '*.idb', why: IDA database }
+  - { glob: '*.r2', why: radare2 script }
+  - { glob: '*.bndb', why: Binary Ninja database }
+  - { glob: '*.ksy', why: Kaitai Struct format description }
+  - { glob: '*.yar', why: YARA rules }
+  - { glob: '*.bin', optIn: true, why: Raw binary or firmware dump }
+  - { glob: '*.elf', optIn: true, why: ELF binary }
+  - { glob: '*.exe', optIn: true, why: Windows executable }
+  - { glob: '*.dll', optIn: true, why: Windows library }
+  - { glob: '*.so', optIn: true, why: Shared library }
+  - { glob: '*.dylib', optIn: true, why: macOS library }
+  - { glob: '*.apk', optIn: true, why: Android package }
+  - { glob: '*.pcap', optIn: true, why: Packet capture }
+  - { glob: '*.pcapng', optIn: true, why: Packet capture }
+plans:
+  - id: binary-triage
+    title: Binary triage to report
+    when:
+      [
+        reverse,
+        decompile,
+        disassemble,
+        binary,
+        crackme,
+        malware,
+        sample,
+        firmware,
+        ctf,
+        format,
+        protocol,
+      ]
+    nodes:
+      - {
+          id: triage,
+          title: Triage,
+          type: analysis,
+          protocol: solo,
+          tools: [fs.list, 'mcp.ghidra.*', 'mcp.r2.*'],
+          deliverable: report,
+          instruction: 'Identify format, architecture, packers, imports and strings of interest. Work only on targets in the declared scope. Never run the sample.',
+        }
+      - {
+          id: deep,
+          title: Function analysis,
+          type: analysis,
+          protocol: author_critic,
+          dependsOn: [triage],
+          tools: ['mcp.ghidra.*', 'mcp.r2.*'],
+          deliverable: report,
+        }
+      - {
+          id: report,
+          title: Findings report,
+          type: writing,
+          protocol: author_critic,
+          dependsOn: [deep],
+          deliverable: report,
+          instruction: 'Write findings with addresses, evidence and confidence. Separate facts from hypotheses.',
+        }
+proposedTaskTypes:
+  - {
+      id: reverse_engineering,
+      description: Recover structure and behaviour from compiled code or data,
+      mapsTo: analysis,
+    }
+reviewCriteria:
+  - Every claim cites an address, offset or byte pattern.
+  - Hypotheses are labelled as such, with how to confirm them.
+  - Nothing in the report helps evade detection or attack systems outside the scope.
+tools:
+  - {
+      name: GhidraMCP,
+      kind: mcp,
+      purpose: 'Decompile, list functions and rename symbols in Ghidra',
+      url: 'https://github.com/LaurieWired/GhidraMCP',
+      verified: true,
+    }
+  - {
+      name: r2mcp,
+      kind: mcp,
+      purpose: 'Official radare2 MCP server (disassembly, analysis); install with r2pm',
+      verified: true,
+    }
+  - {
+      name: ida-pro-mcp,
+      kind: mcp,
+      purpose: Bridge to IDA Pro (licence required),
+      url: 'https://github.com/mrexodia/ida-pro-mcp',
+      verified: true,
+    }
+  - {
+      name: Kaitai Struct,
+      kind: library,
+      purpose: Describe and parse binary file formats,
+      url: 'https://kaitai.io',
+      verified: false,
+    }
+  - {
+      name: Wireshark / tshark,
+      kind: cli,
+      purpose: Dissect packet captures for protocol work,
+      url: 'https://www.wireshark.org',
+      verified: false,
+    }
+zones:
+  relax:
+    - {
+        allow: 'writeups/**',
+        reason: 'CTF write-ups often name flags "secret"; they are your own notes.',
+      }
+safety:
+  requiresScope: true
+  scopeKinds: [binary, repository, other]
+  preferLocal: true
+  limits:
+    - Only samples and products you own, are licensed to analyse, or that a CTF provides.
+    - KP Studio never executes a sample; dynamic analysis belongs in your isolated lab.
+    - No help to evade antivirus or detection, and no attacks on systems outside the scope.
+    - Malware samples and client binaries are routed to local models when possible.
+glossary:
+  - {
+      term: Scope,
+      meaning: 'The files or targets you are authorised to analyse, the engagement or CTF they belong to, and an expiry date.',
+    }
+  - {
+      term: Opt-in marker,
+      meaning: 'A file such as a lone .exe that only makes this folder a workspace after you say so.',
+    }
+tips:
+  - Declare the scope first; the plan shows it and the journal records it.
+  - 'Models read text today: connect a decompiler through MCP so they see functions, not raw bytes.'

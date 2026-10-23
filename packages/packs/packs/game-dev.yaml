@@ -1,0 +1,99 @@
+id: game-dev
+name: Game creation
+description: >-
+  Make games in Unity, Godot or Unreal: design documents, level and narrative design,
+  asset pipelines and balancing. Outputs range from code to design docs and asset specs.
+profiles: [game developer, game designer, level designer, narrative designer]
+markers:
+  - { glob: project.godot, why: Godot project }
+  - { glob: '*.uproject', why: Unreal project }
+  - { glob: ProjectSettings/ProjectVersion.txt, why: Unity project }
+  - { glob: 'Assets/**', why: Unity assets (with ProjectSettings) }
+  - { glob: ProjectSettings/**, why: Unity project settings }
+  - { glob: '*.tscn', why: Godot scene }
+  - { glob: '*.gd', why: GDScript }
+  - { glob: 'GDD*.md', why: Game design document }
+  - { glob: '*.unity', why: Unity scene }
+plans:
+  - id: game-feature
+    title: Mechanic with a design note
+    when:
+      [mechanic, gameplay, level, enemy, player, physics, shader, prefab, scene, balance, game feel]
+    nodes:
+      - {
+          id: design,
+          title: Design note,
+          type: writing,
+          protocol: solo,
+          tools: [fs.list, fs.read],
+          deliverable: report,
+          instruction: 'Describe the mechanic, its inputs, states and how it should feel before any code.',
+        }
+      - {
+          id: implement,
+          title: Implementation,
+          type: code_generation,
+          protocol: author_critic,
+          dependsOn: [design],
+          tools: [fs.list, fs.read, git.diff],
+          deliverable: patch,
+        }
+  - id: gdd
+    title: Game design document
+    when: [game design document, gdd, narrative, story, worldbuilding, quest, dialogue, economy]
+    nodes:
+      - { id: outline, title: Outline, type: writing, protocol: solo, deliverable: report }
+      - {
+          id: draft,
+          title: Draft the document,
+          type: writing,
+          protocol: author_critic,
+          dependsOn: [outline],
+          deliverable: report,
+        }
+  - id: balance
+    title: Balancing review
+    when: [balance, tuning, difficulty, progression, economy, playtest]
+    nodes:
+      - {
+          id: analyse,
+          title: Analyse the numbers,
+          type: analysis,
+          protocol: author_critic,
+          tools: [fs.list, fs.read],
+          deliverable: report,
+        }
+proposedTaskTypes:
+  - {
+      id: game_design,
+      description: 'Design mechanics, levels, narrative and economy; judged on play, not correctness',
+      mapsTo: writing,
+    }
+reviewCriteria:
+  - Code fits the engine's patterns (Godot nodes, Unity components, Unreal actors).
+  - Design notes state the player experience and failure states, not just features.
+  - Asset references exist in the project; no invented paths.
+tools:
+  - {
+      name: Godot,
+      kind: app,
+      purpose: Open-source engine; scenes and GDScript are text,
+      url: 'https://godotengine.org',
+      verified: false,
+    }
+  - {
+      name: Aseprite,
+      kind: app,
+      purpose: Sprite and pixel-art pipeline,
+      url: 'https://www.aseprite.org',
+      verified: false,
+    }
+safety:
+  limits:
+    - Large meshes, textures and audio are inputs KP Studio reasons about, not files it writes.
+glossary:
+  - { term: GDD, meaning: Game design document; the written spec for a game or feature. }
+  - { term: Game feel, meaning: 'How controls and feedback make the game satisfying to play.' }
+tips:
+  - Scene and script files are text and diff cleanly; binary art and audio do not, so those come as specs.
+  - A design document is a valid output; you do not have to ask for code.

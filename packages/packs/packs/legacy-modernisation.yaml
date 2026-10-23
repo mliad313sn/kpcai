@@ -1,0 +1,117 @@
+id: legacy-modernisation
+name: Legacy code modernisation
+description: >-
+  Understand, port and modernise old code: COBOL and PL/I, C to Rust, Fortran, old
+  build systems. Plans inventory first, then port in small verified steps with
+  equivalence tests.
+profiles: [legacy maintainer, porting engineer, mainframe developer]
+markers:
+  - { glob: '*.cbl', why: COBOL source }
+  - { glob: '*.cob', why: COBOL source }
+  - { glob: '*.cpy', why: COBOL copybook }
+  - { glob: '*.jcl', why: JCL job }
+  - { glob: '*.pli', why: PL/I source }
+  - { glob: '*.f', why: Fortran source }
+  - { glob: '*.f90', why: Fortran source }
+  - { glob: Makefile, why: Make build }
+  - { glob: CMakeLists.txt, why: CMake build }
+  - { glob: configure.ac, why: Autotools build }
+  - { glob: meson.build, why: Meson build }
+  - { glob: '*.vcxproj', why: Visual C++ project }
+  - { glob: '*.c', why: C source }
+  - { glob: '*.h', why: C header }
+plans:
+  - id: port
+    title: Port with equivalence tests
+    when: [port, migrate, convert, rewrite, translate, modernise, modernize, rust, cobol, fortran]
+    nodes:
+      - {
+          id: inventory,
+          title: Inventory,
+          type: analysis,
+          protocol: solo,
+          tools: [fs.list, fs.read],
+          deliverable: report,
+          instruction: 'List the modules, entry points, data layouts and build steps. Flag undefined or platform-specific behaviour.',
+        }
+      - {
+          id: strategy,
+          title: Porting strategy,
+          type: decision,
+          protocol: debate,
+          dependsOn: [inventory],
+          deliverable: report,
+          instruction: 'Choose the order of modules and the boundary (FFI, strangler, full rewrite). Name what must stay bit-for-bit identical.',
+        }
+      - {
+          id: golden,
+          title: Golden tests,
+          type: test,
+          protocol: author_critic,
+          dependsOn: [strategy],
+          tools: [fs.list, fs.read],
+          deliverable: patch,
+          instruction: 'Write tests that capture the current behaviour on representative inputs before anything is ported.',
+        }
+      - {
+          id: port,
+          title: Port one module,
+          type: code_generation,
+          protocol: author_critic,
+          dependsOn: [golden],
+          tools: [fs.list, fs.read, git.diff],
+          deliverable: patch,
+        }
+      - {
+          id: review,
+          title: Equivalence review,
+          type: critique,
+          protocol: solo,
+          dependsOn: [port],
+          tools: [fs.read, git.diff],
+          deliverable: report,
+        }
+proposedTaskTypes:
+  - {
+      id: translation,
+      description: Translate code between languages while keeping behaviour identical,
+      mapsTo: code_generation,
+    }
+reviewCriteria:
+  - Numeric types, rounding and overflow behave as in the original (packed decimal, fixed point).
+  - Character encodings (EBCDIC, code pages) and record layouts are preserved.
+  - Unsafe blocks in Rust are justified and minimal.
+tools:
+  - {
+      name: GnuCOBOL,
+      kind: cli,
+      purpose: Compile and run COBOL locally for golden tests,
+      url: 'https://gnucobol.sourceforge.io',
+      verified: false,
+    }
+  - {
+      name: c2rust,
+      kind: cli,
+      purpose: Mechanical C to unsafe Rust translation as a starting point,
+      url: 'https://github.com/immunant/c2rust',
+      verified: false,
+    }
+  - {
+      name: Bear,
+      kind: cli,
+      purpose: Produce compile_commands.json from a Make build,
+      url: 'https://github.com/rizsotto/Bear',
+      verified: false,
+    }
+glossary:
+  - {
+      term: Golden test,
+      meaning: A test that records what the old code does today so the new code can be checked against it.,
+    }
+  - {
+      term: Strangler,
+      meaning: Replacing a system one piece at a time while the old one keeps running.,
+    }
+tips:
+  - Start with the inventory plan; it reads files but changes nothing.
+  - Large ports cost more; port one module per run and watch the cost band.

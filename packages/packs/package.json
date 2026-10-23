@@ -1,0 +1,25 @@
+{
+  "name": "@kernelpai/packs",
+  "version": "0.0.1",
+  "private": true,
+  "license": "UNLICENSED",
+  "type": "module",
+  "description": "Domain packs: data that adapts KP Studio to a profile (markers, plan hints, zones, glossary, scope) without code forks",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "packs"
+  ],
+  "dependencies": {
+    "@kernelpai/core": "workspace:*",
+    "yaml": "^2.8.0",
+    "zod": "^4.1.0"
+  }
+}

@@ -1,0 +1,113 @@
+id: data-science
+name: Data science and ML
+description: >-
+  Explore datasets, run experiments and report results: notebooks, pipelines, model
+  training and evaluation. Plans explore, then experiment, then report.
+profiles: [data scientist, ML engineer, analyst, statistician]
+markers:
+  - { glob: '*.ipynb', why: Jupyter notebook }
+  - { glob: '*.csv', why: Tabular data }
+  - { glob: '*.parquet', why: Parquet data }
+  - { glob: '*.xlsx', why: Spreadsheet }
+  - { glob: '*.qmd', why: Quarto document }
+  - { glob: '*.Rmd', why: R Markdown }
+  - { glob: dvc.yaml, why: DVC pipeline }
+  - { glob: MLproject, why: MLflow project }
+  - { glob: environment.yml, why: Conda environment }
+  - { glob: 'data/**', why: Data folder }
+plans:
+  - id: explore-experiment-report
+    title: Explore, experiment, report
+    when:
+      [
+        dataset,
+        data,
+        explore,
+        eda,
+        notebook,
+        train,
+        model,
+        experiment,
+        baseline,
+        evaluate,
+        regression,
+        classification,
+        forecast,
+      ]
+    nodes:
+      - {
+          id: explore,
+          title: Explore,
+          type: analysis,
+          protocol: solo,
+          tools: [fs.list, fs.read],
+          deliverable: report,
+          instruction: 'Describe columns, types, missing values, leakage risks and the target. Read samples, not whole files.',
+        }
+      - {
+          id: experiment,
+          title: Experiment,
+          type: code_generation,
+          protocol: author_critic,
+          dependsOn: [explore],
+          tools: [fs.list, fs.read],
+          deliverable: notebook,
+          instruction: 'Propose a baseline and one improvement as notebook cells or a script, with a fixed random seed.',
+        }
+      - {
+          id: report,
+          title: Report,
+          type: writing,
+          protocol: author_critic,
+          dependsOn: [experiment],
+          deliverable: report,
+          instruction: 'Report metrics with uncertainty, what was tried, and the limits of the result.',
+        }
+proposedTaskTypes:
+  - {
+      id: data_analysis,
+      description: 'Explore, clean and model data; judged on statistical soundness',
+      mapsTo: analysis,
+    }
+reviewCriteria:
+  - No leakage between train and test data; the split is stated.
+  - Metrics fit the problem and come with a baseline and uncertainty.
+  - Results are reproducible (seed, versions, data snapshot).
+tools:
+  - {
+      name: Jupyter MCP server,
+      kind: mcp,
+      purpose: 'Read, edit and run notebook cells (Datalayer)',
+      url: 'https://github.com/datalayer/jupyter-mcp-server',
+      verified: true,
+    }
+  - {
+      name: DVC,
+      kind: cli,
+      purpose: Version datasets and pipelines,
+      url: 'https://dvc.org',
+      verified: false,
+    }
+  - {
+      name: MLflow,
+      kind: app,
+      purpose: Track experiments,
+      url: 'https://mlflow.org',
+      verified: false,
+    }
+zones:
+  add: ['**/pii/**', '**/raw-personal/**']
+safety:
+  preferLocal: true
+  personalData: true
+  limits:
+    - Datasets may hold personal data; keep raw personal data in pii/ so no model reads it.
+    - Models see samples and schemas, not whole datasets.
+glossary:
+  - {
+      term: Token,
+      meaning: 'In KP Studio, the unit models are billed in, not a tokenizer output. Asking about tokenizers does not make a task "critical".',
+    }
+tips:
+  - 'Notebook changes come back as cells to paste or a new notebook file; diffs of .ipynb JSON are hard to read.'
+  - Large files are read in chunks; point KP Studio at a sample first.

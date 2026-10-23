@@ -1,0 +1,113 @@
+id: geospatial
+name: GIS and geospatial
+description: >-
+  Work with maps and spatial data: QGIS projects, GeoJSON, shapefiles, GeoPackage,
+  rasters, PostGIS and Python (geopandas, rasterio), and web maps. Location data can be
+  personal data, so privacy zones apply and large rasters are inputs.
+profiles: [GIS analyst, geospatial engineer, cartographer, remote sensing analyst]
+markers:
+  - { glob: '*.qgz', why: QGIS project }
+  - { glob: '*.qgs', why: QGIS project }
+  - { glob: '*.geojson', why: GeoJSON }
+  - { glob: '*.shp', why: Shapefile }
+  - { glob: '*.gpkg', why: GeoPackage }
+  - { glob: '*.kml', why: KML }
+  - { glob: '*.gpx', why: GPS track }
+  - { glob: '*.tif', optIn: true, why: Raster / GeoTIFF (large) }
+  - { glob: '*.tiff', optIn: true, why: Raster / GeoTIFF (large) }
+  - { glob: '*.laz', optIn: true, why: LiDAR point cloud }
+plans:
+  - id: spatial-analysis
+    title: Spatial analysis and map
+    when:
+      [
+        map,
+        spatial,
+        geospatial,
+        gis,
+        buffer,
+        overlay,
+        projection,
+        crs,
+        raster,
+        vector,
+        postgis,
+        geopandas,
+        routing,
+        heatmap,
+      ]
+    nodes:
+      - {
+          id: inspect,
+          title: Inspect data,
+          type: analysis,
+          protocol: solo,
+          tools: [fs.list, fs.read],
+          deliverable: report,
+          instruction: 'Report layers, geometry types, coordinate reference systems and attribute schemas. Read headers and samples, not whole rasters.',
+        }
+      - {
+          id: analyse,
+          title: Analysis script,
+          type: code_generation,
+          protocol: author_critic,
+          dependsOn: [inspect],
+          tools: [fs.list, fs.read, git.diff],
+          deliverable: patch,
+          instruction: 'Write a geopandas or PostGIS script; state the CRS at every step.',
+        }
+      - {
+          id: map,
+          title: Map output,
+          type: writing,
+          protocol: solo,
+          dependsOn: [analyse],
+          deliverable: map,
+          instruction: 'Describe the map or produce the web-map config (Leaflet/MapLibre) for the result.',
+        }
+proposedTaskTypes:
+  - {
+      id: geospatial_analysis,
+      description: 'Analyse and visualise spatial data; judged on correct projections and topology',
+      mapsTo: analysis,
+    }
+reviewCriteria:
+  - Coordinate reference systems are explicit and consistent; no silent reprojection.
+  - Geometry validity and topology are checked (no self-intersections left unhandled).
+  - Personal location data is aggregated or kept local, not sent to cloud models raw.
+tools:
+  - {
+      name: GDAL/OGR,
+      kind: cli,
+      purpose: 'Read, convert and warp spatial data',
+      url: 'https://gdal.org',
+      verified: false,
+    }
+  - {
+      name: geopandas,
+      kind: library,
+      purpose: Vector analysis in Python,
+      url: 'https://geopandas.org',
+      verified: false,
+    }
+  - { name: QGIS, kind: app, purpose: Desktop GIS, url: 'https://qgis.org', verified: false }
+zones:
+  add: ['**/personal-locations/**', '**/gps-tracks/**']
+safety:
+  preferLocal: true
+  personalData: true
+  limits:
+    - Location traces can identify people; keep raw personal tracks local.
+    - Large rasters and point clouds are inputs KP reasons about, not files it rewrites.
+glossary:
+  - {
+      term: CRS,
+      meaning: 'Coordinate reference system: how coordinates map to the Earth. Mixing them silently is the classic GIS bug.',
+    }
+  - {
+      term: Raster,
+      meaning: 'Grid data such as satellite imagery or elevation, usually large and binary.',
+    }
+tips:
+  - Output can be a map or a web-map config, not only a code patch.
+  - Point KP at the headers of a big raster first; it reads samples, not the whole file.

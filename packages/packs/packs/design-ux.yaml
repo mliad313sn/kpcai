@@ -1,0 +1,96 @@
+id: design-ux
+name: Design and UX
+description: >-
+  Design systems, mockups, user flows and accessibility reviews. Plans critique a design
+  against its system and WCAG, and hand engineers a precise spec.
+profiles: [product designer, UX designer, design-system maintainer, accessibility specialist]
+markers:
+  - { glob: '*.fig', why: Figma export }
+  - { glob: '*.sketch', why: Sketch file }
+  - { glob: '*.penpot', why: Penpot file }
+  - { glob: 'tokens.json', why: Design tokens }
+  - { glob: '*.tokens.json', why: Design tokens }
+  - { glob: '.storybook/**', why: Storybook }
+  - { glob: '*.stories.tsx', why: Storybook stories }
+  - { glob: '*.svg', why: Vector assets }
+plans:
+  - id: design-review
+    title: Design and accessibility review
+    when:
+      [
+        design,
+        mockup,
+        wireframe,
+        flow,
+        ux,
+        ui,
+        accessibility,
+        a11y,
+        wcag,
+        contrast,
+        tokens,
+        design system,
+      ]
+    nodes:
+      - {
+          id: audit,
+          title: Audit,
+          type: analysis,
+          protocol: solo,
+          tools: [fs.list, fs.read, 'mcp.figma.*'],
+          deliverable: report,
+          instruction: 'Compare the screens with the design system tokens and components, and with WCAG 2.2 AA.',
+        }
+      - {
+          id: proposal,
+          title: Proposal,
+          type: writing,
+          protocol: author_critic,
+          dependsOn: [audit],
+          deliverable: design,
+          instruction: 'Propose changes as an annotated spec engineers can implement: components, tokens, states, copy.',
+        }
+proposedTaskTypes:
+  - {
+      id: design,
+      description: 'Produce or critique visual and interaction design (flows, screens, tokens)',
+      mapsTo: writing,
+    }
+reviewCriteria:
+  - Uses only existing components and tokens, or names the new ones explicitly.
+  - Colour contrast, focus order, target size and text alternatives meet WCAG 2.2 AA.
+  - Every state is covered (empty, loading, error, long text, right-to-left where relevant).
+tools:
+  - {
+      name: Figma MCP server,
+      kind: mcp,
+      purpose: 'Official Figma server exposing selection, components and variables',
+      url: 'https://developers.figma.com',
+      verified: true,
+    }
+  - {
+      name: axe-core,
+      kind: library,
+      purpose: Automated accessibility checks,
+      url: 'https://github.com/dequelabs/axe-core',
+      verified: false,
+    }
+  - {
+      name: Storybook,
+      kind: app,
+      purpose: Component catalogue to compare against,
+      url: 'https://storybook.js.org',
+      verified: false,
+    }
+safety:
+  limits:
+    - Unreleased designs may be confidential; check your client agreement before using cloud models.
+glossary:
+  - {
+      term: Design tokens,
+      meaning: 'Named values (colours, spacing, type) shared by design and code.',
+    }
+  - { term: Node, meaning: One step of the plan done by one or more models. }
+tips:
+  - 'Models read text today: share frames through the Figma MCP server, or describe them. Image input is planned.'
+  - Output is a spec or annotated proposal, not a code patch, unless you ask for code.

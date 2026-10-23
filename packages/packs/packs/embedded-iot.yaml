@@ -1,0 +1,102 @@
+id: embedded-iot
+name: Embedded and IoT
+description: >-
+  Firmware and embedded systems: PlatformIO, Arduino, Zephyr, ESP-IDF, serial and
+  hardware in the loop. Flashing and anything touching hardware is confirmed first.
+profiles: [firmware developer, embedded engineer, IoT developer]
+markers:
+  - { glob: platformio.ini, why: PlatformIO project }
+  - { glob: '*.ino', why: Arduino sketch }
+  - { glob: prj.conf, why: Zephyr project }
+  - { glob: west.yml, why: Zephyr workspace }
+  - { glob: sdkconfig, why: ESP-IDF config }
+  - { glob: Kconfig, why: Kconfig }
+  - { glob: '*.dts', why: Device tree }
+  - { glob: '*.overlay', why: Device tree overlay }
+  - { glob: '*.ld', why: Linker script }
+  - { glob: CMakeLists.txt, why: CMake (common for Zephyr/ESP-IDF) }
+  - { glob: '*.hex', optIn: true, why: Firmware image }
+  - { glob: '*.uf2', optIn: true, why: Firmware image }
+plans:
+  - id: firmware-feature
+    title: Firmware change with tests
+    when:
+      [
+        firmware,
+        driver,
+        sensor,
+        gpio,
+        i2c,
+        spi,
+        uart,
+        interrupt,
+        rtos,
+        zephyr,
+        arduino,
+        esp32,
+        stm32,
+      ]
+    nodes:
+      - {
+          id: design,
+          title: Design,
+          type: analysis,
+          protocol: solo,
+          tools: [fs.list, fs.read],
+          deliverable: report,
+          instruction: 'Note the MCU, pins, clocks, memory limits and timing constraints before proposing a change.',
+        }
+      - {
+          id: implement,
+          title: Implementation,
+          type: code_generation,
+          protocol: author_critic,
+          dependsOn: [design],
+          tools: [fs.list, fs.read, git.diff],
+          deliverable: patch,
+        }
+      - {
+          id: hosttests,
+          title: Host tests,
+          type: test,
+          protocol: author_critic,
+          dependsOn: [implement],
+          deliverable: patch,
+          instruction: 'Write tests that run on the host (native env) so logic is checked without the board.',
+        }
+reviewCriteria:
+  - Fits the memory and stack budget; no dynamic allocation in interrupt context.
+  - Timing and concurrency (ISRs, RTOS tasks) are reasoned about, not assumed.
+  - Register and pin use matches the datasheet references cited.
+tools:
+  - {
+      name: PlatformIO Core,
+      kind: cli,
+      purpose: 'Build, test and upload firmware; you run uploads yourself',
+      url: 'https://platformio.org',
+      verified: false,
+    }
+  - {
+      name: pyserial,
+      kind: library,
+      purpose: Read the serial log for hardware-in-the-loop checks,
+      url: 'https://github.com/pyserial/pyserial',
+      verified: false,
+    }
+safety:
+  physicalEffects: true
+  limits:
+    - Flashing a board and driving hardware are confirmed every time; test on the host first.
+    - KP Studio proposes code and commands; you run the ones that touch a device.
+glossary:
+  - {
+      term: Hardware in the loop,
+      meaning: 'Testing firmware against the real board instead of only a simulator.',
+    }
+  - {
+      term: Host test,
+      meaning: A test compiled for your computer so logic is checked without the hardware.,
+    }
+tips:
+  - The build is firmware, not a patch alone; apply the diff, then build and flash yourself.
+  - Keep uploads manual; the plan marks any hardware step for confirmation.

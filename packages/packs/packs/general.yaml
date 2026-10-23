@@ -1,0 +1,49 @@
+id: general
+name: General (no specific domain)
+description: >-
+  The pack used when no domain pack matches. It gives a safe, useful first run for any
+  folder: read what is there, propose a small step, and keep everything reviewable.
+profiles: [anyone, unknown domain]
+markers:
+  - { glob: README, why: A described folder }
+  - { glob: README.md, why: A described folder }
+  - { glob: '.kpstudio/**', why: KP Studio project config }
+plans:
+  - id: understand
+    title: Understand, then propose
+    when:
+      [help, what, how, start, explain, understand, look, analyse, analyze, summarise, summarize]
+    nodes:
+      - {
+          id: look,
+          title: Look around,
+          type: analysis,
+          protocol: solo,
+          tools: [fs.list, fs.read],
+          deliverable: report,
+          instruction: 'Describe what this folder contains and what the person might want to do. Read, do not change.',
+        }
+      - {
+          id: propose,
+          title: Propose a step,
+          type: analysis,
+          protocol: solo,
+          dependsOn: [look],
+          deliverable: answer,
+          instruction: 'Suggest one concrete next step and what it would cost.',
+        }
+reviewCriteria:
+  - Read-only until the person asks for a change.
+  - Plain language; no assumption about the domain.
+tools: []
+safety:
+  limits:
+    - This is the fallback pack; install or write a domain pack for a better fit.
+glossary:
+  - {
+      term: Pack,
+      meaning: 'A small file that teaches KP Studio about your kind of work. See docs/adoption/PACK-AUTHORING.md.',
+    }
+tips:
+  - No domain pack matched this folder. You can write one in a few lines; see the authoring guide.
+  - Run detectPacks to see which packs would fit once you add files.

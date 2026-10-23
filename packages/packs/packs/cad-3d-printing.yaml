@@ -1,0 +1,120 @@
+id: cad-3d-printing
+name: CAD, 3D printing and making
+description: >-
+  Parametric CAD and 3D printing: OpenSCAD, CadQuery, FreeCAD macros, STL/3MF/STEP
+  meshes, slicer profiles and G-code review, and printer firmware config. Outputs are
+  models and print settings, not code patches.
+profiles: [maker, product designer, mechanical hobbyist, 3D printing enthusiast]
+markers:
+  - { glob: '*.scad', why: OpenSCAD model }
+  - { glob: '*.FCStd', why: FreeCAD document }
+  - { glob: '*.step', why: STEP model }
+  - { glob: '*.stp', why: STEP model }
+  - { glob: 'cadquery*.py', why: CadQuery script }
+  - { glob: '*.3mf', why: 3MF print project }
+  - { glob: '*.ini', why: Slicer profile }
+  - { glob: printer.cfg, why: Klipper configuration }
+  - { glob: 'Configuration.h', why: Marlin configuration }
+  - { glob: '*.stl', optIn: true, why: 'Mesh (binary, large)' }
+  - { glob: '*.gcode', optIn: true, why: G-code }
+plans:
+  - id: model
+    title: Parametric model
+    when:
+      [model, part, bracket, enclosure, openscad, cadquery, freecad, parametric, tolerance, fillet]
+    nodes:
+      - {
+          id: spec,
+          title: Spec,
+          type: analysis,
+          protocol: solo,
+          tools: [fs.list, fs.read],
+          deliverable: report,
+          instruction: 'Capture dimensions, tolerances, materials and the printer/process before modelling.',
+        }
+      - {
+          id: build,
+          title: Model script,
+          type: code_generation,
+          protocol: author_critic,
+          dependsOn: [spec],
+          tools: [fs.list, fs.read, git.diff],
+          deliverable: model3d,
+          instruction: 'Produce a parametric OpenSCAD or CadQuery script with named parameters.',
+        }
+  - id: print-settings
+    title: Slicer and print review
+    when:
+      [
+        slicer,
+        print settings,
+        cura,
+        prusaslicer,
+        orcaslicer,
+        gcode,
+        g-code,
+        klipper,
+        marlin,
+        adhesion,
+        stringing,
+        warping,
+      ]
+    nodes:
+      - {
+          id: review,
+          title: Review settings,
+          type: analysis,
+          protocol: author_critic,
+          tools: [fs.list, fs.read],
+          deliverable: config,
+          instruction: 'Review the slicer profile or G-code header for the material and printer; suggest settings, do not re-emit the whole G-code.',
+        }
+proposedTaskTypes:
+  - {
+      id: cad_modelling,
+      description: 'Produce parametric 3D models and print settings; judged on manufacturability',
+      mapsTo: code_generation,
+    }
+reviewCriteria:
+  - Dimensions and tolerances suit the stated process (FDM, resin, CNC).
+  - Overhangs, wall thickness and supports are considered for printability.
+  - G-code advice never raises temperatures or disables safety features beyond the hardware's limits.
+tools:
+  - {
+      name: OpenSCAD,
+      kind: app,
+      purpose: Render parametric models from script,
+      url: 'https://openscad.org',
+      verified: false,
+    }
+  - {
+      name: CadQuery,
+      kind: library,
+      purpose: Parametric CAD in Python,
+      url: 'https://github.com/CadQuery/cadquery',
+      verified: false,
+    }
+  - {
+      name: PrusaSlicer,
+      kind: app,
+      purpose: Slice models to G-code,
+      url: 'https://www.prusa3d.com/prusaslicer',
+      verified: false,
+    }
+safety:
+  physicalEffects: true
+  limits:
+    - Printer firmware controls heaters and motors; never disable thermal runaway protection or endstops.
+    - G-code and firmware changes are confirmed; you flash and print yourself.
+glossary:
+  - {
+      term: Parametric model,
+      meaning: 'A model defined by named dimensions you can change, not a fixed mesh.',
+    }
+  - {
+      term: G-code,
+      meaning: The instructions a printer or CNC follows. KP reviews it rather than rewriting it wholesale.,
+    }
+tips:
+  - STL/3MF meshes are binary inputs; KP reasons about them but writes scripts and settings, not meshes.
+  - Keep a model parametric so you can adjust it without re-prompting.

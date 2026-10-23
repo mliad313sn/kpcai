@@ -1,0 +1,101 @@
+id: smart-home
+name: Home assistant and smart home
+description: >-
+  Design and tune a local smart home: Home Assistant automations, ESPHome, Node-RED,
+  MQTT and Zigbee/Matter devices, local voice. Privacy stays on the home network, and
+  anything that actuates a device is simulated and confirmed first.
+profiles: [smart home builder, home automation hobbyist, self-hoster]
+markers:
+  - { glob: configuration.yaml, why: Home Assistant config }
+  - { glob: automations.yaml, why: Home Assistant automations }
+  - { glob: 'esphome/**', why: ESPHome configs }
+  - { glob: '*.yaml', why: YAML config }
+  - { glob: 'node-red/**', why: Node-RED flows }
+  - { glob: flows.json, why: Node-RED flows }
+  - { glob: '.storage/**', optIn: true, why: Home Assistant state (may hold tokens) }
+plans:
+  - id: automation
+    title: Automation with a dry run
+    when:
+      [
+        automation,
+        automate,
+        trigger,
+        scene,
+        esphome,
+        mqtt,
+        zigbee,
+        matter,
+        sensor,
+        light,
+        thermostat,
+        lock,
+        alarm,
+        voice,
+      ]
+    nodes:
+      - {
+          id: design,
+          title: Design,
+          type: analysis,
+          protocol: solo,
+          tools: [fs.list, fs.read],
+          deliverable: report,
+          instruction: 'List the entities and devices involved, the triggers and the safe failure state.',
+        }
+      - {
+          id: write,
+          title: Automation,
+          type: code_generation,
+          protocol: author_critic,
+          dependsOn: [design],
+          tools: [fs.list, fs.read, git.diff],
+          deliverable: config,
+        }
+      - {
+          id: dryrun,
+          title: Dry-run plan,
+          type: analysis,
+          protocol: solo,
+          dependsOn: [write],
+          deliverable: checklist,
+          instruction: 'Describe how to test this in a simulation or with a harmless device before it controls locks, heating or alarms.',
+        }
+reviewCriteria:
+  - Devices that actuate (locks, heating, alarms, valves) have a safe default and a manual override.
+  - No token, API key or Wi-Fi secret is written into a file a model reads.
+  - Automations fail safe when a sensor is unavailable.
+tools:
+  - {
+      name: Home Assistant,
+      kind: app,
+      purpose: Local home automation hub,
+      url: 'https://www.home-assistant.io',
+      verified: false,
+    }
+  - {
+      name: ESPHome,
+      kind: app,
+      purpose: Firmware for ESP devices from YAML,
+      url: 'https://esphome.io',
+      verified: false,
+    }
+zones:
+  add: ['secrets.yaml', '.storage/**']
+safety:
+  physicalEffects: true
+  preferLocal: true
+  personalData: true
+  limits:
+    - Anything that moves or switches a physical device is simulated and confirmed first.
+    - Home network secrets stay local; prefer local models for your configuration.
+    - secrets.yaml and .storage are forbidden zones this pack adds.
+glossary:
+  - { term: Dry run, meaning: 'Testing an automation without it actually controlling a device.' }
+  - {
+      term: Fail safe,
+      meaning: 'What happens when something is unavailable, chosen so the home stays safe.',
+    }
+tips:
+  - Keep tokens in secrets.yaml; this pack marks it forbidden so no model reads it.
+  - The plan always adds a dry-run step before an automation touches a lock, heater or alarm.

@@ -1,0 +1,140 @@
+id: security-defensive
+name: Security operations and GRC
+description: >-
+  Defensive security and governance: detection rules, incident response timelines,
+  threat models, audits and policy writing.
+profiles: [SOC analyst, detection engineer, incident responder, GRC analyst, security architect]
+markers:
+  - { glob: '*.yar', why: YARA rules }
+  - { glob: 'sigma/**', why: Sigma rules }
+  - { glob: 'detections/**', why: Detection rules }
+  - { glob: 'rules/**', why: Detection rules }
+  - { glob: '*.kql', why: KQL queries }
+  - { glob: '*.spl', why: Splunk searches }
+  - { glob: 'playbooks/**', why: Response playbooks }
+  - { glob: 'threat-model*', why: Threat model }
+  - { glob: 'policies/**', why: Policies }
+  - { glob: '*.evtx', optIn: true, why: Windows event log }
+plans:
+  - id: detection
+    title: Detection rule with tests
+    when: [detection, detect, sigma, yara, kql, splunk, rule, alert, hunt]
+    nodes:
+      - {
+          id: research,
+          title: Behaviour analysis,
+          type: analysis,
+          protocol: solo,
+          tools: [fs.list, fs.read],
+          deliverable: report,
+        }
+      - {
+          id: rule,
+          title: Rule,
+          type: code_generation,
+          protocol: author_critic,
+          dependsOn: [research],
+          tools: [fs.list, fs.read],
+          deliverable: patch,
+        }
+      - {
+          id: cases,
+          title: Test cases,
+          type: test,
+          protocol: author_critic,
+          dependsOn: [rule],
+          deliverable: patch,
+          instruction: 'Write true-positive and false-positive samples for the rule.',
+        }
+  - id: incident
+    title: Incident timeline and report
+    when: [incident, timeline, forensics, triage, postmortem, breach]
+    nodes:
+      - {
+          id: timeline,
+          title: Timeline,
+          type: analysis,
+          protocol: author_critic,
+          tools: [fs.list, fs.read],
+          deliverable: report,
+        }
+      - {
+          id: report,
+          title: Incident report,
+          type: writing,
+          protocol: author_critic,
+          dependsOn: [timeline],
+          deliverable: report,
+        }
+  - id: governance
+    title: Threat model, audit or policy
+    when: [threat model, stride, audit, policy, iso 27001, soc 2, nis2, dora, gdpr, control]
+    nodes:
+      - {
+          id: assess,
+          title: Assessment,
+          type: analysis,
+          protocol: solo,
+          tools: [fs.list, fs.read],
+          deliverable: report,
+        }
+      - {
+          id: draft,
+          title: Draft,
+          type: writing,
+          protocol: author_critic,
+          dependsOn: [assess],
+          deliverable: report,
+        }
+reviewCriteria:
+  - Rules name the data source, fields and expected false positives.
+  - Incident timelines cite the log line or artefact behind each event.
+  - Policies are testable statements with an owner and a review date.
+tools:
+  - {
+      name: Sigma,
+      kind: library,
+      purpose: Generic detection rule format and converters,
+      url: 'https://github.com/SigmaHQ/sigma',
+      verified: false,
+    }
+  - {
+      name: Semgrep MCP server,
+      kind: mcp,
+      purpose: Static analysis rules through MCP,
+      verified: false,
+    }
+  - {
+      name: Timesketch,
+      kind: app,
+      purpose: Collaborative forensic timelines,
+      url: 'https://timesketch.org',
+      verified: false,
+    }
+zones:
+  relax:
+    - {
+        allow: 'detections/**',
+        reason: 'Rule names such as aws_secret_access.yml describe what they detect; they hold no secret.',
+      }
+    - { allow: 'sigma/**', reason: Sigma rules are named after the secrets they detect. }
+    - {
+        allow: 'policies/**',
+        reason: 'Policy documents such as credentials_policy.md are prose, not credentials.',
+      }
+    - {
+        allow: 'runbooks/**',
+        reason: 'Runbooks like client_secret_rotation.md describe procedures.',
+      }
+safety:
+  preferLocal: true
+  personalData: true
+  limits:
+    - Incident evidence can hold personal data; prefer local models for raw logs.
+glossary:
+  - {
+      term: Forbidden zone,
+      meaning: 'Files no model may read. This pack asks to exempt rule and policy folders from the name rule "*secret*", never real key files.',
+    }
+tips:
+  - Approve the zone relaxations once; the plan lists them so reviewers can see them.

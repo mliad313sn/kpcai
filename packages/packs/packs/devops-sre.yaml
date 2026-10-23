@@ -1,0 +1,95 @@
+id: devops-sre
+name: Automation, DevOps and SRE
+description: >-
+  Infrastructure as code, CI pipelines, scripts and runbooks. Plans review changes for
+  blast radius and write the runbook alongside the change.
+profiles: [DevOps engineer, SRE, platform engineer, automation engineer]
+markers:
+  - { glob: '*.tf', why: Terraform }
+  - { glob: '*.tfvars', why: Terraform variables }
+  - { glob: Dockerfile, why: Docker image }
+  - { glob: docker-compose.yml, why: Docker Compose }
+  - { glob: compose.yaml, why: Docker Compose }
+  - { glob: '*.yaml', why: 'YAML config (Kubernetes, CI)' }
+  - { glob: Chart.yaml, why: Helm chart }
+  - { glob: 'playbook*.yml', why: Ansible playbook }
+  - { glob: '.github/workflows/**', why: GitHub Actions }
+  - { glob: '.gitlab-ci.yml', why: GitLab CI }
+  - { glob: Jenkinsfile, why: Jenkins pipeline }
+  - { glob: Pulumi.yaml, why: Pulumi project }
+  - { glob: Taskfile.yml, why: Task runner }
+plans:
+  - id: iac-change
+    title: Infra change with a runbook
+    when:
+      [
+        terraform,
+        ansible,
+        kubernetes,
+        k8s,
+        helm,
+        pipeline,
+        ci,
+        deploy,
+        infra,
+        infrastructure,
+        playbook,
+        workflow,
+        runbook,
+      ]
+    nodes:
+      - {
+          id: plan,
+          title: Plan the change,
+          type: analysis,
+          protocol: solo,
+          tools: [fs.list, fs.read],
+          deliverable: report,
+          instruction: 'State the resources affected, the blast radius and the rollback before proposing edits.',
+        }
+      - {
+          id: change,
+          title: Change,
+          type: code_generation,
+          protocol: author_critic,
+          dependsOn: [plan],
+          tools: [fs.list, fs.read, git.diff],
+          deliverable: patch,
+        }
+      - {
+          id: runbook,
+          title: Runbook,
+          type: writing,
+          protocol: author_critic,
+          dependsOn: [change],
+          deliverable: report,
+          instruction: 'Write apply steps, checks, and a rollback a tired on-call engineer can follow at 3am.',
+        }
+reviewCriteria:
+  - Blast radius and rollback are explicit; no unbounded destroy or force.
+  - Secrets come from a vault or variables, never literals in the file.
+  - Idempotent where the tool expects it (Ansible, Terraform).
+tools:
+  - {
+      name: Terraform MCP server,
+      kind: mcp,
+      purpose: 'Provider docs, modules and policies from the registry (HashiCorp)',
+      url: 'https://github.com/hashicorp/terraform-mcp-server',
+      verified: true,
+    }
+  - {
+      name: tflint,
+      kind: cli,
+      purpose: Lint Terraform for errors and bad practice,
+      url: 'https://github.com/terraform-linters/tflint',
+      verified: false,
+    }
+safety:
+  physicalEffects: true
+  limits:
+    - apply, deploy and destroy are confirmed every time; KP Studio writes the plan, you run it.
+glossary:
+  - { term: Blast radius, meaning: 'How much breaks if this change is wrong.' }
+  - { term: Runbook, meaning: Step-by-step instructions to carry out or reverse an operation. }
+tips:
+  - This pack writes the runbook with the change, so the review and the rollback ship together.

@@ -1,0 +1,51 @@
+id: regulated-airgapped
+name: Regulated and air-gapped teams
+description: >-
+  For teams that may not send code or data to cloud providers: local models only,
+  sensitive paths kept local, and an emphasis on what the journal can prove.
+profiles: [regulated team, air-gapped team, public sector, healthcare, finance]
+markers:
+  - { glob: '.kpstudio/**', why: KP Studio project config }
+  - { glob: COMPLIANCE.md, why: Compliance notes }
+  - { glob: 'sbom*.json', why: Software bill of materials }
+  - { glob: '*.spdx', why: SPDX SBOM }
+plans:
+  - id: local-only
+    title: Local-only task
+    when: [air-gapped, airgap, offline, confidential, classified, on-prem, local only, sovereign]
+    nodes:
+      - {
+          id: work,
+          title: Work locally,
+          type: analysis,
+          protocol: solo,
+          tools: [fs.list, fs.read],
+          deliverable: report,
+          instruction: 'Use local models only. State any step that would need a cloud model so the user can decide.',
+        }
+reviewCriteria:
+  - No step sends code or data off the machine.
+  - Any external dependency is named so it can be vetted.
+tools:
+  - {
+      name: Ollama,
+      kind: app,
+      purpose: Run local models so nothing leaves the machine,
+      url: 'https://ollama.com',
+      verified: false,
+    }
+safety:
+  preferLocal: true
+  personalData: true
+  limits:
+    - This pack assumes local models; pair it with --local-only (or an air-gap profile when phase 6 ships R-602).
+    - Credential and key files stay forbidden; this pack never relaxes them.
+glossary:
+  - { term: Air-gap, meaning: 'No connection to outside networks. Only local models are used.' }
+  - {
+      term: Journal,
+      meaning: 'A tamper-evident record of what was done, which auditors can verify.',
+    }
+tips:
+  - Run with local models; the plan shows if any node would otherwise want a cloud model.
+  - Nothing here relaxes the forbidden zones for keys or .env files.

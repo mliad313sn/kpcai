@@ -23,6 +23,9 @@
       "path": "packages/tools"
     },
     {
+      "path": "packages/packs"
+    },
+    {
       "path": "packages/orchestrator"
     },
     {

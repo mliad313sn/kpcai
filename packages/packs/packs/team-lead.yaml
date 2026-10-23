@@ -1,0 +1,50 @@
+id: team-lead
+name: Team lead and oversight
+description: >-
+  For leads and managers who care about cost, risk and evidence rather than writing code.
+  Plans produce read-only reviews, cost summaries and decision records from the journal.
+profiles: [team lead, engineering manager, tech lead, product owner]
+markers:
+  - { glob: '.kpstudio/**', why: KP Studio project config }
+  - { glob: 'ADR*/**', why: Architecture decision records }
+  - { glob: 'docs/**', why: Project docs }
+  - { glob: CODEOWNERS, why: Ownership map }
+plans:
+  - id: oversight
+    title: Review and cost summary
+    when: [review, oversight, cost, budget, risk, decision, adr, summary, audit, status]
+    nodes:
+      - {
+          id: assess,
+          title: Assess,
+          type: analysis,
+          protocol: solo,
+          tools: [fs.list, fs.read, git.log, git.diff],
+          deliverable: report,
+          instruction: 'Summarise what changed, the risks, and the cost, from the repository and journal. Read only; propose nothing destructive.',
+        }
+      - {
+          id: decision,
+          title: Decision record,
+          type: writing,
+          protocol: author_critic,
+          dependsOn: [assess],
+          deliverable: report,
+          instruction: 'Write a one-page decision record: context, options, choice, cost and who decided.',
+        }
+reviewCriteria:
+  - Read-only; the plan proposes no change to the code.
+  - Cost and risk statements come from the journal, not estimates.
+tools: []
+safety:
+  limits:
+    - This pack reviews and reports; it does not change code or run commands.
+glossary:
+  - { term: Decision record, meaning: 'A short, dated note of a choice and why it was made.' }
+  - {
+      term: Verification ROI,
+      meaning: 'What the cross-model reviews cost versus the issues they caught.',
+    }
+tips:
+  - Point this at a finished run; it reads the journal and writes a summary, not a patch.
+  - Give reviewers and viewers free seats (Sponsor Q-6); they never need to touch code.

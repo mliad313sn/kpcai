@@ -1,0 +1,77 @@
+id: research-writing
+name: Research, analysis and writing
+description: >-
+  Documents grounded in sources: literature reviews, analyst notes, reports with
+  citations. Plans gather and check sources, then draft, then verify every claim.
+profiles: [researcher, analyst, technical writer, journalist]
+markers:
+  - { glob: '*.md', why: Markdown documents }
+  - { glob: '*.tex', why: LaTeX document }
+  - { glob: '*.bib', why: BibTeX references }
+  - { glob: references.json, why: CSL references }
+  - { glob: '*.typ', why: Typst document }
+  - { glob: '*.adoc', why: AsciiDoc }
+  - { glob: 'sources/**', why: Sources folder }
+  - { glob: '*.rqd', why: Research data }
+plans:
+  - id: sourced-document
+    title: Sourced document
+    when:
+      [report, review, literature, survey, analysis, brief, article, cite, citation, sources, memo]
+    nodes:
+      - {
+          id: gather,
+          title: Gather sources,
+          type: research,
+          protocol: solo,
+          tools: [fs.list, fs.read],
+          deliverable: report,
+          instruction: 'List the sources available locally and what each supports. Do not invent citations.',
+        }
+      - {
+          id: draft,
+          title: Draft,
+          type: writing,
+          protocol: author_critic,
+          dependsOn: [gather],
+          deliverable: report,
+        }
+      - {
+          id: verify,
+          title: Claim check,
+          type: critique,
+          protocol: solo,
+          dependsOn: [draft],
+          tools: [fs.read],
+          deliverable: report,
+          instruction: 'Check every factual claim against a cited source; flag any that is unsupported.',
+        }
+reviewCriteria:
+  - Every claim traces to a source; nothing is fabricated or mis-cited.
+  - Quotes are accurate and attributed; paraphrase is distinguished from quotation.
+  - Uncertainty and disagreement in the sources are shown, not smoothed over.
+tools:
+  - {
+      name: Zotero,
+      kind: app,
+      purpose: Reference manager; a community MCP server exists,
+      verified: false,
+    }
+  - {
+      name: Pandoc,
+      kind: cli,
+      purpose: Convert between document formats with citations,
+      url: 'https://pandoc.org',
+      verified: false,
+    }
+safety:
+  limits:
+    - KP Studio uses the sources you provide; it does not browse the web on its own until you connect a tool.
+glossary:
+  - {
+      term: Claim check,
+      meaning: 'A pass that verifies each statement against a source instead of trusting the draft.',
+    }
+tips:
+  - Put PDFs and notes in sources/; the plan reads them and refuses to invent citations.
+  - Output is a document, not a code patch.

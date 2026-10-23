@@ -1,0 +1,58 @@
+id: learning
+name: Learning and non-developer creators
+description: >-
+  For students, learners and people who do not write code for a living. Plain language,
+  one step at a time, explanations before actions, and a gentle first run.
+profiles: [student, learner, hobbyist, non-developer creator]
+markers:
+  - { glob: 'README.md', why: A described project }
+  - { glob: 'notes/**', why: Notes folder }
+  - { glob: 'homework/**', why: Homework folder }
+  - { glob: '*.md', why: Markdown notes }
+plans:
+  - id: explain-then-do
+    title: Explain, then do a small step
+    when:
+      [explain, learn, understand, how do i, teach, help me, what is, example, tutorial, beginner]
+    nodes:
+      - {
+          id: explain,
+          title: Explain,
+          type: writing,
+          protocol: solo,
+          deliverable: answer,
+          instruction: 'Explain in plain language with a short example. Avoid jargon; define any term you must use.',
+        }
+      - {
+          id: step,
+          title: One small step,
+          type: analysis,
+          protocol: solo,
+          dependsOn: [explain],
+          tools: [fs.list, fs.read],
+          deliverable: answer,
+          instruction: 'Suggest one concrete next step and what to check after it.',
+        }
+reviewCriteria:
+  - Plain language; every technical term is defined on first use.
+  - One step at a time; no large change dumped at once.
+tools: []
+safety:
+  limits:
+    - Nothing runs or is written without showing you first and asking.
+glossary:
+  - {
+      term: Model,
+      meaning: 'An AI that answers. KP Studio can use several and have them check each other.',
+    }
+  - {
+      term: Plan,
+      meaning: 'The list of steps KP Studio will take. You see it and approve it before anything happens.',
+    }
+  - {
+      term: Cost,
+      meaning: 'What the AI providers charge. KP Studio shows it before you spend, and you can use free local models.',
+    }
+tips:
+  - Start with the balanced or économe profile; économe prefers free local models.
+  - You can read the plan and stop at any point; nothing is irreversible without confirmation.

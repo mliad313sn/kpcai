@@ -1,0 +1,90 @@
+id: security-offensive
+name: Authorised penetration testing
+description: >-
+  Plan and document authorised penetration tests and red-team exercises within a
+  declared scope: recon notes, test plans, finding write-ups and retest checklists.
+profiles: [penetration tester, red teamer, bug bounty hunter]
+markers:
+  - { glob: 'scope.md', why: Engagement scope }
+  - { glob: 'rules-of-engagement*', why: Rules of engagement }
+  - { glob: '*.nessus', why: Nessus export }
+  - { glob: '*.burp', why: Burp project }
+  - { glob: 'nmap*.xml', why: Nmap results }
+  - { glob: 'findings/**', why: Findings folder }
+plans:
+  - id: engagement
+    title: Findings to report
+    when: [pentest, penetration, red team, engagement, finding, findings, recon, retest, bug bounty]
+    nodes:
+      - {
+          id: review_scope,
+          title: Scope check,
+          type: analysis,
+          protocol: solo,
+          tools: [fs.list, fs.read],
+          deliverable: checklist,
+          instruction: 'Restate the authorised targets and exclusions. Refuse any step on a target outside them.',
+        }
+      - {
+          id: analyse,
+          title: Analyse results,
+          type: analysis,
+          protocol: author_critic,
+          dependsOn: [review_scope],
+          tools: [fs.list, fs.read],
+          deliverable: report,
+        }
+      - {
+          id: write,
+          title: Findings report,
+          type: writing,
+          protocol: author_critic,
+          dependsOn: [analyse],
+          deliverable: report,
+          instruction: 'For each finding: affected asset, evidence, impact, severity with rationale, remediation, retest steps.',
+        }
+proposedTaskTypes:
+  - {
+      id: security_assessment,
+      description: Assess a system within an authorised scope and document findings,
+      mapsTo: analysis,
+    }
+reviewCriteria:
+  - Every finding is on an in-scope asset and has reproducible evidence.
+  - Severity follows a stated scale (for example CVSS) with a rationale.
+  - The report contains no live credentials or customer personal data.
+tools:
+  - {
+      name: Burp Suite MCP server,
+      kind: mcp,
+      purpose: Official PortSwigger extension exposing Burp to MCP clients,
+      url: 'https://github.com/PortSwigger/mcp-server',
+      verified: true,
+    }
+  - {
+      name: Nmap,
+      kind: cli,
+      purpose: Network discovery you run yourself; KP reads its XML output,
+      url: 'https://nmap.org',
+      verified: false,
+    }
+zones:
+  add: ['loot/**', 'captured-credentials/**']
+safety:
+  requiresScope: true
+  scopeKinds: [host, network, url]
+  preferLocal: true
+  limits:
+    - Only targets in the signed scope, until its expiry date.
+    - KP Studio plans and documents; it does not launch scans or exploits on its own.
+    - No techniques to evade detection, persist or move beyond the agreed scope.
+    - Captured credentials and loot never leave the machine.
+glossary:
+  - {
+      term: Rules of engagement,
+      meaning: 'The signed agreement saying what may be tested, when, and how.',
+    }
+  - { term: Retest, meaning: A second test that checks a finding was fixed. }
+tips:
+  - Keep loot and captured credentials in loot/; that folder is never sent to any model.
+  - The engagement reference and expiry appear in every plan and in the journal.

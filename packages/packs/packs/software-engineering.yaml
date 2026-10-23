@@ -1,0 +1,96 @@
+id: software-engineering
+name: Software engineering
+description: >-
+  Build and change applications: backend services, web front ends and mobile apps.
+  Plans design first, then code and tests, each reviewed by a model from another provider.
+profiles: [backend developer, frontend developer, mobile developer]
+markers:
+  - { glob: package.json, why: Node.js project }
+  - { glob: pyproject.toml, why: Python project }
+  - { glob: requirements.txt, why: Python project }
+  - { glob: Cargo.toml, why: Rust project }
+  - { glob: go.mod, why: Go module }
+  - { glob: pom.xml, why: Maven project }
+  - { glob: build.gradle, why: Gradle project }
+  - { glob: build.gradle.kts, why: Gradle project }
+  - { glob: '*.csproj', why: .NET project }
+  - { glob: '*.sln', why: .NET solution }
+  - { glob: Gemfile, why: Ruby project }
+  - { glob: composer.json, why: PHP project }
+  - { glob: pubspec.yaml, why: Flutter / Dart app }
+  - { glob: '*.xcodeproj', why: Xcode project }
+  - { glob: Package.swift, why: Swift package }
+  - { glob: AndroidManifest.xml, why: Android app }
+  - { glob: deno.json, why: Deno project }
+plans:
+  - id: feature
+    title: Feature with tests
+    when: [add, implement, feature, endpoint, screen, component, refactor, fix, bug]
+    nodes:
+      - {
+          id: design,
+          title: Design,
+          type: analysis,
+          protocol: solo,
+          tools: [fs.list, fs.read, git.status],
+          deliverable: answer,
+          instruction: 'Read the code that is affected. Propose files, interfaces and risks.',
+        }
+      - {
+          id: implement,
+          title: Implementation,
+          type: code_generation,
+          protocol: author_critic,
+          dependsOn: [design],
+          tools: [fs.list, fs.read, git.diff],
+          deliverable: patch,
+        }
+      - {
+          id: tests,
+          title: Tests,
+          type: test,
+          protocol: author_critic,
+          dependsOn: [implement],
+          tools: [fs.list, fs.read],
+          deliverable: patch,
+        }
+      - {
+          id: review,
+          title: Review,
+          type: critique,
+          protocol: solo,
+          dependsOn: [implement, tests],
+          tools: [fs.read, git.diff],
+          deliverable: report,
+        }
+reviewCriteria:
+  - The change follows the conventions already used in the repository.
+  - Tests cover the new behaviour and at least one failure path.
+  - No secret, key or personal data is added to the code.
+tools:
+  - {
+      name: GitHub MCP server,
+      kind: mcp,
+      purpose: 'Issues, pull requests and code search on GitHub',
+      url: 'https://github.com/github/github-mcp-server',
+      verified: true,
+    }
+  - {
+      name: Playwright,
+      kind: library,
+      purpose: Browser tests and screenshots of changed screens,
+      url: 'https://playwright.dev',
+      verified: true,
+    }
+glossary:
+  - {
+      term: Patch,
+      meaning: 'A proposed change to files, shown as a diff. Nothing is written until you apply it.',
+    }
+  - {
+      term: Critic,
+      meaning: A second model from another provider that reviews the work before you see it.,
+    }
+tips:
+  - Ask for one feature at a time; the plan shows each step and its cost before anything runs.
+  - Patches are only applied with --apply and after the critic approved them.
