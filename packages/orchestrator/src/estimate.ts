@@ -14,8 +14,9 @@ import {
   type StepContext,
   type StepEstimate,
 } from './estimate-steps.js';
+import { sumBands, type CostBand, type SpreadFn } from './band.js';
 import { effectiveProtocol, upgradeReason } from './runner.js';
-import { DEFAULT_MAX_REVISIONS, DEFAULT_VOTERS } from './types.js';
+import { DEFAULT_MAX_REVISIONS, DEFAULT_VOTERS, type PlannedNode } from './types.js';
 
 /**
  * Tokens assumed for each dependency's output, and for the work a critic, rebuttal or
@@ -52,6 +53,10 @@ export interface NodeEstimate {
   expectedUsd: number;
   /** Per-role breakdown: who would do what, and for how much. */
   steps: StepEstimate[];
+  /** Low–high cost from the calibration spread and the protocol's call counts (R-302). */
+  band: CostBand;
+  /** The user's model for the first step, when the node is pinned (R-301). */
+  pinned?: ModelRef;
   /** Why the node cannot run as planned (no provider, diversity impossible). */
   error?: string;
 }
@@ -64,6 +69,8 @@ export interface GraphEstimate {
   complete: boolean;
   /** `<nodeId>: <why>` for each node that cannot. */
   problems: string[];
+  /** Sum of the node bands (R-302); `minUsd`/`totalUsd` stay as before. */
+  band: CostBand;
 }
 
 export interface EstimateDeps {
@@ -76,6 +83,10 @@ export interface EstimateDeps {
   allowSameProvider?: boolean;
   /** Default `DEFAULT_DEPENDENCY_ALLOWANCE_TOKENS`. */
   dependencyAllowanceTokens?: number;
+  /** Output spread from history (e.g. `outputSpread(journal)`); else a heuristic band. */
+  spread?: SpreadFn;
+  /** Providers that actually served finished nodes (used instead of their estimate). */
+  known?: ReadonlyMap<string, readonly string[]>;
 }
 
 const r6 = (n: number): number => Math.round(n * 1e6) / 1e6;
@@ -96,6 +107,8 @@ export function estimateGraph(graph: TaskGraph, deps: EstimateDeps): GraphEstima
     if (known) return known;
     path.add(node.id);
     const upstream = node.dependsOn.flatMap((id) => {
+      const served = deps.known?.get(id);
+      if (served) return [...served];
       const dep = byId.get(id);
       if (!dep || path.has(id)) return [];
       return visit(dep, path).steps.map((s) => s.ref.provider);
@@ -111,10 +124,11 @@ export function estimateGraph(graph: TaskGraph, deps: EstimateDeps): GraphEstima
     totalUsd: sum(nodes.map((n) => n.expectedUsd)),
     complete: nodes.every((n) => n.error === undefined),
     problems: nodes.flatMap((n) => (n.error ? [`${n.nodeId}: ${n.error}`] : [])),
+    band: sumBands(nodes.map((n) => n.band)),
   };
 }
 
-function estimateNode(node: GraphNode, deps: EstimateDeps, upstream: string[]): NodeEstimate {
+function estimateNode(node: PlannedNode, deps: EstimateDeps, upstream: string[]): NodeEstimate {
   const protocol = effectiveProtocol(node);
   const allowance = deps.dependencyAllowanceTokens ?? DEFAULT_DEPENDENCY_ALLOWANCE_TOKENS;
   const x: StepContext = {
@@ -128,6 +142,8 @@ function estimateNode(node: GraphNode, deps: EstimateDeps, upstream: string[]): 
     context: placeholderContext(node, allowance),
     work: filler(allowance),
     upstream,
+    pin: node.model,
+    spread: deps.spread,
   };
   const planned = planSteps(x, protocol);
   const { steps } = planned;
@@ -146,6 +162,8 @@ function estimateNode(node: GraphNode, deps: EstimateDeps, upstream: string[]): 
     minUsd: sum(steps.map((s) => s.minUsd)),
     expectedUsd: sum(steps.map((s) => s.expectedUsd)),
     steps,
+    band: sumBands(steps.map((s) => s.band)),
+    ...(node.model ? { pinned: node.model } : {}),
     ...(planned.ok ? {} : { error: planned.error }),
   };
 }

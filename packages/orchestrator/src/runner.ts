@@ -1,13 +1,18 @@
-import type {
-  GraphNode,
-  GraphResult,
-  NodeState,
-  ProtocolName,
-  ProtocolResult,
-  TaskGraph,
+import {
+  refToString,
+  type GraphNode,
+  type GraphResult,
+  type ModelRef,
+  type NodeState,
+  type ProtocolName,
+  type ProtocolResult,
+  type TaskGraph,
 } from '@kernelpai/core';
+import { RunController, type ControlOutcome, type RunControl, type RunStatus } from './control.js';
 import { quote } from './prompts.js';
 import { PROTOCOLS } from './protocols/registry.js';
+import { sameRef } from './routing.js';
+import { carry, newRun, withCarried, type Run } from './run-state.js';
 import { StepRunner } from './step.js';
 import { nodeTools } from './tool-loop.js';
 import {
@@ -15,6 +20,7 @@ import {
   OrchestrationError,
   type NodeRun,
   type OrchestratorOptions,
+  type PlannedNode,
 } from './types.js';
 import { graphProblems } from './validate.js';
 
@@ -41,12 +47,10 @@ export function upgradeReason(node: GraphNode): string | undefined {
   return undefined;
 }
 
-interface Run {
-  graph: TaskGraph;
-  states: Record<string, NodeState>;
-  results: Map<string, ProtocolResult>;
-  running: Map<string, Promise<void>>;
-  signal?: AbortSignal | undefined;
+export interface RunOptions {
+  signal?: AbortSignal;
+  /** The user's edits to the proposed plan (`validatePlan(...).changes`), journaled. */
+  edits?: string[];
 }
 
 /**
@@ -55,42 +59,99 @@ interface Run {
  * context. A failed node marks its dependants `skipped`; independent branches go on.
  * Cancellation (signal) stops running steps, keeps their partial output and marks nodes
  * not started `cancelled`. Results are keyed and ordered as the graph's nodes.
+ *
+ * The runner runs a private copy of the graph it is given (the approved plan, R-301);
+ * nodes with a `model` run their first step on it. While `run` is active the runner is
+ * also the run's `RunControl` (pause, resume, cancel, redirect, addInstruction).
+ * One run at a time per runner.
  */
-export class GraphRunner {
+export class GraphRunner implements RunControl {
   private readonly steps: StepRunner;
+  private readonly control: RunController;
 
   constructor(private readonly o: OrchestratorOptions) {
     this.steps = new StepRunner(o);
+    this.control = new RunController(this.steps);
   }
 
-  async run(graph: TaskGraph, options: { signal?: AbortSignal } = {}): Promise<GraphResult> {
-    const problems = graphProblems(graph.nodes);
+  async run(graph: TaskGraph, options: RunOptions = {}): Promise<GraphResult> {
+    const problems = [...graphProblems(graph.nodes), ...this.pinProblems(graph)];
     if (problems.length > 0) throw new OrchestrationError(`invalid graph: ${problems.join('; ')}`);
-    const r: Run = {
-      graph,
-      states: {},
-      results: new Map(),
-      running: new Map(),
-      signal: options.signal,
-    };
+    if (this.control.run) throw new OrchestrationError('this runner is already running a graph');
+    const r = newRun(graph, options.signal);
+    this.control.run = r;
     this.steps.graph.reset();
-    for (const n of graph.nodes) this.setState(r, n.id, 'pending');
-    const limit = Math.max(1, Math.floor(this.o.concurrency ?? DEFAULT_CONCURRENCY));
-    for (;;) {
-      this.settlePending(r);
-      for (const n of this.ready(r)) {
-        if (r.running.size >= limit) break;
-        this.start(r, n);
-      }
-      if (r.running.size === 0) break;
-      await Promise.race(r.running.values());
+    if (options.edits?.length) {
+      this.steps.intervention(undefined, { action: 'plan edited', changes: options.edits });
+    }
+    try {
+      for (const n of r.graph.nodes) this.setState(r, n.id, 'pending');
+      await this.schedule(r);
+    } finally {
+      this.control.run = undefined;
     }
     return this.result(r);
   }
 
-  private ready(r: Run): GraphNode[] {
+  pause(): ControlOutcome {
+    return this.control.pause();
+  }
+
+  resume(): ControlOutcome {
+    return this.control.resume();
+  }
+
+  cancel(): ControlOutcome {
+    return this.control.cancel();
+  }
+
+  redirect(nodeId: string, to: ModelRef): Promise<ControlOutcome> {
+    return this.control.redirect(nodeId, to);
+  }
+
+  addInstruction(nodeId: string, text: string): ControlOutcome {
+    return this.control.addInstruction(nodeId, text);
+  }
+
+  status(): RunStatus {
+    return this.control.status();
+  }
+
+  /** Starts ready nodes unless paused; while paused and idle, waits for a control action. */
+  private async schedule(r: Run): Promise<void> {
+    const limit = Math.max(1, Math.floor(this.o.concurrency ?? DEFAULT_CONCURRENCY));
+    for (;;) {
+      this.settlePending(r);
+      if (!r.paused) {
+        for (const n of this.ready(r)) {
+          if (r.running.size >= limit) break;
+          this.start(r, n);
+        }
+      }
+      if (r.running.size === 0) {
+        const waiting = r.graph.nodes.some((n) => r.states[n.id] === 'pending');
+        if (!r.paused || !waiting) return;
+        await r.woken;
+        continue;
+      }
+      await Promise.race([...r.running.values(), r.woken]);
+    }
+  }
+
+  private pinProblems(graph: TaskGraph): string[] {
+    return (graph.nodes as PlannedNode[]).flatMap((n) =>
+      n.model && !this.o.candidates.some((c) => sameRef(c.ref, n.model as ModelRef))
+        ? [`node "${n.id}": model ${refToString(n.model)} is not available`]
+        : [],
+    );
+  }
+
+  private ready(r: Run): PlannedNode[] {
     return r.graph.nodes.filter(
-      (n) => r.states[n.id] === 'pending' && n.dependsOn.every((d) => r.states[d] === 'done'),
+      (n) =>
+        r.states[n.id] === 'pending' &&
+        !r.running.has(n.id) &&
+        n.dependsOn.every((d) => r.states[d] === 'done'),
     );
   }
 
@@ -100,7 +161,7 @@ export class GraphRunner {
       changed = false;
       for (const n of r.graph.nodes) {
         if (r.states[n.id] !== 'pending') continue;
-        if (r.signal?.aborted) this.setState(r, n.id, 'cancelled');
+        if (r.signal.aborted) this.setState(r, n.id, 'cancelled');
         else if (n.dependsOn.some((d) => BLOCKING.has(r.states[d] as NodeState))) {
           this.setState(r, n.id, 'skipped');
           changed = true;
@@ -109,13 +170,13 @@ export class GraphRunner {
     }
   }
 
-  private start(r: Run, node: GraphNode): void {
+  private start(r: Run, node: PlannedNode): void {
     this.setState(r, node.id, 'running');
     const p = this.runNode(r, node).finally(() => r.running.delete(node.id));
     r.running.set(node.id, p);
   }
 
-  private async runNode(r: Run, node: GraphNode): Promise<void> {
+  private async runNode(r: Run, node: PlannedNode): Promise<void> {
     const protocol = effectiveProtocol(node);
     const why = upgradeReason(node);
     if (why) {
@@ -130,13 +191,16 @@ export class GraphRunner {
     if (unknown.length > 0) {
       this.steps.intervention(node.id, { action: 'tools unavailable', tools: unknown });
     }
+    const attempt = new AbortController();
+    r.attempts.set(node.id, attempt);
     const run: NodeRun = {
       node,
       context: this.context(r, node),
-      signal: r.signal,
+      signal: AbortSignal.any([r.signal, attempt.signal]),
       upstream: this.upstream(r, node),
       contributions: [],
       costUsd: 0,
+      pin: node.model,
     };
     let result: ProtocolResult;
     try {
@@ -153,9 +217,25 @@ export class GraphRunner {
         error,
       };
     }
-    r.results.set(node.id, result);
-    const state: NodeState = result.ok ? 'done' : r.signal?.aborted ? 'cancelled' : 'failed';
-    this.setState(r, node.id, state);
+    this.settle(r, result);
+  }
+
+  /** Records a node's outcome; an attempt cancelled by a redirect goes back to pending. */
+  private settle(r: Run, result: ProtocolResult): void {
+    const id = result.nodeId;
+    r.attempts.delete(id);
+    const redirected = r.redirecting.delete(id);
+    if (redirected && !result.ok && !r.signal.aborted) {
+      carry(r, result);
+      this.setState(r, id, 'pending');
+      return;
+    }
+    if (redirected && result.ok) {
+      this.steps.intervention(id, { action: 'redirect too late', reason: 'node finished first' });
+    }
+    r.results.set(id, withCarried(r, result));
+    const state: NodeState = result.ok ? 'done' : r.signal.aborted ? 'cancelled' : 'failed';
+    this.setState(r, id, state);
   }
 
   /** Dependency outputs, quoted as untrusted data. */

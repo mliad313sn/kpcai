@@ -62,6 +62,45 @@ export interface OrchestratorOptions {
   voters?: number;
   /** Live progress feed (node states, text deltas, contributions, graph done). */
   onEvent?: (event: GraphEvent) => void;
+  /** Run control feed (pause, resume, cancel, redirect, instruction, refusal). */
+  onControl?: (event: RunControlEvent) => void;
+}
+
+/**
+ * A graph node as the user approved it (R-301, principle 4). `model` pins the node's
+ * first step (solo answer, author, first debater, first voter) to that model; later steps
+ * are routed as usual (critics away from the author's provider, revisions on the author).
+ * A pinned step has no automatic fallback to another model: the user's choice is kept and
+ * a failure is reported, so the user can redirect again.
+ */
+export interface PlannedNode extends GraphNode {
+  model?: ModelRef;
+}
+
+/** Run-level control events (principle 4, R-304); node states still go through `onEvent`. */
+export type RunControlEvent =
+  | { type: 'run_paused'; inFlight: string[] }
+  | { type: 'run_resumed' }
+  | { type: 'run_cancelled' }
+  | {
+      type: 'node_redirected';
+      nodeId: string;
+      from: ModelRef | null;
+      to: ModelRef;
+      /** True when a running attempt was cancelled to rerun on `to`. */
+      restarted: boolean;
+      /** Later steps whose model changed because of the redirect (e.g. the critic). */
+      reroutes: Reroute[];
+    }
+  | { type: 'instruction_added'; nodeId: string; text: string }
+  | { type: 'control_refused'; action: ControlAction; nodeId?: string; reason: string };
+
+export type ControlAction = 'pause' | 'resume' | 'cancel' | 'redirect' | 'instruction';
+
+export interface Reroute {
+  role: ContributionRole;
+  from: ModelRef;
+  to: ModelRef;
 }
 
 export const DEFAULT_CONCURRENCY = 3;
@@ -79,6 +118,8 @@ export interface NodeRun {
   upstream?: string[];
   contributions: Contribution[];
   costUsd: number;
+  /** The user's model for the node's first step; taken (cleared) by that step. */
+  pin?: ModelRef | undefined;
 }
 
 /** A finished model step. */

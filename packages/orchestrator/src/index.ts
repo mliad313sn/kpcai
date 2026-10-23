@@ -1,4 +1,31 @@
-export { GraphRunner, effectiveProtocol, upgradeReason } from './runner.js';
+export { GraphRunner, effectiveProtocol, upgradeReason, type RunOptions } from './runner.js';
+export {
+  MAX_INSTRUCTION_CHARS,
+  withInstruction,
+  type ControlOutcome,
+  type RunControl,
+  type RunStatus,
+} from './control.js';
+export {
+  validatePlan,
+  planChanges,
+  nodeProblems,
+  type PlanCheck,
+  type PlanCheckOptions,
+} from './plan.js';
+export {
+  outputSpread,
+  quantile,
+  stepBand,
+  sumBands,
+  HEURISTIC_SPREAD,
+  type BandBasis,
+  type CostBand,
+  type OutputSpread,
+  type OutputSpreadOptions,
+  type SpreadFn,
+  type StepBand,
+} from './band.js';
 export { GraphBudget } from './graph-budget.js';
 export { StepRunner } from './step.js';
 export {
@@ -49,7 +76,11 @@ export {
   DEFAULT_VOTERS,
   OrchestrationError,
   type BudgetHook,
+  type ControlAction,
   type NodeRun,
+  type PlannedNode,
+  type Reroute,
+  type RunControlEvent,
   type OrchestratorOptions,
   type StepOutcome,
   type StepSpec,

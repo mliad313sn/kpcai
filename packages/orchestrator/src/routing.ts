@@ -1,6 +1,8 @@
 import {
   refToString,
+  type Candidate,
   type ModelRef,
+  type Router,
   type RoutingConstraints,
   type RoutingDecision,
   type ScoredCandidate,
@@ -56,6 +58,26 @@ export function servedCandidate(decision: RoutingDecision, ref: ModelRef): Score
   );
 }
 
+/**
+ * Routes a node onto the user's pinned model only (principle 4): the router still checks
+ * that model (constraints, context window, modalities, exclusions) and prices it; there is
+ * no fallback to another model. Throws when the model is not a candidate or is rejected.
+ */
+export function routePinned(
+  router: Router,
+  node: TaskNode,
+  candidates: readonly Candidate[],
+  constraints: RoutingConstraints,
+  pin: ModelRef,
+): RoutingDecision {
+  const only = candidates.filter((c) => sameRef(c.ref, pin));
+  if (only.length === 0) {
+    throw new Error(`model ${refToString(pin)} chosen by the user is not available`);
+  }
+  const d = router.route(node, only, constraints);
+  return { ...d, fallbacks: [], reason: `${refToString(pin)} chosen by the user; ${d.reason}` };
+}
+
 export type DiversityNote = 'waived' | undefined;
 
 export interface Routed {
@@ -69,14 +91,20 @@ export interface Routed {
  * nobody, a `hard` step fails unless `allowSameProvider` (then it routes without the
  * exclusion, reported as `waived` so the caller journals it); a `strict` step always fails.
  */
-export function routeDiverse(o: OrchestratorOptions, node: TaskNode, spec: StepSpec): Routed {
+export function routeDiverse(
+  o: OrchestratorOptions,
+  node: TaskNode,
+  spec: StepSpec,
+  pin?: ModelRef,
+): Routed {
   const base: RoutingConstraints = o.constraints ?? {};
   const excluded = [...new Set(spec.exclude ?? [])];
   const merged: RoutingConstraints = {
     ...base,
     excludeProviders: [...(base.excludeProviders ?? []), ...excluded],
   };
-  const route = (c: RoutingConstraints): RoutingDecision => o.router.route(node, o.candidates, c);
+  const route = (c: RoutingConstraints): RoutingDecision =>
+    pin ? routePinned(o.router, node, o.candidates, c, pin) : o.router.route(node, o.candidates, c);
   try {
     return { decision: route(merged), diversity: undefined, excluded };
   } catch (err) {

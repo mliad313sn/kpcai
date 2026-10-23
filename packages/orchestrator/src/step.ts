@@ -3,6 +3,7 @@ import {
   type Contribution,
   type GraphEvent,
   type GraphNode,
+  type ModelRef,
   type RoutingDecision,
   type ScoredCandidate,
   type TaskNode,
@@ -59,7 +60,8 @@ export class StepRunner {
     return this.hook(c, label);
   }
 
-  private async hook(c: ScoredCandidate, label: string): Promise<boolean> {
+  /** The budget hook alone (no graph cap); no hook allows, a throw refuses. */
+  async hook(c: ScoredCandidate, label: string): Promise<boolean> {
     if (!this.o.budget) return true;
     try {
       return (await this.o.budget(c, label)) !== false;
@@ -68,8 +70,14 @@ export class StepRunner {
     }
   }
 
-  intervention(nodeId: string, payload: Record<string, unknown>): void {
-    this.o.journal.append({ sessionId: this.o.sessionId, type: 'intervention', nodeId, payload });
+  /** Journals a control or protocol decision; run-level actions have no node id. */
+  intervention(nodeId: string | undefined, payload: Record<string, unknown>): void {
+    this.o.journal.append({
+      sessionId: this.o.sessionId,
+      type: 'intervention',
+      ...(nodeId !== undefined ? { nodeId } : {}),
+      payload,
+    });
   }
 
   /** Records a contribution on the node and emits it. */
@@ -88,9 +96,12 @@ export class StepRunner {
       type: spec.type ?? run.node.type,
       messages: stepMessages(run.node, spec.prompt),
     };
+    // The user's model (principle 4) serves the node's first routed step only.
+    const pin = spec.decision ? undefined : run.pin;
+    if (pin) run.pin = undefined;
     let decision: RoutingDecision;
     try {
-      decision = spec.decision ?? this.decide(stepNode, spec);
+      decision = spec.decision ?? this.decide(stepNode, spec, pin);
     } catch (err) {
       const f = failed(errorText(err), 0, false);
       return err instanceof OrchestrationError ? { ...f, diversity: true } : f;
@@ -124,14 +135,14 @@ export class StepRunner {
     return { ...loop, decision, contribution };
   }
 
-  private decide(node: TaskNode, spec: StepSpec): RoutingDecision {
-    const routed = routeDiverse(this.o, node, spec);
+  private decide(node: TaskNode, spec: StepSpec, pin: ModelRef | undefined): RoutingDecision {
+    const routed = routeDiverse(this.o, node, spec, pin);
     const decision = spec.prefer ? preferRef(routed.decision, spec.prefer) : routed.decision;
-    this.journalRouting(node, spec, { ...routed, decision });
+    this.journalRouting(node, spec, { ...routed, decision }, pin !== undefined);
     return decision;
   }
 
-  private journalRouting(node: TaskNode, spec: StepSpec, r: Routed): void {
+  private journalRouting(node: TaskNode, spec: StepSpec, r: Routed, pinned: boolean): void {
     const d = r.decision;
     if (r.diversity) {
       this.intervention(node.id, {
@@ -157,6 +168,7 @@ export class StepRunner {
         fallbacks: d.fallbacks.map((f) => refToString(f.ref)),
         excludedProviders: r.excluded,
         ...(r.diversity ? { diversity: r.diversity } : {}),
+        ...(pinned ? { pinned: true } : {}),
       },
     });
   }

@@ -21,7 +21,8 @@ import {
   stepMessages,
   voterPrompt,
 } from './prompts.js';
-import { sameRef, servedCandidate } from './routing.js';
+import { stepBand, type SpreadFn, type StepBand } from './band.js';
+import { routePinned, sameRef, servedCandidate } from './routing.js';
 
 export interface StepEstimate {
   role: ContributionRole;
@@ -34,6 +35,8 @@ export interface StepEstimate {
   expectedUsd: number;
   /** Principle 2 could only be met with `allowSameProvider`. */
   diversityWaived?: boolean;
+  /** Low–high cost of this role from the calibration spread (R-302). */
+  band: StepBand;
 }
 
 /** Resolved estimate settings for one node. */
@@ -51,6 +54,10 @@ export interface StepContext {
   work: string;
   /** Providers behind the dependencies (a review is routed away from them). */
   upstream: string[];
+  /** The user's model for the first step (principle 4); taken by the first routed role. */
+  pin?: ModelRef | undefined;
+  /** Output spread from history, for the cost band. */
+  spread?: SpreadFn | undefined;
 }
 
 export type Planned =
@@ -68,21 +75,23 @@ export function placeholderContext(node: GraphNode, allowanceTokens: number): st
 }
 
 function step(
-  role: ContributionRole,
+  x: StepContext,
+  a: { role: ContributionRole; type: TaskType },
   c: ScoredCandidate,
-  min: number,
-  max: number,
+  calls: { min: number; max: number },
   waived = false,
 ): StepEstimate {
   const per = c.estimate.expectedCostUsd;
+  const card = x.candidates.find((k) => sameRef(k.ref, c.ref))?.card;
   return {
-    role,
+    role: a.role,
     ref: c.ref,
-    calls: { min, max },
+    calls,
     perCallUsd: per,
-    minUsd: r6(per * min),
-    expectedUsd: r6(per * max),
+    minUsd: r6(per * calls.min),
+    expectedUsd: r6(per * calls.max),
     ...(waived ? { diversityWaived: true } : {}),
+    band: stepBand(card, c.estimate, calls, x.spread?.(c.ref, a.type)),
   };
 }
 
@@ -150,8 +159,15 @@ function route(
     ...x.constraints,
     excludeProviders: [...(x.constraints.excludeProviders ?? []), ...excluded],
   };
+  const pin = x.pin;
+  x.pin = undefined;
+  const decide = (c: RoutingConstraints): ScoredCandidate =>
+    (pin
+      ? routePinned(x.router, node, x.candidates, c, pin)
+      : x.router.route(node, x.candidates, c)
+    ).chosen;
   try {
-    return { c: x.router.route(node, x.candidates, merged).chosen, waived: false };
+    return { c: decide(merged), waived: false };
   } catch (err) {
     if (excluded.length === 0) throw err;
     if (a.strict || !x.allowSameProvider) {
@@ -159,7 +175,7 @@ function route(
         `${a.role}: no provider other than ${excluded.join(', ')} (principle 2${a.strict ? '' : '; allowSameProvider waives it'})`,
       );
     }
-    return { c: x.router.route(node, x.candidates, x.constraints).chosen, waived: true };
+    return { c: decide(x.constraints), waived: true };
   }
 }
 
@@ -178,7 +194,7 @@ function solo(x: StepContext, steps: StepEstimate[]): void {
     prompt: (ctx) => authorPrompt(x.node, ctx),
     ...(review ? { exclude: x.upstream } : {}),
   });
-  steps.push(step('solo', p.c, 1, 1, p.waived));
+  steps.push(step(x, { role: 'solo', type: x.node.type }, p.c, { min: 1, max: 1 }, p.waived));
 }
 
 const FAKE_VERDICT = (work: string) => ({
@@ -191,18 +207,26 @@ const FAKE_VERDICT = (work: string) => ({
 function authorCritic(x: StepContext, steps: StepEstimate[]): void {
   const { node } = x;
   const a = price(x, { role: 'author', type: node.type, prompt: (ctx) => authorPrompt(node, ctx) });
-  steps.push(step('author', a.c, 1, 1));
+  steps.push(step(x, { role: 'author', type: node.type }, a.c, { min: 1, max: 1 }));
   const c = price(x, {
     role: 'critic',
     type: 'critique',
     prompt: (ctx, work) => criticPrompt(node, ctx, work),
     exclude: [a.c.ref.provider],
   });
-  steps.push(step('critic', c.c, 1, x.maxRevisions + 2, c.waived));
+  steps.push(
+    step(
+      x,
+      { role: 'critic', type: 'critique' },
+      c.c,
+      { min: 1, max: x.maxRevisions + 2 },
+      c.waived,
+    ),
+  );
   const rev = on(x, a.c.ref, node.type, (ctx, work) =>
     revisionPrompt(node, ctx, work, FAKE_VERDICT(work)),
   );
-  steps.push(step('revision', rev, 0, x.maxRevisions));
+  steps.push(step(x, { role: 'revision', type: node.type }, rev, { min: 0, max: x.maxRevisions }));
 }
 
 /** Two debaters (distinct providers), one rebuttal each, a judge (debaters excluded, +1 retry). */
@@ -213,21 +237,21 @@ function debate(x: StepContext, steps: StepEstimate[]): void {
     type: node.type,
     prompt: (ctx) => debaterPrompt(node, ctx, 1),
   });
-  steps.push(step('debater', d1.c, 1, 1));
+  steps.push(step(x, { role: 'debater', type: node.type }, d1.c, { min: 1, max: 1 }));
   const d2 = price(x, {
     role: 'debater',
     type: node.type,
     prompt: (ctx) => debaterPrompt(node, ctx, 2),
     exclude: [d1.c.ref.provider],
   });
-  steps.push(step('debater', d2.c, 1, 1, d2.waived));
+  steps.push(step(x, { role: 'debater', type: node.type }, d2.c, { min: 1, max: 1 }, d2.waived));
   for (const d of [d1, d2]) {
     steps.push(
       step(
-        'debater',
+        x,
+        { role: 'debater', type: node.type },
         on(x, d.c.ref, node.type, (ctx, work) => rebuttalPrompt(node, ctx, work, work)),
-        1,
-        1,
+        { min: 1, max: 1 },
       ),
     );
   }
@@ -237,7 +261,7 @@ function debate(x: StepContext, steps: StepEstimate[]): void {
     prompt: (ctx, work) => judgePrompt(node, ctx, work, work),
     exclude: [d1.c.ref.provider, d2.c.ref.provider],
   });
-  steps.push(step('judge', j.c, 1, 2, j.waived));
+  steps.push(step(x, { role: 'judge', type: 'decision' }, j.c, { min: 1, max: 2 }, j.waived));
 }
 
 /** Voters from distinct providers (never waived), +1 retry each; fewer than two is incomplete. */
@@ -253,7 +277,7 @@ function vote(x: StepContext, steps: StepEstimate[]): void {
         exclude: [...used],
         strict: true,
       });
-      steps.push(step('voter', v.c, 1, 2));
+      steps.push(step(x, { role: 'voter', type: x.node.type }, v.c, { min: 1, max: 2 }));
       used.push(v.c.ref.provider);
     } catch (err) {
       if (!(err instanceof Diversity)) throw err;
