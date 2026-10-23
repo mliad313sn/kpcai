@@ -38,3 +38,7 @@ The phase 3 gate also needs the Must items R-301 to R-307 of
 - **WP8 (S5):** checkpoints and rollback on shadow refs (R-305), rules-file ingestion inside the jail (R-306), one git worktree per run under `$KPAI_HOME` with explicit merge-back (R-307).
 - **WP4 (S6)** adds the editable plan view (R-301), the cost band, cap and live meter (R-302), the routing reason panel (R-303) and the runs manager view (R-307).
 - **WP9 (S3):** an estimate band from the calibration spread, exposed in the `plan` result (R-302).
+
+## Adoption items (D-020)
+
+From [adoption/WORK-ITEMS.md](../adoption/WORK-ITEMS.md), part of the phase 3 gate: WI-S1-01 to WI-S1-05, WI-S4-01 to WI-S4-03, WI-S5-01, WI-S7-01, WI-S6-01, WI-S6-02. Phase 5: WI-S4-04 (physical-effect dry-runs) and WI-S2-01 (multimodal input).
