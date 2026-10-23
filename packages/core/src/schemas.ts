@@ -88,4 +88,6 @@ export type StreamEvent =
   | { type: 'start'; requestId: string; model: string }
   | { type: 'text'; delta: string }
   | { type: 'usage'; usage: Usage }
+  /** The provider is working without visible text yet (reasoning, step start). Keeps stall timers alive. */
+  | { type: 'progress'; kind: 'reasoning' | 'step' }
   | { type: 'end'; stopReason: StopReason };

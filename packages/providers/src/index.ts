@@ -11,6 +11,7 @@ export {
   loadDescriptorsWithOrigin,
   parseDescriptor,
   type AdapterFactory,
+  type LoadOptions,
   type DescriptorOrigin,
 } from './registry.js';
 export {

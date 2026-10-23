@@ -64,7 +64,8 @@ type EndCause = 'exhausted' | 'policy';
  * - A stalled stream (no event within `firstChunkTimeoutMs` / `idleTimeoutMs`) fails that
  *   attempt as `unavailable` and falls back; only the caller's `signal` cancels everything.
  * - Before each fallback, `hooks.beforeFallback(next, failed)` is awaited; false (or a
- *   throw) stops the chain, journals an `intervention`, and returns no answer ('other').
+ *   throw) skips that candidate (journaled `intervention`) and the next one is asked;
+ *   when none is allowed the result is no answer ('other').
  *
  * `ExecutionResult.costUsd` is the total billed over all attempts (failed ones included);
  * `usage` and `text` are those of the serving attempt.
@@ -97,8 +98,10 @@ export class FallbackExecutor implements Executor {
     let cost = 0;
     let lastError: ProviderError | undefined;
     let cause: EndCause = 'exhausted';
-    for (const [index, { ref }] of candidates.entries()) {
+    let index = 0;
+    while (index < candidates.length) {
       if (options.signal?.aborted) break;
+      const { ref } = candidates[index] as ScoredCandidate;
       options.hooks?.onAttemptStart?.(ref, index);
       const outcome = await this.attempt(node, ref, index, options);
       const attempt = toAttempt(ref, outcome);
@@ -109,20 +112,38 @@ export class FallbackExecutor implements Executor {
       }
       options.hooks?.onAttemptFailed?.(attempt);
       lastError = outcome.error;
-      const next = candidates[index + 1];
-      if (!outcome.error.fallbackEligible || !next) break;
-      if (!(await this.mayFallBack(node, options, next, attempt))) {
+      if (!outcome.error.fallbackEligible || index + 1 >= candidates.length) break;
+      const next = await this.nextAllowed(node, options, candidates, index + 1, attempt);
+      if (next === undefined) {
         cause = 'policy';
         break;
       }
-      const step = { from: ref, to: next.ref, index: index + 1 };
+      const step = { from: ref, to: (candidates[next] as ScoredCandidate).ref, index: next };
       this.journalFallback(node, options.sessionId, step, lastError);
+      index = next;
     }
     const aborted = options.signal?.aborted === true;
     return failedResult(node, attempts, { lastError, aborted, cause, costUsd: total(cost) });
   }
 
-  /** Awaits `hooks.beforeFallback`; a refusal or a throw stops the chain and is journaled. */
+  /**
+   * First fallback from `start` that `hooks.beforeFallback` allows. A refused candidate is
+   * skipped (journaled) and the next one is asked (review N1); undefined when none is allowed.
+   */
+  private async nextAllowed(
+    node: TaskNode,
+    options: ExecuteOptions,
+    candidates: readonly ScoredCandidate[],
+    start: number,
+    failed: Attempt,
+  ): Promise<number | undefined> {
+    for (let k = start; k < candidates.length; k++) {
+      if (await this.mayFallBack(node, options, candidates[k] as ScoredCandidate, failed)) return k;
+    }
+    return undefined;
+  }
+
+  /** Awaits `hooks.beforeFallback`; a refusal or a throw skips that candidate and is journaled. */
   private async mayFallBack(
     node: TaskNode,
     options: ExecuteOptions,
@@ -144,7 +165,7 @@ export class FallbackExecutor implements Executor {
       provider: next.ref.provider,
       model: next.ref.model,
       payload: {
-        action: 'fallback stopped by policy',
+        action: 'fallback skipped by policy',
         next: refToString(next.ref),
         after: refToString(failed.ref),
         ...(error !== undefined ? { error } : {}),

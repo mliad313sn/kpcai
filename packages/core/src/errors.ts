@@ -45,6 +45,8 @@ export class ProviderError extends Error {
 
 /** Maps an HTTP status code onto an error kind. */
 export function kindFromStatus(status: number): ProviderErrorKind {
+  // A 2xx "error" is a stream that broke after the provider accepted it (review N2).
+  if (status >= 200 && status < 300) return 'unavailable';
   if (status === 401 || status === 403) return 'auth';
   if (status === 429) return 'rate_limit';
   // 402 out of credits, 404 retired model, 413 too large for this model: another

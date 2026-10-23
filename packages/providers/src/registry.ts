@@ -57,7 +57,29 @@ export interface DescriptorOrigin {
  * Loads every *.yaml in the given directories; later directories override earlier
  * ids. Each entry says where it came from, so a CLI can show user overrides (F8).
  */
-export function loadDescriptorsWithOrigin(dirs: readonly string[]): DescriptorOrigin[] {
+export interface LoadOptions {
+  /**
+   * Called for an invalid file instead of throwing. Use it for user directories, so one
+   * bad override is skipped with a warning rather than breaking every command (review N4).
+   * Built-in descriptors should stay strict.
+   */
+  onInvalid?: (path: string, error: Error) => void;
+}
+
+function readDescriptor(path: string, options: LoadOptions): ProviderDescriptor | undefined {
+  try {
+    return parseDescriptor(readFileSync(path, 'utf8'), path);
+  } catch (err) {
+    if (!options.onInvalid) throw err;
+    options.onInvalid(path, err instanceof Error ? err : new Error(String(err)));
+    return undefined;
+  }
+}
+
+export function loadDescriptorsWithOrigin(
+  dirs: readonly string[],
+  options: LoadOptions = {},
+): DescriptorOrigin[] {
   const byId = new Map<string, DescriptorOrigin>();
   for (const dir of dirs) {
     if (!existsSync(dir)) continue;
@@ -65,7 +87,8 @@ export function loadDescriptorsWithOrigin(dirs: readonly string[]): DescriptorOr
       .filter((f) => /\.ya?ml$/.test(f))
       .sort()) {
       const path = join(dir, file);
-      const descriptor = parseDescriptor(readFileSync(path, 'utf8'), path);
+      const descriptor = readDescriptor(path, options);
+      if (!descriptor) continue;
       const previous = byId.get(descriptor.id);
       byId.set(descriptor.id, {
         descriptor,
@@ -79,8 +102,11 @@ export function loadDescriptorsWithOrigin(dirs: readonly string[]): DescriptorOr
 }
 
 /** Loads every *.yaml in the given directories; later directories override earlier ids. */
-export function loadDescriptors(dirs: readonly string[]): ProviderDescriptor[] {
-  return loadDescriptorsWithOrigin(dirs).map((o) => o.descriptor);
+export function loadDescriptors(
+  dirs: readonly string[],
+  options: LoadOptions = {},
+): ProviderDescriptor[] {
+  return loadDescriptorsWithOrigin(dirs, options).map((o) => o.descriptor);
 }
 
 export class ProviderRegistry {

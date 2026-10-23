@@ -4,7 +4,7 @@ import type { Io } from '../io.js';
 
 /** `kpai providers`: detected providers, their models and price sheet. */
 export async function providersCommand(io: Io): Promise<number> {
-  const registry = buildRegistry(io.env);
+  const registry = buildRegistry(io.env, io.err);
   const adapters = registry.list();
   const detections = await Promise.all(adapters.map((a) => a.detect()));
   adapters.forEach((a, i) => {

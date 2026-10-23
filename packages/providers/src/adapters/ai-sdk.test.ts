@@ -203,7 +203,7 @@ describe.each(CASES)('AiSdkAdapter contract: $sdk ($id)', (c) => {
     const run = (async () => {
       const req = { model, messages: [{ role: 'user' as const, content: 'hi' }] };
       for await (const ev of a.send(req, { requestId: 'r1' })) {
-        seen.push(ev.type);
+        if (ev.type !== 'progress') seen.push(ev.type);
         if (ev.type === 'text') a.cancel('r1');
       }
     })();

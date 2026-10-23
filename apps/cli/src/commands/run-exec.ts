@@ -123,9 +123,10 @@ export interface ExecContext {
 
 export async function execute(c: ExecContext): Promise<number> {
   const { io, journal, sessionId, p } = c;
-  const registry = buildRegistry(io.env);
+  const registry = buildRegistry(io.env, io.err);
   const executor = new FallbackExecutor((ref) => registry.get(ref.provider), journal, {
     expectedOutput: outputCalibration(journal),
+    ...stallTimeouts(io),
   });
   const ctl = new AbortController();
   const unregister = io.onInterrupt(() => {
@@ -157,6 +158,24 @@ export async function execute(c: ExecContext): Promise<number> {
   } finally {
     unregister();
   }
+}
+
+/** KPAI_FIRST_CHUNK_TIMEOUT_MS / KPAI_IDLE_TIMEOUT_MS (0 disables); defaults 30 s / 60 s. */
+function stallTimeouts(io: Io): { firstChunkTimeoutMs?: number; idleTimeoutMs?: number } {
+  const read = (name: string): number | undefined => {
+    const raw = io.env[name]?.trim();
+    if (!raw) return undefined;
+    const n = Number(raw);
+    if (!Number.isInteger(n) || n < 0)
+      throw new Error(`${name} must be a whole number of ms >= 0, got "${raw}"`);
+    return n;
+  };
+  const first = read('KPAI_FIRST_CHUNK_TIMEOUT_MS');
+  const idle = read('KPAI_IDLE_TIMEOUT_MS');
+  return {
+    ...(first !== undefined ? { firstChunkTimeoutMs: first } : {}),
+    ...(idle !== undefined ? { idleTimeoutMs: idle } : {}),
+  };
 }
 
 function footer(r: ExecutionResult, secs: number, sessionId: string, m: Money): string {

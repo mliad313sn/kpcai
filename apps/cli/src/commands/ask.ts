@@ -40,7 +40,7 @@ export async function askCommand(io: Io, opts: AskOptions): Promise<number> {
     io.err('Phase 0 never picks a model by default; competence routing comes in phase 1.\n');
     return 2;
   }
-  const { adapter, model } = buildRegistry(io.env).resolve(opts.model);
+  const { adapter, model } = buildRegistry(io.env, io.err).resolve(opts.model);
   const req: ChatRequest = {
     model,
     messages: [

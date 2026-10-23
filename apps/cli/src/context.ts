@@ -22,10 +22,20 @@ export function openJournal(env: Env, override?: string): Journal {
   return Journal.open(journalPath(env, override));
 }
 
-/** Built-in descriptors, overridable by ~/.kernelpai/providers/*.yaml. */
-export function buildRegistry(env: Env): ProviderRegistry {
-  const dirs = [BUILTIN_DESCRIPTOR_DIR, join(kpaiHome(env), 'providers')];
-  return new ProviderRegistry(loadDescriptors(dirs), env);
+/**
+ * Built-in descriptors (strict), overridable by ~/.kernelpai/providers/*.yaml. An invalid
+ * user file is skipped and reported through `warn` rather than breaking every command.
+ */
+export function buildRegistry(
+  env: Env,
+  warn: (msg: string) => void = () => undefined,
+): ProviderRegistry {
+  const builtIn = loadDescriptors([BUILTIN_DESCRIPTOR_DIR]);
+  const user = loadDescriptors([join(kpaiHome(env), 'providers')], {
+    onInvalid: (path, err) => warn(`skipped ${path}: ${err.message}\n`),
+  });
+  const byId = new Map([...builtIn, ...user].map((d) => [d.id, d]));
+  return new ProviderRegistry([...byId.values()], env);
 }
 
 export function confirmThreshold(env: Env): number {

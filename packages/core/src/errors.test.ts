@@ -11,6 +11,7 @@ describe('errors', () => {
     [529, 'unavailable'],
     [400, 'bad_request'],
     [422, 'bad_request'],
+    [200, 'unavailable'],
     [402, 'unavailable'],
     [404, 'unavailable'],
     [413, 'unavailable'],

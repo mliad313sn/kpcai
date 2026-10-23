@@ -131,7 +131,16 @@ describe('AnthropicAdapter', () => {
     const a = adapter('http://127.0.0.1:9', null);
     expect(await a.detect()).toMatchObject({ available: false });
     await expect(collect(a)).rejects.toMatchObject({ kind: 'auth' });
-    expect(await adapter('http://x').detect()).toMatchObject({ available: true });
+    expect(await adapter('https://x').detect()).toMatchObject({ available: true });
+  });
+
+  it('never sends a key to a remote plain-http endpoint, and lets fallback continue (review N3)', async () => {
+    const a = adapter('http://example.invalid');
+    expect(await a.detect()).toMatchObject({
+      available: false,
+      reason: expect.stringMatching(/not https/),
+    });
+    await expect(collect(a)).rejects.toMatchObject({ kind: 'unavailable', fallbackEligible: true });
   });
 
   it('cancels mid-stream and keeps the text already received', async () => {

@@ -89,6 +89,20 @@ describe('provider registry', () => {
     ).toEqual(['other']);
   });
 
+  it('can skip an invalid user descriptor with a warning instead of failing (review N4)', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'kpai-bad-'));
+    writeFileSync(
+      join(dir, 'old.yaml'),
+      'id: old\nname: Old\nkind: cloud\nadapter: mock\njurisdiction: US\nretention: r\nauth: { env: LLAMA_TOKEN }\n',
+    );
+    const warned: string[] = [];
+    const ds = loadDescriptors([BUILTIN_DESCRIPTOR_DIR, dir], { onInvalid: (p) => warned.push(p) });
+    expect(ds.some((d) => d.id === 'old')).toBe(false);
+    expect(ds.some((d) => d.id === 'anthropic')).toBe(true);
+    expect(warned).toEqual([join(dir, 'old.yaml')]);
+    expect(() => loadDescriptors([dir])).toThrow(/Invalid provider descriptor/);
+  });
+
   it('rejects invalid descriptors with a precise message', () => {
     expect(() => parseDescriptor('id: BAD\nname: x', 'x.yaml')).toThrow(
       /Invalid provider descriptor x.yaml: id:/,

@@ -184,3 +184,64 @@ describe('AiSdkAdapter error classes (F13)', () => {
     expect((mapped as Error).message).toContain(err.message);
   });
 });
+
+describe('AiSdkAdapter fallback-friendly failures (review N2, N3)', () => {
+  it('a connection dropped mid-stream is unavailable, so fallback continues (N2)', async () => {
+    server = await fakeServer((_q, res) => {
+      res.writeHead(200, { 'content-type': 'text/event-stream' });
+      const chunk = {
+        id: 'c',
+        object: 'chat.completion.chunk',
+        created: 1,
+        model: 'm',
+        choices: [{ index: 0, delta: { content: 'par' }, finish_reason: null }],
+      };
+      res.write(`data: ${JSON.stringify(chunk)}\n\n`);
+      setTimeout(() => res.destroy(), 10);
+    });
+    const a = new AiSdkAdapter(
+      byId('deepseek'),
+      { DEEPSEEK_API_KEY: 'k', DEEPSEEK_BASE_URL: server.url },
+      'deepseek',
+    );
+    expect(await drain(a)).toMatchObject({ kind: 'unavailable', fallbackEligible: true });
+  });
+
+  it('a plain-http remote endpoint is unavailable in detect and send, with no request (N3)', async () => {
+    const fetchSpy = noFetch();
+    const env = { OPENAI_API_KEY: 'k', OPENAI_BASE_URL: 'http://example.invalid/v1' };
+    const a = new AiSdkAdapter(byId('openai'), env, 'openai', fetchSpy);
+    expect(await a.detect()).toMatchObject({
+      available: false,
+      reason: expect.stringMatching(/not https/),
+    });
+    expect(await drain(a)).toMatchObject({ kind: 'unavailable', fallbackEligible: true });
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe('AiSdkAdapter reasoning keeps the attempt alive (review R1)', () => {
+  it('emits progress events for reasoning chunks before any text', async () => {
+    server = await fakeServer((_q, res) => {
+      res.writeHead(200, { 'content-type': 'text/event-stream' });
+      const base = { id: 'c', object: 'chat.completion.chunk', created: 1, model: 'm' };
+      const delta = (d: object, finish: string | null = null) =>
+        `data: ${JSON.stringify({ ...base, choices: [{ index: 0, delta: d, finish_reason: finish }] })}\n\n`;
+      res.write(delta({ reasoning_content: 'thinking 1' }));
+      res.write(delta({ reasoning_content: 'thinking 2' }));
+      res.write(delta({ content: 'answer' }));
+      res.write(delta({}, 'stop'));
+      res.end('data: [DONE]\n\n');
+    });
+    const a = new AiSdkAdapter(
+      byId('deepseek'),
+      { DEEPSEEK_API_KEY: 'k', DEEPSEEK_BASE_URL: server.url },
+      'deepseek',
+    );
+    const types: string[] = [];
+    for await (const ev of a.send(req)) types.push(ev.type);
+    const firstText = types.indexOf('text');
+    expect(types.slice(0, firstText)).toContain('progress');
+    expect(types.at(-1)).toBe('end');
+  });
+});

@@ -88,8 +88,18 @@ export class AiSdkAdapter extends BaseAdapter {
     }
     const notLocal = localHostProblem(this.descriptor, this.baseUrl());
     if (notLocal) return { available: false, reason: notLocal };
+    const insecure = this.insecureEndpoint();
+    if (insecure) return { available: false, reason: insecure };
     if (this.descriptor.discoverModels) return this.discover();
     return { available: true, reason: auth ? `${auth.env} is set` : 'no credentials needed' };
+  }
+
+  /** Why credentials must not go to the configured endpoint (plain http, not loopback). */
+  private insecureEndpoint(): string | undefined {
+    const base = this.baseUrl();
+    const key = resolveApiKey(this.descriptor, this.env);
+    if (!key || !base || mayCarryCredentials(base)) return undefined;
+    return `refusing to send credentials to ${base}: not https`;
   }
 
   override card(modelId: string): ModelCard {
@@ -121,6 +131,11 @@ export class AiSdkAdapter extends BaseAdapter {
       for await (const part of result.fullStream) {
         if (part.type === 'text-delta') {
           if (part.text) yield { type: 'text', delta: part.text };
+        } else if (part.type === 'reasoning-delta' || part.type === 'reasoning-start') {
+          // Reasoning models can think for minutes before any text (review R1).
+          yield { type: 'progress', kind: 'reasoning' };
+        } else if (part.type === 'start-step') {
+          yield { type: 'progress', kind: 'step' };
         } else if (part.type === 'error') {
           throw part.error;
         } else if (part.type === 'abort') {
@@ -192,13 +207,9 @@ export class AiSdkAdapter extends BaseAdapter {
     const baseURL = this.baseUrl();
     const notLocal = localHostProblem(this.descriptor, baseURL);
     if (notLocal) throw new ProviderError('unavailable', this.descriptor.id, notLocal);
-    if (apiKey && baseURL && !mayCarryCredentials(baseURL)) {
-      throw new ProviderError(
-        'bad_request',
-        this.descriptor.id,
-        `refusing to send credentials to ${baseURL}: not https`,
-      );
-    }
+    const insecure = this.insecureEndpoint();
+    // Unavailable, not bad_request: another provider can still serve the task (review N3).
+    if (insecure) throw new ProviderError('unavailable', this.descriptor.id, insecure);
     this.factory ??= modelFactory(this.sdk, {
       name: this.descriptor.id,
       apiKey,

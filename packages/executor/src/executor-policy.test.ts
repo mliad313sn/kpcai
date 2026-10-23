@@ -48,7 +48,7 @@ describe('FallbackExecutor — beforeFallback policy (F1)', () => {
     expect(types()).toEqual(['call', 'error', 'routing', 'call', 'response']);
   });
 
-  it('false stops the chain, journals an intervention and returns no answer', async () => {
+  it('false on the only fallback journals an intervention and returns no answer', async () => {
     const b = new ScriptedAdapter('b', [OK]);
     const r = await executorFor([failing(), b]).execute(node(), decision('a/echo', 'b/echo'), {
       sessionId,
@@ -61,10 +61,34 @@ describe('FallbackExecutor — beforeFallback policy (F1)', () => {
     const [iv] = ofType('intervention');
     expect(iv).toMatchObject({ nodeId: 'n1', provider: 'b', model: 'echo' });
     expect(iv?.payload).toEqual({
-      action: 'fallback stopped by policy',
+      action: 'fallback skipped by policy',
       next: 'b/echo',
       after: 'a/echo',
     });
+  });
+
+  it('skips a refused fallback and tries the next affordable one (review N1)', async () => {
+    const b = new ScriptedAdapter('b', [OK]);
+    const c = new ScriptedAdapter('c', [OK]);
+    const asked: string[] = [];
+    const r = await executorFor([failing(), b, c]).execute(
+      node(),
+      decision('a/echo', 'b/echo', 'c/echo'),
+      {
+        sessionId,
+        hooks: {
+          beforeFallback: (next) => {
+            asked.push(next.ref.provider);
+            return next.ref.provider !== 'b';
+          },
+        },
+      },
+    );
+    expect(asked).toEqual(['b', 'c']);
+    expect(b.calls).toBe(0);
+    expect(r).toMatchObject({ servedBy: { provider: 'c', model: 'echo' }, fellBack: true });
+    expect(types()).toEqual(['call', 'error', 'intervention', 'routing', 'call', 'response']);
+    expect(ofType('routing')[0]?.payload).toMatchObject({ fallbackFrom: 'a/echo' });
   });
 
   it('a stop after a refusal still reports other, not refusal', async () => {

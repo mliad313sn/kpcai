@@ -59,7 +59,7 @@ export async function plan(io: Io, o: RunOptions): Promise<Planned> {
     ...(limits.task !== undefined ? { budgetUsd: limits.task } : {}),
     ...(o.maxTokens ? { maxOutputTokens: o.maxTokens } : {}),
   };
-  const registry = buildRegistry(io.env);
+  const registry = buildRegistry(io.env, io.err);
   const { candidates, unavailable } = await scanCandidates(registry);
   if (o.verbose) for (const u of unavailable) io.err(`  – ${u.provider}: ${u.reason}\n`);
   if (candidates.length === 0) {

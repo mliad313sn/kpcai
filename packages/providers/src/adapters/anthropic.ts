@@ -37,7 +37,12 @@ export class AnthropicAdapter extends BaseAdapter {
 
   detect(): Promise<DetectResult> {
     const key = resolveApiKey(this.descriptor, this.env);
-    const notLocal = localHostProblem(this.descriptor, resolveBaseUrl(this.descriptor, this.env));
+    const base = resolveBaseUrl(this.descriptor, this.env);
+    const notLocal =
+      localHostProblem(this.descriptor, base) ??
+      (key && base && !mayCarryCredentials(base)
+        ? `refusing to send credentials to ${base}: not https`
+        : undefined);
     return Promise.resolve(
       notLocal
         ? { available: false, reason: notLocal }
@@ -68,6 +73,9 @@ export class AnthropicAdapter extends BaseAdapter {
         if (ev.type === 'message_start') inputTokens = ev.message.usage.input_tokens;
         if (ev.type === 'content_block_delta' && ev.delta.type === 'text_delta') {
           yield { type: 'text', delta: ev.delta.text };
+        } else if (ev.type === 'content_block_delta' || ev.type === 'content_block_start') {
+          // Thinking and other non-text blocks: alive, nothing to show (review R1).
+          yield { type: 'progress', kind: 'reasoning' };
         }
         if (ev.type === 'message_delta') {
           stop = ev.delta.stop_reason;
@@ -92,7 +100,7 @@ export class AnthropicAdapter extends BaseAdapter {
     if (notLocal) throw new ProviderError('unavailable', this.descriptor.id, notLocal);
     if (base && !mayCarryCredentials(base)) {
       throw new ProviderError(
-        'bad_request',
+        'unavailable',
         this.descriptor.id,
         `refusing to send credentials to ${base}: not https`,
       );
