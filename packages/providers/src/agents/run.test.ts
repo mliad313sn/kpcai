@@ -1,4 +1,11 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -111,7 +118,8 @@ describe('runAgent (fake CLI)', () => {
     const target = join(repo.root, 'src-evil.txt');
     const r = await runAgent(req(`MODE:escape TARGET:${target}`));
     expect(r.status).toBe('escaped');
-    expect(r.outside).toContain(target);
+    // Reported paths are canonical (Windows 8.3 short names and macOS /private resolved).
+    expect(r.outside).toContain(realpathSync.native(target));
     expect(readFileSync(target, 'utf8')).toBe('outside\n');
   });
 
