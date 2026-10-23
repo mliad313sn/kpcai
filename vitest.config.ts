@@ -19,12 +19,18 @@ export default defineConfig({
     },
   },
   test: {
-    include: ['packages/*/src/**/*.test.ts', 'apps/*/src/**/*.test.ts'],
+    include: ['packages/*/src/**/*.test.ts', 'apps/*/src/**/*.test.{ts,tsx}'],
     environment: 'node',
     coverage: {
       provider: 'v8',
-      include: ['packages/*/src/**/*.ts', 'apps/*/src/**/*.ts'],
-      exclude: ['**/*.test.ts', '**/test-helpers/**', 'apps/cli/src/bin.ts', '**/index.ts'],
+      include: ['packages/*/src/**/*.ts', 'apps/*/src/**/*.{ts,tsx}'],
+      exclude: [
+        '**/*.test.{ts,tsx}',
+        '**/test-helpers/**',
+        'apps/cli/src/bin.ts',
+        'apps/studio/src/main.tsx',
+        '**/index.ts',
+      ],
       thresholds: { lines: 80, functions: 80, branches: 80, statements: 80 },
       reporter: ['text', 'json-summary'],
     },

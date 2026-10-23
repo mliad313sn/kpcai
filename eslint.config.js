@@ -7,7 +7,7 @@ export default tseslint.config(
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
-    files: ['**/*.ts'],
+    files: ['**/*.{ts,tsx}'],
     rules: {
       // Method rules from the master prompt: short files, short functions.
       'max-lines': ['error', { max: 400, skipBlankLines: true, skipComments: true }],
@@ -27,7 +27,7 @@ export default tseslint.config(
     languageOptions: { globals: globals.node },
   },
   {
-    files: ['**/*.test.ts', '**/test-helpers/**'],
+    files: ['**/*.test.{ts,tsx}', '**/test-helpers/**'],
     rules: { 'max-lines-per-function': 'off' },
   },
 );
