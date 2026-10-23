@@ -30,11 +30,14 @@ export interface PlanCheckOptions extends EstimateDeps {
 }
 
 const isStr = (v: unknown): v is string => typeof v === 'string';
+const NODE_ID = /^[A-Za-z0-9_-]+$/;
 
 /** Field problems of one edited node (the UI sends untrusted JSON). */
 export function nodeProblems(n: PlannedNode, candidates: readonly Candidate[]): string[] {
-  const id = isStr(n.id) && n.id.length > 0 && n.id.length <= MAX_NODE_ID ? n.id : undefined;
-  if (!id) return [`node id must be a string of 1 to ${MAX_NODE_ID} characters`];
+  // Ids end up in budget labels, journal keys and batch keys: letters, digits, _ and - only
+  // (review NF-1: an id with a space escaped the node-cap question).
+  const id = isStr(n.id) && NODE_ID.test(n.id) && n.id.length <= MAX_NODE_ID ? n.id : undefined;
+  if (!id) return [`node id must be 1 to ${MAX_NODE_ID} letters, digits, _ or -`];
   const p: string[] = [];
   const bad = (what: string): number => p.push(`node "${id}": ${what}`);
   if (!isStr(n.title)) bad('title must be a string');

@@ -49,6 +49,14 @@ describe('BudgetGate caps', () => {
     yes.journal.close();
   });
 
+  it('recognises a node cap whatever the id looks like (NF-1)', async () => {
+    const spaced = gate(undefined);
+    const label = 'node my node total: up to $0.40 would exceed budgetUsd $0.10 (author)';
+    expect(await spaced.g.allow(CANDIDATE, label)).toBe(false);
+    expect(spaced.asked).toHaveLength(1);
+    spaced.journal.close();
+  });
+
   it('honours an over-budget waiver without asking (CLI only), journaled', async () => {
     const over = gate(false, { overBudget: true });
     expect(await over.g.allow(CANDIDATE, NODE_LABEL)).toBe(true);

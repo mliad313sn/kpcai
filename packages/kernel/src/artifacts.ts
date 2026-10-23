@@ -101,7 +101,9 @@ function lastRef(
 export const UNREVIEWED_DOCUMENT = /\.(md|markdown)$/i;
 /** Markdown files that other coding agents read as instructions (prompt-injection plants). */
 const AGENT_INSTRUCTIONS =
-  /^(claude|claude\.local|agents?|gemini|skill|copilot-instructions|conventions)\.(md|markdown)$/i;
+  /^(claude|claude\.local|agents?(\.override)?|gemini|skill|copilot-instructions|conventions)\.(md|markdown)$/i;
+/** Folders whose Markdown other agents load as memory or rules (review NF-2). */
+const AGENT_FOLDERS = new Set(['memory-bank', 'memory_bank']);
 
 /** Why an artifact no critic reviewed may not be kept at this path, whatever its kind claims. */
 export function unreviewedPathProblem(path: string, kind: ArtifactKind): string | undefined {
@@ -113,7 +115,7 @@ export function unreviewedPathProblem(path: string, kind: ArtifactKind): string 
     return `an unreviewed ${kind} must be a Markdown file (.md); ${path.slice(0, 120)} is not one`;
   if (segs.some((s) => s.startsWith('.')))
     return 'an unreviewed document may not go in a hidden file or folder';
-  if (AGENT_INSTRUCTIONS.test(base))
+  if (AGENT_INSTRUCTIONS.test(base) || segs.some((s) => AGENT_FOLDERS.has(s.toLowerCase())))
     return 'an unreviewed document may not be an agent instruction file';
   return undefined;
 }

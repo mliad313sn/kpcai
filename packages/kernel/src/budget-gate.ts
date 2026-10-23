@@ -5,7 +5,8 @@ import type { Confirm } from './confirm.js';
 import { budgetLimits, formatMoney, type Env, type Money } from './env.js';
 
 /** The orchestrator's label when a node would exceed its `budgetUsd` (S4, P3-F5). */
-const NODE_CAP = /^node \S+ total: /;
+// Any id (ids are validated upstream; this stays safe if one ever has a space, NF-1).
+const NODE_CAP = /^node .+? total: /;
 
 export interface GateContext {
   sessionId: string;

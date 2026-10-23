@@ -139,5 +139,8 @@ describe('protocol: deliverables (WI-S1-02)', () => {
     expect(parseParams('plan.validate', { planId: 'p', graph: { nodes: [node] } }).ok).toBe(true);
     const bad = { planId: 'p', graph: { nodes: [{ ...node, deliverable: 'movie' }] } };
     expect(parseParams('plan.validate', bad).ok).toBe(false);
+    // NF-1: node ids are letters, digits, _ and - only (they end up in budget labels).
+    const spaced = { planId: 'p', graph: { nodes: [{ ...node, id: 'my node' }] } };
+    expect(parseParams('plan.validate', spaced).ok).toBe(false);
   });
 });

@@ -168,7 +168,14 @@ describe('unreviewed artifacts are new Markdown documents only (P3-F3)', () => {
   });
 
   it('refuses agent instruction files and hidden folders even in Markdown', () => {
-    const paths = ['CLAUDE.md', 'sub/AGENTS.md', '.github/copilot-instructions.md', '.claude/a.md'];
+    const paths = [
+      'CLAUDE.md',
+      'sub/AGENTS.md',
+      '.github/copilot-instructions.md',
+      '.claude/a.md',
+      'AGENTS.override.md',
+      'memory-bank/progress.md',
+    ];
     const r = collect(paths.map((p) => art(p, 'report')));
     expect(r.artifacts).toEqual([]);
     expect(r.refused.map((x) => x.path)).toEqual(paths);

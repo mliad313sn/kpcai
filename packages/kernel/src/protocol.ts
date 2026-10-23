@@ -154,7 +154,11 @@ export const EditedGraphSchema = z.looseObject({
   nodes: z
     .array(
       z.looseObject({
-        id: z.string().min(1).max(100),
+        id: z
+          .string()
+          .min(1)
+          .max(100)
+          .regex(/^[A-Za-z0-9_-]+$/),
         model: Ref.optional(),
         deliverable: DeliverableSchema.optional(),
       }),

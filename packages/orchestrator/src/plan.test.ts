@@ -58,7 +58,11 @@ describe('validatePlan (R-301)', () => {
   it('reports malformed node fields from untrusted JSON', () => {
     const o = two().options;
     const problems = (over: Record<string, unknown>) => validatePlan(bad(over), o).problems;
-    expect(problems({ id: '' })).toEqual(['node id must be a string of 1 to 100 characters']);
+    expect(problems({ id: '' })).toEqual(['node id must be 1 to 100 letters, digits, _ or -']);
+    // NF-1: ids reach budget labels and batch keys; a space once escaped the node-cap question.
+    expect(problems({ id: 'my node' })).toEqual([
+      'node id must be 1 to 100 letters, digits, _ or -',
+    ]);
     expect(problems({ title: 3 })).toEqual(['node "n1": title must be a string']);
     expect(problems({ type: 'poetry' })).toEqual(['node "n1": unknown task type "poetry"']);
     expect(problems({ protocol: 'relay' })).toEqual(['node "n1": unknown protocol "relay"']);
