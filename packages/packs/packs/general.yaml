@@ -5,8 +5,8 @@ description: >-
   folder: read what is there, propose a small step, and keep everything reviewable.
 profiles: [anyone, unknown domain]
 markers:
-  - { glob: README, why: A described folder }
-  - { glob: README.md, why: A described folder }
+  - { glob: README, weak: true, why: A described folder }
+  - { glob: README.md, weak: true, why: A described folder }
   - { glob: '.kpstudio/**', why: KP Studio project config }
 plans:
   - id: understand

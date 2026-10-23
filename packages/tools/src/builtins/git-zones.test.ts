@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { mkdir, stat, utimes, writeFile } from 'node:fs/promises';
+import { mkdir, stat, unlink, utimes, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { LocalToolBus } from '../bus.js';
@@ -183,14 +183,27 @@ describe('git pathspecs match the zone decision exactly', () => {
     try {
       git(dir, 'init', '-q');
       await mkdir(path.join(dir, 'sub'));
-      for (const n of NAMES) {
+      // On a case-insensitive file system (macOS, Windows) `.env.Example` and `.env.example`
+      // are one file: keep the first spelling of each name only.
+      await writeFile(path.join(dir, 'probe.txt'), 'x');
+      const icaseFs = await stat(path.join(dir, 'PROBE.TXT')).then(
+        () => true,
+        () => false,
+      );
+      await unlink(path.join(dir, 'probe.txt'));
+      const seen = new Set<string>();
+      const names = NAMES.filter((n) => {
+        const key = icaseFs ? n.toLowerCase() : n;
+        return !seen.has(key) && (seen.add(key), true);
+      });
+      for (const n of names) {
         await writeFile(path.join(dir, n), 'x\n');
         await writeFile(path.join(dir, 'sub', n), 'x\n');
       }
       const zones = zoneSetFromGlobs(DEFAULT_ZONES, ci);
       const out = git(dir, 'ls-files', '-o', '--', '.', ...excludePathspecs(zones));
       const listed = new Set(out.split('\n').filter(Boolean));
-      for (const n of NAMES) {
+      for (const n of names) {
         for (const p of [n, `sub/${n}`]) {
           expect(listed.has(p), `${p} (ci ${ci})`).toBe(!inForbiddenZone(p, zones));
         }

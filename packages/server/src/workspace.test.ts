@@ -2,12 +2,11 @@
  * R-305 / R-306 / R-307 and D-019 over the real protocol: a WebSocket client, temp git
  * repositories, mock providers, no network.
  */
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { BaseAdapter, type ChatRequest } from '@kernelpai/core';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-vi.setConfig({ testTimeout: 20_000 });
 import { REQ, recordingHost } from '../../kernel/src/test-helpers/fixture.js';
 import { startServer, type KernelServer } from './server.js';
 import { connect, type Note, type TestClient } from './test-helpers/client.js';
@@ -91,7 +90,8 @@ describe('isolated runs (R-307)', () => {
     const seen = answer(c, ['patch']);
     const { runId, done } = await run(c, REQ, { allowTest: true });
     const worktree = done.worktree as string;
-    expect(worktree.startsWith(host.home)).toBe(true);
+    // Real paths: on macOS the temp folder /var is a symlink to /private/var.
+    expect(realpathSync(worktree).startsWith(realpathSync(host.home))).toBe(true);
     const applied = await c.call('patches.apply', { runId });
     expect(applied.result).toMatchObject({ results: [{ ok: true }, { ok: true }] });
     expect(existsSync(join(worktree, 'src/s.ts'))).toBe(true);

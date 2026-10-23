@@ -48,7 +48,7 @@ describe('kpai pack (WI-S1-05)', () => {
     expect(await main(['pack', 'init', 'my-lab', '--out', out], f)).toBe(1);
     expect(await main(['pack', 'init', 'Bad Id'], f)).toBe(2);
     expect(await main(['pack', 'init', 'home-lab'], f)).toBe(0);
-    expect(f.stdout).toMatch(/packs\/home-lab\.yaml/);
+    expect(f.stdout).toMatch(/packs[\\/]home-lab\.yaml/);
     expect(await main(['pack', 'frobnicate'], f)).toBe(2);
   });
 });

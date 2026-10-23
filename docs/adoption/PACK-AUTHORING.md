@@ -61,6 +61,9 @@ markers:
   under it.
 - `optIn: true` means "this file alone should not silently make a folder a workspace" (a lone
   `.bin` also looks like a downloads folder). KP asks before accepting it.
+- `weak: true` is for generic files many folders have (a README, any `*.md`). They still accept
+  a workspace, but count a quarter of a normal marker when packs are ranked, so they never
+  outrank the files that really say what the folder is for.
 
 ### plans — a node sequence that fits the work
 

@@ -2,9 +2,8 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
-vi.setConfig({ testTimeout: 20_000 });
 import { main } from './main.js';
 import { fakeIo, type FakeIo } from './test-helpers/fake-io.js';
 import { writeMockProviders } from './test-helpers/mock-providers.js';

@@ -5,10 +5,10 @@ description: >-
   one step at a time, explanations before actions, and a gentle first run.
 profiles: [student, learner, hobbyist, non-developer creator]
 markers:
-  - { glob: 'README.md', why: A described project }
+  - { glob: 'README.md', weak: true, why: A described project }
   - { glob: 'notes/**', why: Notes folder }
   - { glob: 'homework/**', why: Homework folder }
-  - { glob: '*.md', why: Markdown notes }
+  - { glob: '*.md', weak: true, why: Markdown notes }
 plans:
   - id: explain-then-do
     title: Explain, then do a small step

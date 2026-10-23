@@ -41,7 +41,10 @@ export async function tempDir(
   prefix = 'kpai-tools-',
 ): Promise<{ dir: string; cleanup: () => Promise<void> }> {
   const dir = await mkdtemp(path.join(tmpdir(), prefix));
-  return { dir, cleanup: () => rm(dir, { recursive: true, force: true }) };
+  return {
+    dir,
+    cleanup: () => rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }),
+  };
 }
 
 export class RecordingJournal {

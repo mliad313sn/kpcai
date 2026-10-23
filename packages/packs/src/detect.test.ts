@@ -75,6 +75,16 @@ describe('acceptsWorkspace', () => {
     expect(res.by?.pack).toBe('data-science');
   });
 
+  it('never lets weak markers (README, *.md) outrank the files that say what a folder is for', async () => {
+    for (const caseInsensitive of [false, true]) {
+      const root = await tree({ 'sales.csv': 'a,b', 'README.md': '#', 'notes.md': '#' });
+      const d = await detectPacks(root, await builtins(), { caseInsensitive });
+      expect(d.suggestions[0]?.id, `caseInsensitive ${caseInsensitive}`).toBe('data-science');
+    }
+    const docs = await tree({ 'README.md': '#' });
+    expect((await acceptsWorkspace(docs, await builtins())).accepted).toBe(true);
+  });
+
   it('asks before accepting a folder whose only marker is opt-in', async () => {
     const root = await tree({ 'firmware.bin': 'x' });
     const res = await acceptsWorkspace(root, await builtins());

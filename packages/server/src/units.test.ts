@@ -1,7 +1,7 @@
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import type { IncomingMessage } from 'node:http';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { KernelError } from '@kernelpai/kernel';
 import { ProviderError } from '@kernelpai/core';
@@ -80,8 +80,9 @@ describe('errors, server file, static paths', () => {
   });
 
   it('keeps every path inside the UI folder', () => {
-    expect(resolveInside('/srv/ui', '/a/b.js')).toBe('/srv/ui/a/b.js');
-    expect(resolveInside('/srv/ui', '/../../etc/passwd')).toBe('/srv/ui/etc/passwd');
+    // Platform paths: on Windows '/srv/ui' resolves on the current drive.
+    expect(resolveInside('/srv/ui', '/a/b.js')).toBe(resolve('/srv/ui/a/b.js'));
+    expect(resolveInside('/srv/ui', '/../../etc/passwd')).toBe(resolve('/srv/ui/etc/passwd'));
     expect(resolveInside('/srv/ui', '/a%00b')).toBeUndefined();
   });
 });

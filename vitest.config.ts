@@ -21,6 +21,10 @@ export default defineConfig({
     },
   },
   test: {
+    // Many suites drive real git repositories and WebSocket servers; on CI runners
+    // (Windows above all) git alone can take seconds. A real hang still fails at 60 s.
+    testTimeout: 60_000,
+    hookTimeout: 60_000,
     include: ['packages/*/src/**/*.test.ts', 'apps/*/src/**/*.test.{ts,tsx}'],
     environment: 'node',
     coverage: {

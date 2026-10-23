@@ -17,12 +17,15 @@ const Glob = z
 /**
  * A file or folder that shows a folder is a real workspace for this profile. `optIn`
  * markers (single binaries, firmware dumps) only count after the user agrees, because
- * a lone binary is also what a downloads folder looks like.
+ * a lone binary is also what a downloads folder looks like. `weak` markers (a README,
+ * any Markdown file) still accept a workspace but count little when packs are ranked,
+ * so a generic file never outranks the files that really say what a folder is for.
  */
 export const MarkerSchema = z
   .object({
     glob: Glob,
     optIn: z.boolean().default(false),
+    weak: z.boolean().default(false),
     why: Short.optional(),
   })
   .strict();

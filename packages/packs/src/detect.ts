@@ -93,7 +93,7 @@ function score(pack: Pack, entries: Entry[], icase: boolean): PackSuggestion | u
   for (const m of pack.markers) {
     const hit = entries.find((e) => matchesGlob(e.rel, m.glob, icase));
     if (hit === undefined) continue;
-    points += m.optIn ? 0.5 : 1;
+    points += m.weak ? 0.25 : m.optIn ? 0.5 : 1;
     if (evidence.length < 5) evidence.push({ path: hit.rel, glob: m.glob, optIn: m.optIn });
   }
   if (points === 0) return undefined;

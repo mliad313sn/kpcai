@@ -20,7 +20,7 @@ export async function addSymlink(root: string, link: string, target: string): Pr
 }
 
 export async function cleanup(root: string): Promise<void> {
-  await rm(root, { recursive: true, force: true });
+  await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
 }
 
 /** A minimal valid pack YAML with the given id and extra lines. */
