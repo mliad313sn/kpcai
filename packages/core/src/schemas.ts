@@ -43,6 +43,8 @@ export const ModelCardSchema = z.object({
   modalities: z.array(ModalitySchema).min(1),
   price: PriceSchema,
   latencyMsTypical: z.number().int().positive().optional(),
+  /** Prior competence per task type in [0,1]; overrides strengths/weaknesses when set. */
+  competence: z.partialRecord(TaskTypeSchema, z.number().min(0).max(1)).optional(),
   strengths: z.array(TaskTypeSchema).default([]),
   weaknesses: z.array(TaskTypeSchema).default([]),
   notes: z.string().optional(),
