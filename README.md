@@ -1,5 +1,7 @@
 # KernelPAI
 
+> **KP Studio** is the name of the KernelPAI apps — web console, desktop and terminal UI (arriving in phase 3). KernelPAI is the engine and the `kpai` command line.
+
 A local, multi-AI development console. KernelPAI breaks every request into a task graph and routes each task to the most competent model, cloud or local. Models from different providers review each other's work. The whole chain stays visible, interruptible and budgeted.
 
 > **Status: phase 0 (foundations).** One explicit model per call, with streaming, cost estimates, budget confirmation, Ctrl+C cancellation and a tamper-evident local journal. Routing arrives in phase 1. See [docs/PHASE-0-REPORT.md](docs/PHASE-0-REPORT.md).
