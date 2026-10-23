@@ -1,4 +1,4 @@
-import { readFile } from 'node:fs/promises';
+import { readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import type { ToolRisk } from '@kernelpai/core';
 import { Client, type CallToolResult, type Tool } from '@modelcontextprotocol/client';
@@ -23,8 +23,16 @@ export const MCP_CONNECT_TIMEOUT_MS = 15_000;
 export const MCP_CALL_TIMEOUT_MS = 60_000;
 const STDERR_TAIL = 2048;
 
-/** Reads `$KPAI_HOME/mcp.json`; a missing file means no servers. Throws on invalid JSON/shape. */
+/**
+ * Reads `$KPAI_HOME/mcp.json`; a missing file (or missing home) means no servers.
+ * Throws on invalid JSON/shape, and when `kpaiHome` exists but is not a folder:
+ * POSIX reports that as ENOTDIR while Windows reports ENOENT, so it is checked here.
+ */
 export async function loadMcpConfig(kpaiHome: string): Promise<McpConfig> {
+  // Checked first so every OS takes the same path (see above).
+  const home = await stat(kpaiHome).catch(() => undefined);
+  if (home === undefined) return { servers: {} };
+  if (!home.isDirectory()) throw new Error(`KPAI_HOME is not a directory: ${kpaiHome}`);
   let raw: string;
   try {
     raw = await readFile(path.join(kpaiHome, 'mcp.json'), 'utf8');

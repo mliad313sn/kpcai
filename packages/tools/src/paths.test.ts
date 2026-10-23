@@ -49,6 +49,48 @@ describe('workspace jail', () => {
     expect(inside.rel).toBe('src/a.txt');
   });
 
+  // Simulates macOS /var → /private/var and Windows 8.3 names (RUNNER~1): the same
+  // folder reached through an alias. A directory link (junction on Windows) stands in.
+  describe('root aliases', () => {
+    let alias: string;
+    beforeEach(async () => {
+      alias = path.join(base, 'alias-of-ws');
+      await symlink(root, alias, isWin ? 'junction' : 'dir');
+    });
+
+    it('accepts absolute paths written through an alias of the root', async () => {
+      const j = await resolveInRoot(root, path.join(alias, 'src', 'a.txt'), { mustExist: true });
+      expect(j.rel).toBe('src/a.txt');
+      const fresh = await resolveInRoot(root, path.join(alias, 'new', 'b.txt'));
+      expect(fresh).toMatchObject({ rel: 'new/b.txt', exists: false });
+    });
+
+    it('accepts canonical absolute paths when the root itself is given through an alias', async () => {
+      const j = await resolveInRoot(alias, path.join(root, 'src', 'a.txt'));
+      expect(j.rel).toBe('src/a.txt');
+      expect((await resolveInRoot(alias, 'src/a.txt')).rel).toBe('src/a.txt');
+    });
+
+    it('still refuses escapes reached through an alias', async () => {
+      const outsideAlias = path.join(base, 'alias-of-base');
+      await symlink(base, outsideAlias, isWin ? 'junction' : 'dir');
+      await expect(resolveInRoot(root, path.join(outsideAlias, 'secret.txt'))).rejects.toThrow(
+        /outside/,
+      );
+      await expect(resolveInRoot(alias, path.join(base, 'secret.txt'))).rejects.toThrow(/outside/);
+      await expect(
+        resolveInRoot(root, `${alias}${path.sep}..${path.sep}secret.txt`),
+      ).rejects.toThrow(/\.\./);
+    });
+
+    it.skipIf(isWin)('still refuses a final symlink reached through an alias', async () => {
+      await symlink(path.join(root, 'src', 'a.txt'), path.join(root, 'link.txt'));
+      await expect(
+        resolveInRoot(root, path.join(alias, 'link.txt'), { noFinalSymlink: true }),
+      ).rejects.toThrow(/symlink/);
+    });
+  });
+
   it('refuses Windows drive, UNC and device paths on every OS', async () => {
     for (const p of ['\\\\server\\share\\x', '//server/share', '\\\\?\\C:\\x', 'C:foo']) {
       await expect(resolveInRoot(root, p)).rejects.toBeInstanceOf(JailError);

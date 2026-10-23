@@ -1,4 +1,4 @@
-import { symlink, writeFile } from 'node:fs/promises';
+import { mkdir, symlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { ToolDefinition, ToolRisk } from '@kernelpai/core';
 import { describe, expect, it } from 'vitest';
@@ -156,6 +156,28 @@ describe('per-model deny and forbidden paths', () => {
       }
     },
   );
+
+  it('matches forbidden zones and trust through root aliases', async () => {
+    const { dir, cleanup } = await tempDir();
+    try {
+      const real = path.join(dir, 'ws');
+      const alias = path.join(dir, 'alias');
+      await mkdir(path.join(real, 'config'), { recursive: true });
+      await symlink(real, alias, process.platform === 'win32' ? 'junction' : 'dir');
+      const policy = new GradedPermissionPolicy({ forbiddenPaths: ['config/*.key'] });
+      const { bus } = setup(policy);
+      // Absolute, not yet existing, written through the alias while the root is canonical.
+      const target = path.join(alias, 'config', 'new.key');
+      const res = await bus.call(call('t.read', { path: target }), makeCtx(real));
+      expect(res.content).toMatch(/forbidden zone/);
+      policy.trust({ sessionId: 's1', root: alias, risk: 'write' });
+      const ctx = makeCtx(real);
+      expect((await bus.call(call('t.write', {}), ctx)).isError).toBe(false);
+      expect(ctx.questions).toHaveLength(0);
+    } finally {
+      await cleanup();
+    }
+  });
 
   it('checks shell arguments against forbidden zones', () => {
     const policy = new GradedPermissionPolicy({ forbiddenPaths: ['.env'] });

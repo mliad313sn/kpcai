@@ -1,3 +1,4 @@
+import { realpathSync } from 'node:fs';
 import { lstat, realpath } from 'node:fs/promises';
 import path from 'node:path';
 
@@ -51,18 +52,39 @@ async function realOrUndefined(p: string): Promise<string | undefined> {
   }
 }
 
-/** Resolves the deepest existing ancestor through symlinks and re-appends the rest. */
+/**
+ * Canonical form of an absolute path: the deepest existing ancestor goes through
+ * realpath (symlinks, macOS /var → /private/var, Windows 8.3 short names), then
+ * the missing segments are re-appended. `exists` is true when the whole path exists.
+ */
 async function realResolve(abs: string): Promise<{ real: string; exists: boolean }> {
   const tail: string[] = [];
   let cur = abs;
   for (;;) {
     const real = await realOrUndefined(cur);
-    if (real !== undefined)
+    if (real !== undefined) {
       return { real: path.join(real, ...tail.reverse()), exists: tail.length === 0 };
+    }
     const parent = path.dirname(cur);
     if (parent === cur) return { real: abs, exists: false };
     tail.push(path.basename(cur));
     cur = parent;
+  }
+}
+
+/** Synchronous {@link realResolve} (for the synchronous permission policy). */
+export function canonicalSync(abs: string): string {
+  const tail: string[] = [];
+  let cur = path.resolve(abs);
+  for (;;) {
+    try {
+      return path.join(realpathSync.native(cur), ...tail.reverse());
+    } catch {
+      const parent = path.dirname(cur);
+      if (parent === cur) return path.resolve(abs);
+      tail.push(path.basename(cur));
+      cur = parent;
+    }
   }
 }
 
@@ -99,14 +121,22 @@ export async function resolveInRoot(
   const raw = checkLexical(p, options.platform);
   const realRoot = await realOrUndefined(root);
   if (realRoot === undefined) throw new JailError('workspace root does not exist');
+  const absolute = path.isAbsolute(raw);
   const abs = path.resolve(realRoot, raw);
-  if (!isInside(realRoot, abs)) throw new JailError(`path is outside the workspace: ${raw}`);
+  // An absolute input may name the root through an alias (/var vs /private/var,
+  // RUNNER~1 vs runneradmin), so it is only judged after canonicalisation below.
+  if (!absolute && !isInside(realRoot, abs)) {
+    throw new JailError(`path is outside the workspace: ${raw}`);
+  }
+  const { real, exists } = await realResolve(abs);
+  if (!isInside(realRoot, real)) {
+    const why = absolute ? 'path is outside the workspace' : 'path escapes the workspace';
+    throw new JailError(`${why}: ${raw}`);
+  }
   if (options.noFinalSymlink) {
     const st = await lstat(abs).catch(() => undefined);
     if (st?.isSymbolicLink()) throw new JailError(`refusing to follow a symlink: ${raw}`);
   }
-  const { real, exists } = await realResolve(abs);
-  if (!isInside(realRoot, real)) throw new JailError(`path escapes the workspace: ${raw}`);
   if (options.mustExist && !exists) throw new JailError(`not found: ${raw}`);
   return { abs: real, rel: toPosixRel(path.relative(realRoot, real)), exists, realRoot };
 }

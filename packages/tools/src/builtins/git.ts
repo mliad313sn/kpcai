@@ -1,5 +1,4 @@
 import { realpath } from 'node:fs/promises';
-import path from 'node:path';
 import type { ToolContext } from '@kernelpai/core';
 import { scrubEnv, type Env } from '../env.js';
 import { checkLexical, resolveInRoot, touchesGitDir } from '../paths.js';
@@ -32,17 +31,13 @@ async function git(
   ctx: ToolContext,
   args: string[],
   stdin?: string,
-  confine = false,
+  cwdOverride?: string,
 ): Promise<RunResult> {
-  const cwd = await realpath(ctx.root);
+  const cwd = cwdOverride ?? (await realpath(ctx.root));
   const env: Record<string, string> = {
     ...scrubEnv(opts.env ?? process.env),
     GIT_TERMINAL_PROMPT: '0',
   };
-  // Confined: git may not discover a repository above the root, so patch paths are
-  // always root-relative (from a subdirectory, `diff --git` patches would otherwise
-  // be resolved against the top level and silently skipped).
-  if (confine) env.GIT_CEILING_DIRECTORIES = path.dirname(cwd);
   return runProcess({
     command: opts.gitBinary ?? 'git',
     args: [...HARDENING, ...args],
@@ -105,6 +100,25 @@ async function checkTargets(ctx: ToolContext, patch: string): Promise<string[]> 
   return targets;
 }
 
+/**
+ * Where to run `git apply` so patch paths are root-relative in every case. From a
+ * repo subdirectory git resolves `diff --git` patches against the top level and
+ * silently skips paths outside the cwd, while plain patches are cwd-relative. So
+ * when the root is a subdirectory we run from the top level with
+ * `--directory=<prefix>`: both formats then land under the root, and the user's
+ * repository config (e.g. core.autocrlf) still applies.
+ */
+async function applyLocation(
+  opts: GitToolOptions,
+  ctx: ToolContext,
+): Promise<{ cwd?: string; args: string[] }> {
+  const r = await git(opts, ctx, ['rev-parse', '--show-toplevel', '--show-prefix']);
+  if (r.code !== 0) return { args: [] };
+  const [top = '', prefix = ''] = r.stdout.split(/\r?\n/);
+  if (prefix === '' || top === '') return { args: [] };
+  return { cwd: await realpath(top), args: [`--directory=${prefix}`] };
+}
+
 function gitApply(opts: GitToolOptions): LocalTool {
   return {
     def: {
@@ -124,11 +138,12 @@ function gitApply(opts: GitToolOptions): LocalTool {
       const patch = String(input.patch);
       const files = await checkTargets(ctx, patch);
       const meta = { files, bytes: Buffer.byteLength(patch, 'utf8') };
-      const check = await git(opts, ctx, ['apply', '--check', '-'], patch, true);
+      const at = await applyLocation(opts, ctx);
+      const check = await git(opts, ctx, ['apply', '--check', ...at.args, '-'], patch, at.cwd);
       if (check.code !== 0 || check.error || check.timedOut) {
         return outcome(check, { ...meta, stage: 'check' });
       }
-      const applied = await git(opts, ctx, ['apply', '-'], patch, true);
+      const applied = await git(opts, ctx, ['apply', ...at.args, '-'], patch, at.cwd);
       if (applied.code !== 0) return outcome(applied, { ...meta, stage: 'apply' });
       return ok(`applied patch to ${files.length} file(s): ${files.join(', ')}`, meta);
     },

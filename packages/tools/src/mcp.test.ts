@@ -66,7 +66,9 @@ describe('MCP helpers', () => {
         JSON.stringify({ servers: { 'bad name!': { command: 'x' } } }),
       );
       await expect(loadMcpConfig(dir)).rejects.toThrow();
-      await expect(loadMcpConfig(path.join(dir, 'mcp.json'))).rejects.toThrow();
+      // A file given as KPAI_HOME: ENOTDIR on POSIX, ENOENT on Windows — same error everywhere.
+      await expect(loadMcpConfig(path.join(dir, 'mcp.json'))).rejects.toThrow(/not a directory/);
+      expect(await loadMcpConfig(path.join(dir, 'missing-home'))).toEqual({ servers: {} });
     } finally {
       await cleanup();
     }

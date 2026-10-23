@@ -1,4 +1,3 @@
-import { realpathSync } from 'node:fs';
 import path from 'node:path';
 import {
   refToString,
@@ -9,7 +8,7 @@ import {
   type ToolDefinition,
   type ToolRisk,
 } from '@kernelpai/core';
-import { matchesForbidden, toPosixRel } from './paths.js';
+import { canonicalSync, matchesForbidden, toPosixRel } from './paths.js';
 
 export interface GradedPolicyOptions {
   /**
@@ -67,25 +66,27 @@ export function pathsInCall(call: ToolCall): string[] {
 }
 
 /**
- * Root-relative forms of a path to test against forbidden globs: the lexical one,
- * and the real one when it exists, so an in-root symlink to `.env` is caught too.
+ * Root-relative forms of a path to test against forbidden globs: the lexical one
+ * and the canonical one, so an in-root symlink to `.env` is caught too.
  */
 function relForms(root: string, p: string): string[] {
   const base = path.resolve(root);
   const abs = path.resolve(base, p.replace(/\\/g, '/'));
-  const forms = [toPosixRel(path.relative(base, abs))];
-  try {
-    forms.push(toPosixRel(path.relative(realpathSync.native(base), realpathSync.native(abs))));
-  } catch {
-    // Missing paths have no real form; the lexical one is enough.
-  }
-  return forms;
+  // Canonical form even for paths that do not exist yet: realpath of the deepest
+  // existing ancestor, so root aliases (/var vs /private/var, 8.3 names) agree.
+  const real = toPosixRel(path.relative(canonicalSync(base), canonicalSync(abs)));
+  return [toPosixRel(path.relative(base, abs)), real];
 }
 
 /** Tool-name glob: `*` matches any run of characters, dots included (`mcp.github.*`). */
 function toolGlob(glob: string): RegExp {
   const body = glob.split('*').map((s) => s.replace(/[|{}()[\]^$+?.\\]/g, '\\$&'));
   return new RegExp(`^${body.join('.*')}$`);
+}
+
+/** Canonical root, so trust given for `/var/ws` also covers `/private/var/ws`. */
+function rootKey(root: string): string {
+  return canonicalSync(root);
 }
 
 function scopeKey(...parts: string[]): string {
@@ -115,7 +116,7 @@ export class GradedPermissionPolicy implements ConfirmAwarePolicy {
     if (this.reason(def, call, ctx) !== undefined) return 'deny';
     if (def.risk === 'read') return 'allow';
     if (def.risk === 'destructive') return 'confirm';
-    if (this.trusted.has(scopeKey(ctx.sessionId, path.resolve(ctx.root), 'write'))) return 'allow';
+    if (this.trusted.has(scopeKey(ctx.sessionId, rootKey(ctx.root), 'write'))) return 'allow';
     return this.batches.has(this.batchKey(ctx)) ? 'allow' : 'confirm';
   }
 
@@ -130,7 +131,7 @@ export class GradedPermissionPolicy implements ConfirmAwarePolicy {
   }
 
   trust(scope: { sessionId: string; root: string; risk: Exclude<ToolRisk, 'destructive'> }): void {
-    this.trusted.add(scopeKey(scope.sessionId, path.resolve(scope.root), scope.risk));
+    this.trusted.add(scopeKey(scope.sessionId, rootKey(scope.root), scope.risk));
   }
 
   confirmed(def: ToolDefinition, _call: ToolCall, ctx: ToolContext): void {
@@ -138,7 +139,7 @@ export class GradedPermissionPolicy implements ConfirmAwarePolicy {
   }
 
   private batchKey(ctx: ToolContext): string {
-    return scopeKey(ctx.sessionId, ctx.nodeId, path.resolve(ctx.root));
+    return scopeKey(ctx.sessionId, ctx.nodeId, rootKey(ctx.root));
   }
 
   private modelDenied(tool: string, model: string): boolean {

@@ -8,10 +8,16 @@ import { call, makeCtx, tempDir } from '../test-helpers/ctx.js';
 import { gitTools, patchTargets } from './git.js';
 
 function git(cwd: string, ...args: string[]): string {
-  return execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@e', ...args], {
+  const opts = ['-c', 'user.name=t', '-c', 'user.email=t@e', '-c', 'core.autocrlf=false'];
+  return execFileSync('git', [...opts, ...args], {
     cwd,
     encoding: 'utf8',
   });
+}
+
+/** File text with CRLF folded to LF, so assertions hold whatever the runner's git config. */
+async function text(file: string): Promise<string> {
+  return (await readFile(file, 'utf8')).replace(/\r\n/g, '\n');
 }
 
 const PATCH = [
@@ -88,7 +94,7 @@ describe('git built-ins', () => {
   it('applies a valid patch after --check', async () => {
     const r = await bus.call(call('git.apply', { patch: PATCH }), makeCtx(root));
     expect(r).toEqual({ content: 'applied patch to 1 file(s): src/a.txt', isError: false });
-    expect(await readFile(path.join(root, 'src', 'a.txt'), 'utf8')).toBe('two\n');
+    expect(await text(path.join(root, 'src', 'a.txt'))).toBe('two\n');
   });
 
   it('applies relative to a subdirectory root', async () => {
@@ -97,7 +103,26 @@ describe('git built-ins', () => {
     const patch = PATCH.replace(/src\//g, '');
     const r = await bus.call(call('git.apply', { patch }), makeCtx(sub));
     expect(r.isError).toBe(false);
-    expect(await readFile(path.join(sub, 'a.txt'), 'utf8')).toBe('two\n');
+    expect(await text(path.join(sub, 'a.txt'))).toBe('two\n');
+    // Plain patches (no `diff --git` line) land in the same place.
+    const plain = PATCH.replace(/src\//g, '')
+      .replace(/^diff --git.*\n/, '')
+      .replace(/one|two/g, (m) => (m === 'one' ? 'two' : 'three'));
+    expect((await bus.call(call('git.apply', { patch: plain }), makeCtx(sub))).isError).toBe(false);
+    expect(await text(path.join(sub, 'a.txt'))).toBe('three\n');
+    expect(git(root, 'status', '--porcelain')).toBe(' M src/a.txt\n');
+  });
+
+  it("honours the repository's own config (core.autocrlf) from a subdirectory root", async () => {
+    git(root, 'config', 'core.autocrlf', 'true');
+    const sub = path.join(root, 'src');
+    policy.trust({ sessionId: 's1', root: sub, risk: 'write' });
+    const r = await bus.call(
+      call('git.apply', { patch: PATCH.replace(/src\//g, '') }),
+      makeCtx(sub),
+    );
+    expect(r.isError).toBe(false);
+    expect(await readFile(path.join(sub, 'a.txt'), 'utf8')).toBe('two\r\n');
   });
 
   it('leaves the tree untouched when --check fails', async () => {
@@ -105,7 +130,7 @@ describe('git built-ins', () => {
     const r = await bus.call(call('git.apply', { patch: bad }), makeCtx(root));
     expect(r.isError).toBe(true);
     expect(r.content).toMatch(/patch does not apply|git exited/);
-    expect(await readFile(path.join(root, 'src', 'a.txt'), 'utf8')).toBe('one\n');
+    expect(await text(path.join(root, 'src', 'a.txt'))).toBe('one\n');
   });
 
   it('refuses patches that leave the root or touch .git or symlinks', async () => {
@@ -130,6 +155,6 @@ describe('git built-ins', () => {
     const r = await strict.call(call('git.apply', { patch: PATCH }), ctx);
     expect(r.content).toMatch(/declined/);
     expect(ctx.questions[0]).toMatch(/git\.apply \(write\)/);
-    expect(await readFile(path.join(root, 'src', 'a.txt'), 'utf8')).toBe('one\n');
+    expect(await text(path.join(root, 'src', 'a.txt'))).toBe('one\n');
   });
 });
