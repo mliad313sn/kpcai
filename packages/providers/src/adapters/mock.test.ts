@@ -29,6 +29,11 @@ describe('MockAdapter', () => {
     await expect(collect(a, 'x [[fail:unavailable]]')).rejects.toMatchObject({
       kind: 'unavailable',
     });
+    expect(await collect(a, 'x [[fail:unavailable@other]]')).toContainEqual({
+      type: 'end',
+      stopReason: 'end',
+    });
+    await expect(collect(a, 'x [[fail:refusal@mock]]')).rejects.toMatchObject({ kind: 'refusal' });
     a.behaviour = { failWith: 'rate_limit' };
     await expect(collect(a, 'x')).rejects.toMatchObject({ kind: 'rate_limit' });
   });

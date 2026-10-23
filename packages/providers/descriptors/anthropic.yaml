@@ -1,5 +1,6 @@
 # Provider description file. Edit prices/models here; no code change needed.
-# Prices: USD per million tokens, Anthropic first-party API (cached 2026-10-06).
+# Prices: USD per million tokens, Anthropic first-party API (cached 2026-10-06;
+# matches models.dev on 2026-10-23). Competence priors: see COMPETENCE.md.
 id: anthropic
 name: Anthropic
 kind: cloud
@@ -16,6 +17,16 @@ models:
     maxOutput: 128000
     modalities: [text, image, code]
     price: { inputPerMTok: 4, outputPerMTok: 20 }
+    competence:
+      {
+        analysis: 0.92,
+        code_generation: 0.93,
+        writing: 0.9,
+        research: 0.88,
+        test: 0.9,
+        critique: 0.92,
+        decision: 0.91,
+      }
     strengths: [analysis, code_generation, decision, critique]
   - id: claude-sonnet-5-5
     displayName: Claude Sonnet 5.5
@@ -23,6 +34,16 @@ models:
     maxOutput: 128000
     modalities: [text, image, code]
     price: { inputPerMTok: 2, outputPerMTok: 10 }
+    competence:
+      {
+        analysis: 0.86,
+        code_generation: 0.89,
+        writing: 0.86,
+        research: 0.83,
+        test: 0.87,
+        critique: 0.85,
+        decision: 0.85,
+      }
     strengths: [code_generation, test, writing]
   - id: claude-haiku-5-5
     displayName: Claude Haiku 5.5
@@ -30,5 +51,15 @@ models:
     maxOutput: 128000
     modalities: [text, image, code]
     price: { inputPerMTok: 0.1, outputPerMTok: 0.5 }
+    competence:
+      {
+        analysis: 0.7,
+        code_generation: 0.72,
+        writing: 0.72,
+        research: 0.7,
+        test: 0.7,
+        critique: 0.66,
+        decision: 0.66,
+      }
     strengths: [research, writing]
     notes: 'Price shown is for prompts up to 100K tokens.'

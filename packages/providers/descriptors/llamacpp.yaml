@@ -1,0 +1,27 @@
+# Local models served by llama.cpp's llama-server (OpenAI-compatible API).
+# Models are discovered at runtime (GET /v1/models) and get the default card below.
+id: llamacpp
+name: llama.cpp (local)
+kind: local
+adapter: ai-sdk:openai-compatible
+baseUrl: http://127.0.0.1:8080/v1
+baseUrlEnv: LLAMACPP_BASE_URL # full base URL including /v1
+jurisdiction: local
+retention: 'stays on this machine'
+discoverModels: true
+defaultLocalCard:
+  contextWindow: 8192
+  maxOutput: 4096
+  modalities: [text, code]
+  price: { inputPerMTok: 0, outputPerMTok: 0 }
+  # Conservative priors: unknown local model, assume a small quantised one (COMPETENCE.md).
+  competence:
+    {
+      analysis: 0.45,
+      code_generation: 0.45,
+      writing: 0.5,
+      research: 0.4,
+      test: 0.45,
+      critique: 0.4,
+      decision: 0.4,
+    }

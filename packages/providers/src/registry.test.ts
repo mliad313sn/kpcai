@@ -2,7 +2,9 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { AiSdkAdapter } from './adapters/ai-sdk.js';
 import {
+  ADAPTERS,
   BUILTIN_DESCRIPTOR_DIR,
   ProviderRegistry,
   loadDescriptors,
@@ -15,7 +17,55 @@ describe('provider registry', () => {
     const ids = loadDescriptors([BUILTIN_DESCRIPTOR_DIR])
       .map((d) => d.id)
       .sort();
-    expect(ids).toEqual(['anthropic', 'mock', 'ollama']);
+    expect(ids).toEqual([
+      'anthropic',
+      'deepseek',
+      'google',
+      'llamacpp',
+      'mistral',
+      'mock',
+      'ollama',
+      'openai',
+      'openrouter',
+      'xai',
+    ]);
+  });
+
+  it('gives every routable card a full set of competence priors', () => {
+    const tasks = [
+      'analysis',
+      'code_generation',
+      'writing',
+      'research',
+      'test',
+      'critique',
+      'decision',
+    ];
+    for (const d of loadDescriptors([BUILTIN_DESCRIPTOR_DIR]).filter((x) => x.kind !== 'test')) {
+      const cards = d.discoverModels ? [d.defaultLocalCard] : d.models;
+      expect(cards.length, d.id).toBeGreaterThan(0);
+      for (const card of cards)
+        expect(Object.keys(card?.competence ?? {}).sort(), d.id).toEqual(tasks.sort());
+    }
+  });
+
+  it('builds every ai-sdk descriptor with the generic adapter', () => {
+    const reg = new ProviderRegistry(loadDescriptors([BUILTIN_DESCRIPTOR_DIR]), {});
+    const sdks = reg
+      .list()
+      .filter((a) => a instanceof AiSdkAdapter)
+      .map((a) => `${a.descriptor.id}:${(a as AiSdkAdapter).sdk}`)
+      .sort();
+    expect(sdks).toEqual([
+      'deepseek:deepseek',
+      'google:google',
+      'llamacpp:openai-compatible',
+      'mistral:mistral',
+      'openai:openai',
+      'openrouter:openrouter',
+      'xai:xai',
+    ]);
+    expect(Object.keys(ADAPTERS).filter((k) => k.startsWith('ai-sdk:'))).toHaveLength(7);
   });
 
   it('lets a user directory override or add providers with YAML only', () => {
@@ -57,7 +107,8 @@ describe('provider registry', () => {
     expect(() => reg.resolve('echo')).toThrow(/provider\/model/);
     expect(() => reg.resolve('mock/')).toThrow(/provider\/model/);
     expect(() => reg.resolve('nobody/x')).toThrow(/Unknown provider/);
-    expect(reg.list()).toHaveLength(3);
+    expect(reg.list()).toHaveLength(10);
+    expect(reg.resolve('openrouter/qwen/qwen3.8-max-0902').model).toBe('qwen/qwen3.8-max-0902');
   });
 
   it('resolves base URLs from env with a scheme default', () => {

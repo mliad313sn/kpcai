@@ -1,7 +1,6 @@
 import { z } from 'zod';
 import {
   BaseAdapter,
-  ModelCardSchema,
   ProviderError,
   kindFromStatus,
   type ChatRequest,
@@ -13,6 +12,7 @@ import {
 } from '@kernelpai/core';
 import { readLines } from '../lines.js';
 import { resolveBaseUrl, type Env } from '../env.js';
+import { localCard } from '../local-card.js';
 
 const TagsSchema = z.object({
   models: z.array(z.object({ name: z.string().min(1) }).loose()),
@@ -144,14 +144,7 @@ export class OllamaAdapter extends BaseAdapter {
   }
 
   private localCard(id: string): ModelCard {
-    return ModelCardSchema.parse({
-      contextWindow: 8192,
-      maxOutput: 4096,
-      modalities: ['text', 'code'],
-      price: { inputPerMTok: 0, outputPerMTok: 0 },
-      ...this.descriptor.defaultLocalCard,
-      id,
-    });
+    return localCard(this.descriptor, id);
   }
 }
 

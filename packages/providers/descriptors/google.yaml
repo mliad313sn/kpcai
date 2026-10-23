@@ -1,0 +1,51 @@
+# Provider description file. Edit prices/models here; no code change needed.
+# Models, prices (USD per MTok) and limits: models.dev api.json, fetched 2026-10-23.
+# Competence priors: see COMPETENCE.md in this directory.
+id: google
+name: Google Gemini
+kind: cloud
+adapter: ai-sdk:google
+baseUrl: https://generativelanguage.googleapis.com/v1beta
+baseUrlEnv: GOOGLE_BASE_URL
+auth:
+  env: GOOGLE_GENERATIVE_AI_API_KEY
+jurisdiction: US
+retention: 'API default retention; see provider policy'
+models:
+  - id: gemini-4-argon
+    displayName: Gemini 4 Argon
+    contextWindow: 1048576
+    maxOutput: 32768
+    modalities: [text, image, audio, video, code]
+    price: { inputPerMTok: 2, outputPerMTok: 10 }
+    competence:
+      {
+        analysis: 0.91,
+        code_generation: 0.9,
+        writing: 0.86,
+        research: 0.91,
+        test: 0.87,
+        critique: 0.88,
+        decision: 0.9,
+      }
+    strengths: [analysis, research, code_generation]
+    notes: 'Flagship.'
+  - id: gemini-3.1-flash-lite
+    displayName: Gemini 3.1 Flash Lite
+    contextWindow: 1048576
+    maxOutput: 65536
+    modalities: [text, image, audio, video, code]
+    price: { inputPerMTok: 0.25, outputPerMTok: 1.5 }
+    competence:
+      {
+        analysis: 0.64,
+        code_generation: 0.62,
+        writing: 0.66,
+        research: 0.66,
+        test: 0.6,
+        critique: 0.58,
+        decision: 0.6,
+      }
+    strengths: [research]
+    weaknesses: [critique]
+    notes: 'Cheap tier.'

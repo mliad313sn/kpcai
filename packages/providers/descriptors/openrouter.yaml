@@ -1,0 +1,51 @@
+# Provider description file. Edit prices/models here; no code change needed.
+# Aggregator: models chosen to add model families not served by a direct descriptor.
+# Models, prices (USD per MTok) and limits: models.dev api.json (provider "openrouter"), fetched 2026-10-23.
+# Competence priors: see COMPETENCE.md in this directory.
+id: openrouter
+name: OpenRouter
+kind: aggregator
+adapter: ai-sdk:openrouter
+baseUrl: https://openrouter.ai/api/v1
+baseUrlEnv: OPENROUTER_BASE_URL
+auth:
+  env: OPENROUTER_API_KEY
+jurisdiction: US
+retention: 'Routed to upstream providers; retention depends on the upstream policy'
+models:
+  - id: qwen/qwen3.8-max-0902
+    displayName: Qwen3.8 Max (via OpenRouter)
+    contextWindow: 1000000
+    maxOutput: 131072
+    modalities: [text, image, video, code]
+    price: { inputPerMTok: 2, outputPerMTok: 6 }
+    competence:
+      {
+        analysis: 0.86,
+        code_generation: 0.86,
+        writing: 0.82,
+        research: 0.84,
+        test: 0.83,
+        critique: 0.82,
+        decision: 0.84,
+      }
+    strengths: [analysis, code_generation]
+    notes: 'Flagship pick; upstream Alibaba Qwen.'
+  - id: z-ai/glm-5.3
+    displayName: GLM-5.3 (via OpenRouter)
+    contextWindow: 1048576
+    maxOutput: 943718
+    modalities: [text, code]
+    price: { inputPerMTok: 0.079, outputPerMTok: 1.4 }
+    competence:
+      {
+        analysis: 0.8,
+        code_generation: 0.83,
+        writing: 0.76,
+        research: 0.74,
+        test: 0.8,
+        critique: 0.76,
+        decision: 0.77,
+      }
+    strengths: [code_generation]
+    notes: 'Cheap pick; upstream Zhipu, open weights.'

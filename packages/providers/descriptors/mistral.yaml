@@ -1,0 +1,50 @@
+# Provider description file. Edit prices/models here; no code change needed.
+# Models, prices (USD per MTok) and limits: models.dev api.json, fetched 2026-10-23.
+# Competence priors: see COMPETENCE.md in this directory.
+id: mistral
+name: Mistral AI
+kind: cloud
+adapter: ai-sdk:mistral
+baseUrl: https://api.mistral.ai/v1
+baseUrlEnv: MISTRAL_BASE_URL
+auth:
+  env: MISTRAL_API_KEY
+jurisdiction: EU
+retention: 'API default retention; see provider policy'
+models:
+  - id: mistral-large-4
+    displayName: Mistral Large 4
+    contextWindow: 1048576
+    maxOutput: 262144
+    modalities: [text, image, code]
+    price: { inputPerMTok: 1.36, outputPerMTok: 4.18 }
+    competence:
+      {
+        analysis: 0.84,
+        code_generation: 0.84,
+        writing: 0.85,
+        research: 0.8,
+        test: 0.82,
+        critique: 0.8,
+        decision: 0.81,
+      }
+    strengths: [writing, analysis]
+    notes: 'Flagship; models.dev status "beta" on 2026-10-23.'
+  - id: mistral-small-2603
+    displayName: Mistral Small 4
+    contextWindow: 262144
+    maxOutput: 256000
+    modalities: [text, image, code]
+    price: { inputPerMTok: 0.15, outputPerMTok: 0.6 }
+    competence:
+      {
+        analysis: 0.64,
+        code_generation: 0.63,
+        writing: 0.68,
+        research: 0.62,
+        test: 0.6,
+        critique: 0.58,
+        decision: 0.59,
+      }
+    strengths: [writing]
+    notes: 'Cheap tier; open weights.'

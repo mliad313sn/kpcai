@@ -1,0 +1,202 @@
+{
+  "anthropic": {
+    "id": "anthropic",
+    "models": {
+      "claude-opus-5-5": {
+        "id": "claude-opus-5-5",
+        "cost": {
+          "input": 4,
+          "output": 20
+        },
+        "limit": {
+          "context": 1000000,
+          "output": 128000
+        }
+      },
+      "claude-sonnet-5-5": {
+        "id": "claude-sonnet-5-5",
+        "cost": {
+          "input": 2,
+          "output": 10
+        },
+        "limit": {
+          "context": 1000000,
+          "output": 128000
+        }
+      },
+      "claude-haiku-5-5": {
+        "id": "claude-haiku-5-5",
+        "cost": {
+          "input": 0.1,
+          "output": 0.5
+        },
+        "limit": {
+          "context": 1000000,
+          "output": 128000
+        }
+      }
+    }
+  },
+  "deepseek": {
+    "id": "deepseek",
+    "models": {
+      "deepseek-v4-pro": {
+        "id": "deepseek-v4-pro",
+        "cost": {
+          "input": 0.66,
+          "output": 1.98
+        },
+        "limit": {
+          "context": 1048576,
+          "output": 393216
+        }
+      },
+      "deepseek-flash": {
+        "id": "deepseek-flash",
+        "cost": {
+          "input": 0.15,
+          "output": 0.6
+        },
+        "limit": {
+          "context": 1048576,
+          "output": 393216
+        }
+      }
+    }
+  },
+  "google": {
+    "id": "google",
+    "models": {
+      "gemini-4-argon": {
+        "id": "gemini-4-argon",
+        "cost": {
+          "input": 2,
+          "output": 10
+        },
+        "limit": {
+          "context": 1048576,
+          "output": 32768
+        }
+      },
+      "gemini-3.1-flash-lite": {
+        "id": "gemini-3.1-flash-lite",
+        "cost": {
+          "input": 0.25,
+          "output": 1.5
+        },
+        "limit": {
+          "context": 1048576,
+          "output": 65536
+        }
+      }
+    }
+  },
+  "mistral": {
+    "id": "mistral",
+    "models": {
+      "mistral-large-4": {
+        "id": "mistral-large-4",
+        "cost": {
+          "input": 1.36,
+          "output": 4.18
+        },
+        "limit": {
+          "context": 1048576,
+          "output": 262144
+        }
+      },
+      "mistral-small-2603": {
+        "id": "mistral-small-2603",
+        "cost": {
+          "input": 0.15,
+          "output": 0.6
+        },
+        "limit": {
+          "context": 262144,
+          "output": 256000
+        }
+      }
+    }
+  },
+  "openai": {
+    "id": "openai",
+    "models": {
+      "gpt-6-astra": {
+        "id": "gpt-6-astra",
+        "cost": {
+          "input": 10,
+          "output": 50
+        },
+        "limit": {
+          "context": 1050000,
+          "output": 128000
+        }
+      },
+      "gpt-6-luna": {
+        "id": "gpt-6-luna",
+        "cost": {
+          "input": 0.1,
+          "output": 0.5
+        },
+        "limit": {
+          "context": 1050000,
+          "output": 128000
+        }
+      }
+    }
+  },
+  "openrouter": {
+    "id": "openrouter",
+    "models": {
+      "qwen/qwen3.8-max-0902": {
+        "id": "qwen/qwen3.8-max-0902",
+        "cost": {
+          "input": 2,
+          "output": 6
+        },
+        "limit": {
+          "context": 1000000,
+          "output": 131072
+        }
+      },
+      "z-ai/glm-5.3": {
+        "id": "z-ai/glm-5.3",
+        "cost": {
+          "input": 0.079,
+          "output": 1.4
+        },
+        "limit": {
+          "context": 1048576,
+          "output": 943718
+        }
+      }
+    }
+  },
+  "xai": {
+    "id": "xai",
+    "models": {
+      "grok-4.7": {
+        "id": "grok-4.7",
+        "cost": {
+          "input": 2,
+          "output": 6
+        },
+        "limit": {
+          "context": 500000,
+          "output": 500000
+        }
+      },
+      "grok-4.3": {
+        "id": "grok-4.3",
+        "cost": {
+          "input": 1.25,
+          "output": 2.5
+        },
+        "limit": {
+          "context": 1000000,
+          "output": 30000
+        }
+      }
+    }
+  }
+}

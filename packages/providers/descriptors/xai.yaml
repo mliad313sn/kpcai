@@ -1,0 +1,50 @@
+# Provider description file. Edit prices/models here; no code change needed.
+# Models, prices (USD per MTok, base tier) and limits: models.dev api.json, fetched 2026-10-23.
+# Competence priors: see COMPETENCE.md in this directory.
+id: xai
+name: xAI
+kind: cloud
+adapter: ai-sdk:xai
+baseUrl: https://api.x.ai/v1
+baseUrlEnv: XAI_BASE_URL
+auth:
+  env: XAI_API_KEY
+jurisdiction: US
+retention: 'API default retention; see provider policy'
+models:
+  - id: grok-4.7
+    displayName: Grok 4.7
+    contextWindow: 500000
+    maxOutput: 500000
+    modalities: [text, image, code]
+    price: { inputPerMTok: 2, outputPerMTok: 6 }
+    competence:
+      {
+        analysis: 0.89,
+        code_generation: 0.89,
+        writing: 0.84,
+        research: 0.88,
+        test: 0.85,
+        critique: 0.85,
+        decision: 0.87,
+      }
+    strengths: [analysis, code_generation, research]
+    notes: 'Flagship. Above 200K input tokens: 4/12 per MTok.'
+  - id: grok-4.3
+    displayName: Grok 4.3
+    contextWindow: 1000000
+    maxOutput: 30000
+    modalities: [text, image, code]
+    price: { inputPerMTok: 1.25, outputPerMTok: 2.5 }
+    competence:
+      {
+        analysis: 0.78,
+        code_generation: 0.77,
+        writing: 0.76,
+        research: 0.78,
+        test: 0.74,
+        critique: 0.72,
+        decision: 0.74,
+      }
+    strengths: [research]
+    notes: 'Cheapest general xAI chat model. Above 200K input tokens: 2.5/5 per MTok.'

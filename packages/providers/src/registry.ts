@@ -8,6 +8,8 @@ import {
   type ProviderAdapter,
   type ProviderDescriptor,
 } from '@kernelpai/core';
+import { AiSdkAdapter } from './adapters/ai-sdk.js';
+import { AI_SDK_NAMES } from './adapters/ai-sdk-models.js';
 import { AnthropicAdapter } from './adapters/anthropic.js';
 import { MockAdapter } from './adapters/mock.js';
 import { OllamaAdapter } from './adapters/ollama.js';
@@ -20,6 +22,13 @@ export const ADAPTERS: Readonly<Record<string, AdapterFactory>> = {
   anthropic: (d, env) => new AnthropicAdapter(d, env),
   ollama: (d, env) => new OllamaAdapter(d, env),
   mock: (d) => new MockAdapter(d),
+  // One generic class, one key per AI SDK package: `adapter: ai-sdk:openai`, ...
+  ...Object.fromEntries(
+    AI_SDK_NAMES.map((sdk): [string, AdapterFactory] => [
+      `ai-sdk:${sdk}`,
+      (d, env) => new AiSdkAdapter(d, env, sdk),
+    ]),
+  ),
 };
 
 export const BUILTIN_DESCRIPTOR_DIR = fileURLToPath(new URL('../descriptors/', import.meta.url));

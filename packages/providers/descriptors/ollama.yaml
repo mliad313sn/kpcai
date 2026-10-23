@@ -13,3 +13,14 @@ defaultLocalCard:
   maxOutput: 4096
   modalities: [text, code]
   price: { inputPerMTok: 0, outputPerMTok: 0 }
+  # Conservative priors: unknown local model, assume a small quantised one (COMPETENCE.md).
+  competence:
+    {
+      analysis: 0.45,
+      code_generation: 0.45,
+      writing: 0.5,
+      research: 0.4,
+      test: 0.45,
+      critique: 0.4,
+      decision: 0.4,
+    }

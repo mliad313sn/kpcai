@@ -1,0 +1,50 @@
+# Provider description file. Edit prices/models here; no code change needed.
+# Models, prices (USD per MTok, cache-miss input) and limits: models.dev api.json, fetched 2026-10-23.
+# Competence priors: see COMPETENCE.md in this directory.
+id: deepseek
+name: DeepSeek
+kind: cloud
+adapter: ai-sdk:deepseek
+baseUrl: https://api.deepseek.com
+baseUrlEnv: DEEPSEEK_BASE_URL
+auth:
+  env: DEEPSEEK_API_KEY
+jurisdiction: CN
+retention: 'API default retention, data processed in the PRC; see provider policy'
+models:
+  - id: deepseek-v4-pro
+    displayName: DeepSeek V4 Pro
+    contextWindow: 1048576
+    maxOutput: 393216
+    modalities: [text, code]
+    price: { inputPerMTok: 0.66, outputPerMTok: 1.98 }
+    competence:
+      {
+        analysis: 0.86,
+        code_generation: 0.88,
+        writing: 0.8,
+        research: 0.8,
+        test: 0.84,
+        critique: 0.82,
+        decision: 0.83,
+      }
+    strengths: [code_generation, analysis]
+    notes: 'Flagship; open weights.'
+  - id: deepseek-flash
+    displayName: DeepSeek V4.1 Flash
+    contextWindow: 1048576
+    maxOutput: 393216
+    modalities: [text, image, code]
+    price: { inputPerMTok: 0.15, outputPerMTok: 0.6 }
+    competence:
+      {
+        analysis: 0.74,
+        code_generation: 0.76,
+        writing: 0.7,
+        research: 0.7,
+        test: 0.72,
+        critique: 0.68,
+        decision: 0.7,
+      }
+    strengths: [code_generation]
+    notes: 'Cheap tier; open weights.'

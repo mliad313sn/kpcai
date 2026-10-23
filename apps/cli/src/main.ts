@@ -3,11 +3,19 @@ import { ProviderError } from '@kernelpai/core';
 import { askCommand } from './commands/ask.js';
 import { exportCommand, logCommand, verifyCommand } from './commands/log.js';
 import { providersCommand } from './commands/providers.js';
+import { routeCommand, runCommand, type RunOptions } from './commands/run.js';
+import { statsCommand } from './commands/stats.js';
 import type { Io } from './io.js';
 
-export const USAGE = `KernelPAI (phase 0)
+export const USAGE = `KernelPAI (phase 1)
 
 Usage:
+  kpai run <request>                   Classify, route by competence, budget-check,
+                                       run with automatic fallback, journal everything
+  kpai route <request>                 Same plan and routing, dry run (nothing sent)
+      [--type T] [--criticality low|normal|critical] [--profile economy|balanced|performance]
+      [--local-only] [--exclude p1,p2] [--max-tokens N] [--yes] [--verbose]
+  kpai stats [--session <id>]          Fallback rate, cost per task, estimate error, router latency
   kpai providers                       Detect providers and list models
   kpai ask -m <provider/model> <text>  Send one request, stream, journal it
       [--system <text>] [--max-tokens N] [--yes]
@@ -28,6 +36,13 @@ const OPTIONS = {
   limit: { type: 'string' },
   out: { type: 'string', short: 'o' },
   help: { type: 'boolean', short: 'h' },
+  type: { type: 'string', short: 't' },
+  criticality: { type: 'string' },
+  profile: { type: 'string', short: 'p' },
+  'local-only': { type: 'boolean' },
+  exclude: { type: 'string' },
+  'allow-test': { type: 'boolean' },
+  verbose: { type: 'boolean', short: 'v' },
 } as const;
 
 function positiveInt(name: string, raw: string | undefined): number | undefined {
@@ -39,6 +54,52 @@ function positiveInt(name: string, raw: string | undefined): number | undefined 
 
 class UsageError extends Error {}
 
+const TASK_TYPES = [
+  'analysis',
+  'code_generation',
+  'writing',
+  'research',
+  'test',
+  'critique',
+  'decision',
+];
+const CRITICALITIES = ['low', 'normal', 'critical'];
+
+function oneOf<T extends string>(
+  name: string,
+  raw: string | undefined,
+  allowed: readonly string[],
+): T | undefined {
+  if (raw === undefined) return undefined;
+  if (!allowed.includes(raw))
+    throw new UsageError(`--${name} must be one of ${allowed.join(', ')}`);
+  return raw as T;
+}
+
+type Values = ReturnType<
+  typeof parseArgs<{ args: string[]; options: typeof OPTIONS; allowPositionals: true }>
+>['values'];
+
+function runOptions(v: Values, rest: string[]): RunOptions {
+  if (rest.length === 0) throw new UsageError('run/route need a request');
+  return {
+    prompt: rest.join(' '),
+    type: oneOf('type', v.type, TASK_TYPES),
+    criticality: oneOf('criticality', v.criticality, CRITICALITIES),
+    profile: v.profile,
+    maxTokens: positiveInt('max-tokens', v['max-tokens']),
+    localOnly: v['local-only'],
+    exclude: v.exclude
+      ?.split(',')
+      .map((x) => x.trim())
+      .filter(Boolean),
+    allowTest: v['allow-test'],
+    yes: v.yes,
+    verbose: v.verbose,
+    db: v.db,
+  };
+}
+
 export async function main(argv: readonly string[], io: Io): Promise<number> {
   try {
     const { values: v, positionals } = parseArgs({
@@ -49,6 +110,13 @@ export async function main(argv: readonly string[], io: Io): Promise<number> {
     const [command, ...rest] = positionals;
     const db = v.db;
     switch (v.help ? 'help' : command) {
+      case 'run':
+      case 'route': {
+        const o = runOptions(v, rest);
+        return command === 'run' ? await runCommand(io, o) : await routeCommand(io, o);
+      }
+      case 'stats':
+        return statsCommand(io, { db, session: v.session });
       case 'providers':
         return await providersCommand(io);
       case 'ask':

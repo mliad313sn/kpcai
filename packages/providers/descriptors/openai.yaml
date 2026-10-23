@@ -1,0 +1,50 @@
+# Provider description file. Edit prices/models here; no code change needed.
+# Models, prices (USD per MTok, base tier) and limits: models.dev api.json, fetched 2026-10-23.
+# Competence priors: see COMPETENCE.md in this directory.
+id: openai
+name: OpenAI
+kind: cloud
+adapter: ai-sdk:openai
+baseUrl: https://api.openai.com/v1
+baseUrlEnv: OPENAI_BASE_URL
+auth:
+  env: OPENAI_API_KEY
+jurisdiction: US
+retention: 'API default retention; see provider policy'
+models:
+  - id: gpt-6-astra
+    displayName: GPT-6 Astra
+    contextWindow: 1050000
+    maxOutput: 128000
+    modalities: [text, image, code]
+    price: { inputPerMTok: 10, outputPerMTok: 50 }
+    competence:
+      {
+        analysis: 0.93,
+        code_generation: 0.93,
+        writing: 0.88,
+        research: 0.92,
+        test: 0.9,
+        critique: 0.91,
+        decision: 0.92,
+      }
+    strengths: [analysis, code_generation, research, decision]
+    notes: 'Flagship. Above 272K input tokens: 20/75 per MTok.'
+  - id: gpt-6-luna
+    displayName: GPT-6 Luna
+    contextWindow: 1050000
+    maxOutput: 128000
+    modalities: [text, image, code]
+    price: { inputPerMTok: 0.1, outputPerMTok: 0.5 }
+    competence:
+      {
+        analysis: 0.7,
+        code_generation: 0.72,
+        writing: 0.7,
+        research: 0.7,
+        test: 0.7,
+        critique: 0.66,
+        decision: 0.67,
+      }
+    strengths: [writing, research]
+    notes: 'Cheap tier. Above 272K input tokens: 0.2/0.75 per MTok.'

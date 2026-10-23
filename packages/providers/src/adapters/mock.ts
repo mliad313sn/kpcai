@@ -17,7 +17,7 @@ export interface MockBehaviour {
 
 /**
  * Offline adapter that answers deterministically. Used by the demo and by tests;
- * prompt triggers `[[fail:<kind>]]` simulate provider failures and `[[slow]]` slows streaming.
+ * prompt triggers `[[fail:<kind>]]` / `[[fail:<kind>@<provider>]]` simulate provider failures and `[[slow]]` slows streaming.
  */
 export class MockAdapter extends BaseAdapter {
   behaviour: MockBehaviour = {};
@@ -26,9 +26,17 @@ export class MockAdapter extends BaseAdapter {
     return Promise.resolve({ available: true, reason: 'built-in offline provider' });
   }
 
+  /** `[[fail:kind]]` fails every mock; `[[fail:kind@provider]]` only that provider. */
+  private forcedFailure(prompt: string): string | undefined {
+    for (const m of prompt.matchAll(/\[\[fail:([a-z_]+)(?:@([a-z0-9-]+))?\]\]/g)) {
+      if (!m[2] || m[2] === this.descriptor.id) return m[1];
+    }
+    return undefined;
+  }
+
   protected async *stream(req: ChatRequest, signal: AbortSignal): AsyncIterable<StreamEvent> {
     const prompt = req.messages.at(-1)?.content ?? '';
-    const forced = /\[\[fail:([a-z_]+)\]\]/.exec(prompt)?.[1] ?? this.behaviour.failWith;
+    const forced = this.forcedFailure(prompt) ?? this.behaviour.failWith;
     if (forced) {
       throw new ProviderError(
         forced as ProviderError['kind'],
