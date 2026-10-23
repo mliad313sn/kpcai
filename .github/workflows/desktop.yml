@@ -47,6 +47,9 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # tauri::generate_context! embeds the web build, so it must exist before cargo runs.
+      - name: Build the packages and the web console
+        run: pnpm build && pnpm --filter @kernelpai/studio build
       - name: Unit tests of the shell (sidecar URL parsing)
         working-directory: apps/studio-desktop/src-tauri
         run: cargo test --locked
