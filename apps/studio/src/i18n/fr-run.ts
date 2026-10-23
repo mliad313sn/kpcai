@@ -141,8 +141,8 @@ export const frRun: Record<keyof typeof enRun, Message> = {
   'detail.contributions': 'Contributions',
   'detail.text': 'Texte',
   'detail.prompt': 'Consigne',
-  'detail.replay': 'Rejouer (phase 4)',
-  'detail.fork': 'Bifurquer (phase 4)',
+  'detail.replay': 'Rejouer…',
+  'detail.fork': 'Bifurquer d’ici…',
   'routing.title': 'Pourquoi ce modèle',
   'routing.noReason':
     'Pas de raison de routage pour ce nœud : le routeur n’a pas retenu le modèle de l’estimation, ou le nœud n’est pas encore routé.',

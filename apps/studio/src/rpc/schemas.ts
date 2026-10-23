@@ -100,6 +100,8 @@ export const GraphEstimateSchema = z.looseObject({
   /** D-021: the likely cost and the hard cap (the band's top), when the kernel sends them. */
   expectedUsd: z.number().optional().catch(undefined),
   capUsd: z.number().optional().catch(undefined),
+  /** R-402: how past estimates here compared with billed costs (one kernel sentence). */
+  accuracy: z.string().max(1000).optional().catch(undefined),
 });
 export type GraphEstimate = z.infer<typeof GraphEstimateSchema>;
 

@@ -1,0 +1,130 @@
+/* Phase 4 additions: memory editor, dispute dialog, replay compare, grades, accuracy and
+   competence. Colours only from theme tokens (each pair checked for WCAG 2.2 AA in
+   ui/theme.ts). Quoted model text keeps a visible border so it never reads as UI. */
+.quoted {
+  margin: 0.3rem 0;
+  padding: 0.2rem 0.6rem;
+  border-left: 3px solid var(--border);
+  background: var(--bg);
+}
+.quoted pre {
+  /* No inner scroll: a long quote makes the dialog or the panel scroll, which keeps every
+     quote reachable without adding tab stops between the options. */
+  margin: 0.2rem 0;
+}
+.memory-view,
+.evidence-view {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pad);
+  align-items: flex-start;
+}
+.memory-view > section,
+.evidence-view > section {
+  width: 100%;
+}
+.facts {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap);
+}
+.facts > li {
+  padding: var(--gap) var(--pad);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+.fact-add,
+.fact-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  margin-top: var(--gap);
+}
+.fact-add input[type='text'],
+.fact-edit input[type='text'] {
+  flex: 1;
+  min-width: 16rem;
+}
+.check {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+.provenance .badge {
+  margin-right: 0.3rem;
+}
+.memory-line,
+.fork-line,
+.measured {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+.measured ul {
+  margin: 0.2rem 0;
+  padding-left: 1.2rem;
+}
+.dispute-options {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  margin: var(--pad) 0;
+}
+.dispute-option {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 0 var(--gap);
+  align-items: baseline;
+  padding: var(--gap) 0;
+}
+.dispute-option + .dispute-option {
+  border-top: 1px solid var(--border);
+}
+.dispute-option > div {
+  grid-column: 2;
+}
+.dispute-option label {
+  margin: 0;
+}
+.positions {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.side-by-side {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--pad);
+}
+.side-by-side h5 {
+  margin: var(--gap) 0 0;
+}
+.side-by-side pre {
+  max-height: 18rem;
+  overflow: auto;
+}
+.grade {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+.table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+}
+table.evidence th[scope='rowgroup'] {
+  text-align: left;
+  color: var(--muted);
+  font-weight: 600;
+}
+.verification {
+  margin: 0 0 var(--gap);
+}
+@media (max-width: 720px) {
+  .side-by-side {
+    grid-template-columns: 1fr;
+  }
+}

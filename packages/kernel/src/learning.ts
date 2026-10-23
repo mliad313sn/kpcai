@@ -9,6 +9,7 @@ import {
   GradeError,
   estimateAccuracy,
   localAuthor,
+  productivity,
   recordGrade,
   runBench,
   type AccuracyReport,
@@ -16,6 +17,7 @@ import {
   type BenchReport,
   type BenchRunResult,
   type CompetenceEntry,
+  type ProductivityReport,
 } from '@kernelpai/learning';
 import type { Journal } from '@kernelpai/journal';
 import { inForbiddenZone } from '@kernelpai/tools';
@@ -51,6 +53,24 @@ export interface GradeResult {
   graded: string;
   taskType?: string;
 }
+
+/** At most this many changes are listed with `detail` (the counts always cover them all). */
+export const MAX_PRODUCTIVITY_LIST = 1_000;
+const DAY_MS = 86_400_000;
+
+export interface ProductivityInput {
+  /** Runs that started at or after this instant (ISO 8601). */
+  since?: string;
+  /** A file changed again by another run within this many days counts as rework (default 7). */
+  reworkDays?: number;
+  /** Include the audited list of changes (capped at `MAX_PRODUCTIVITY_LIST`). */
+  detail?: boolean;
+}
+
+/** The report as front ends get it: `list` only on request, and capped. */
+export type ProductivityView = Omit<ProductivityReport, 'list'> & {
+  list?: ProductivityReport['list'];
+};
 
 export class KernelLearning {
   constructor(private readonly h: LearningHost) {}
@@ -88,10 +108,38 @@ export class KernelLearning {
     return estimateAccuracy(this.h.journal(), { project: this.h.cwd });
   }
 
+  /** Productivity here, from the journal only (R-406, docs/metrics/PRODUCTIVITY.md). */
+  productivity(i: ProductivityInput = {}): ProductivityView {
+    const days = i.reworkDays;
+    if (days !== undefined && !(Number.isFinite(days) && days > 0))
+      throw new KernelError('invalid', 'reworkDays must be a positive number of days');
+    let r: ProductivityReport;
+    try {
+      r = productivity(this.h.journal(), {
+        project: this.h.cwd,
+        ...(i.since !== undefined ? { since: i.since } : {}),
+        ...(days !== undefined ? { reworkWindowMs: days * DAY_MS } : {}),
+      });
+    } catch (err) {
+      if (err instanceof RangeError) throw new KernelError('invalid', err.message.slice(0, 200));
+      throw err;
+    }
+    const { list, ...counts } = r;
+    return i.detail ? { ...counts, list: list.slice(0, MAX_PRODUCTIVITY_LIST) } : counts;
+  }
+
+  /** A cost question: asked, or accepted by `yes` and said so. */
+  private costQuestion(question: string, yes: boolean): Promise<boolean> {
+    if (!yes) return this.h.confirm({ kind: 'budget', question });
+    this.h.say(`${question} yes (--yes accepts cost questions)\n`);
+    return Promise.resolve(true);
+  }
+
   /** Files the bench may read: never one in a forbidden zone in force here. */
   private async allowed(): Promise<(rel: string) => boolean> {
     const packs = await selectPacks(this.h.env, this.h.cwd).catch(() => undefined);
-    const { policy } = await policyFor(this.h.env, packs ? busPacks(packs, 'bench') : undefined);
+    const bench = packs ? busPacks(packs, 'bench') : undefined;
+    const { policy } = await policyFor(this.h.env, bench, undefined, this.h.cwd);
     const zones = policy.zoneSet();
     return (rel) => !inForbiddenZone(rel, zones);
   }
@@ -119,7 +167,8 @@ export class KernelLearning {
         const order = plans.get(plan.planId)?.graph.nodes.map((n) => n.id) ?? [];
         return benchResult(handle, await handle.done, order);
       },
-      confirm: (question) => this.h.confirm({ kind: 'budget', question }),
+      // `yes` accepts cost questions (never writes): the bench's total is one of them.
+      confirm: (question) => this.costQuestion(question, options.yes === true),
       say: (t) => this.h.say(t),
       money: (usd) => formatMoney(usd, m),
     };

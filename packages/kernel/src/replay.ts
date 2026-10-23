@@ -60,9 +60,18 @@ async function packsOf(h: ReplayHost): Promise<SelectedPacks> {
   );
 }
 
-async function setupOf(h: ReplayHost, o: GraphOptions): Promise<GraphSetup> {
+/**
+ * The setup of a replay or fork. `policy` false drops the review policy: a replay reruns
+ * one node as asked (it never applies the policy, so neither does its estimate), and a
+ * human's explicit protocol for a fork wins over it (ADR-0030).
+ */
+async function setupOf(h: ReplayHost, o: GraphOptions, policy: boolean): Promise<GraphSetup> {
   const { env, cwd, say } = h.gateHost;
-  return graphSetup(env, say, o, h.journal(), cwd);
+  const s = await graphSetup(env, say, o, h.journal(), cwd);
+  if (policy || !s.reviewPolicy) return s;
+  const rest = { ...s };
+  delete rest.reviewPolicy;
+  return rest;
 }
 
 const invalid = (err: unknown): never => {
@@ -85,7 +94,7 @@ export class KernelReplays {
     const rec = run.nodes[nodeId];
     if (!rec)
       throw new KernelError('refused', `node "${nodeId}" never finished: nothing to replay`);
-    const setup = await setupOf(this.h, o);
+    const setup = await setupOf(this.h, o, false);
     const m = edit.model;
     if (
       m &&
@@ -133,7 +142,7 @@ export class KernelReplays {
   ): Promise<Plan> {
     const journal = this.h.journal();
     const run = known(journal, runId, nodeId);
-    const setup = await setupOf(this.h, o);
+    const setup = await setupOf(this.h, o, edit.protocol === undefined);
     const deps = estimateDeps(setup, o, journal);
     let fork;
     try {

@@ -3,6 +3,8 @@ import { t, type Key } from './i18n/core';
 import { RpcClient, type RpcClientOptions } from './rpc/client';
 import { forgetToken, rememberToken } from './rpc/token';
 import { loadModels, loadSessions, setClient } from './store/actions';
+import { resetCompetence } from './store/learning';
+import { loadPending } from './store/memory';
 import { announce, confirmWithdrawn, handleNotification, log, patch, studio } from './store/store';
 
 let current: RpcClient | undefined;
@@ -36,6 +38,9 @@ export function connect(
         if (!studio.getState().prefs.onboarded) patch({ onboardingOpen: true });
         void loadSessions();
         void loadModels();
+        // Model proposals waiting for a human (ADR-0027): the Memory tab shows the count.
+        void loadPending(true);
+        resetCompetence();
       }
     },
     ...extra,

@@ -6,6 +6,7 @@ import { resetPlan } from '../store/plan-edit';
 import { useStudio } from '../store/store';
 import type { PlanView } from '../store/types';
 import { CostBand } from './CostMeter';
+import { AccuracyNote, ForkLine, MemoryLine } from './PlanMemory';
 import { StateBadge } from './StateBadge';
 
 /** Why Run is disabled, or undefined when the plan can run. */
@@ -115,7 +116,7 @@ export function PlanBar({ plan }: { plan: PlanView }) {
       <div className="thread-bar" role="group" aria-label={t('plan.label')}>
         <StateBadge state="planned" />
         <span>
-          {t(edited ? 'plan.summaryEdited' : 'plan.summary', {
+          {t(plan.fork ? 'plan.summaryFork' : edited ? 'plan.summaryEdited' : 'plan.summary', {
             count: plan.graph.nodes.length,
             by: plan.graph.createdBy,
             reason: plan.graph.reason,
@@ -138,7 +139,9 @@ export function PlanBar({ plan }: { plan: PlanView }) {
           aria-describedby={blocker ? 'run-blocker' : undefined}
           onClick={() => void startRun()}
         >
-          {t('plan.run', { cap: formatUsd(costOf(plan.estimate).cap) })}
+          {t(plan.fork ? 'plan.runFork' : 'plan.run', {
+            cap: formatUsd(costOf(plan.estimate).cap),
+          })}
         </button>
         {blocker && (
           <span id="run-blocker" className="sr-only">
@@ -146,9 +149,21 @@ export function PlanBar({ plan }: { plan: PlanView }) {
           </span>
         )}
       </div>
+      <PlanContext plan={plan} />
+    </div>
+  );
+}
+
+/** Below the bar: fork, accuracy, memory, rules, packs and the check of the edits. */
+function PlanContext({ plan }: { plan: PlanView }) {
+  return (
+    <>
+      <ForkLine plan={plan} />
+      <AccuracyNote note={plan.estimate.accuracy} />
+      {plan.memory && <MemoryLine m={plan.memory} />}
       <RulesLine plan={plan} />
       <PacksLine plan={plan} />
       <CheckResult plan={plan} />
-    </div>
+    </>
   );
 }

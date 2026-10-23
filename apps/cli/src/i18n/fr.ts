@@ -31,6 +31,12 @@ Utilisation :
       [--local-only] [--exclude p1,p2] [--max-tokens N] [--yes] [--over-budget]
       [--new-session] [--allow-test] [--verbose]          --allow-test autorise le routage vers les fournisseurs simulés
   kpai stats [--session <id>]          Taux de repli, coût par tâche, erreur d'estimation, latence du routeur
+      [--productivity [--since <date ISO>]]  Coût et durée par modification acceptée, taux
+                                       d'annulation et de reprise, rendement de la relecture (journal seul)
+  kpai replay <exécution> <nœud> [-m fournisseur/modèle] [--protocol P]
+                                       Réexécute un nœud terminé à côté de l'original (n'écrit rien)
+  kpai fork <exécution> <nœud> [-m fournisseur/modèle] [--instruction <texte>]
+                                       Repart d'un nœud en réutilisant ce qui précède (comme kpai do)
   kpai providers                       Détecte les fournisseurs et liste les modèles
   kpai ask -m <fournisseur/modèle> <texte>  Envoie une requête, diffuse la réponse, la journalise
       [--system <texte>] [--max-tokens N] [--yes]
@@ -42,6 +48,7 @@ Global : --db <chemin> (par défaut $KPAI_HOME/journal.db, KPAI_HOME=~/.kernelpa
          --lang en|fr (par défaut $KPAI_LANG, puis LC_ALL, LC_MESSAGES, LANG)
 `,
   'error.usage': '{message}\n\n{usage}',
+  'error.nodeNeedsArgs': 'replay et fork attendent un id d’exécution et un id de nœud',
   'error.gradeNeedsArgs': 'kpai grade attend un id d’exécution, un id de nœud et good ou bad',
   'error.provider': 'erreur ({kind}) : {message}\n',
   'error.generic': 'erreur : {message}\n',
@@ -67,5 +74,20 @@ Global : --db <chemin> (par défaut $KPAI_HOME/journal.db, KPAI_HOME=~/.kernelpa
     'total  probable {likely} · au plus {cap} (plafond) avant exécution (exécution impossible telle que prévue : {problems})',
   'confirm.prompt': '{question} [o/N] ',
   'confirm.yesWords': 'o, oui, y, yes',
+  'prod.header': 'productivité ici (d’après le journal seul ; voir docs/metrics/PRODUCTIVITY.md)',
+  'prod.since': '  exécutions commencées depuis {since}',
+  'prod.runs': '  {runs} exécution(s) · dépensé {spent} · durée {time}',
+  'prod.changes':
+    '  modifications : {accepted} acceptée(s) · {declined} refusée(s) · {failed} en échec · {pending} en attente · {discarded} abandonnée(s)',
+  'prod.perChange': '  par modification acceptée : {cost} · {time}',
+  'prod.perChangeNone':
+    '  par modification acceptée : – (aucune modification acceptée pour l’instant)',
+  'prod.rework':
+    '  annulées {rolledBack} ({rollbackRate}) · reprises {reworked} ({reworkRate}) sous {days} jour(s) · restaurations non attribuées : {unattributed}',
+  'prod.review':
+    '  relecture {usd} pour {findings} constat(s) accepté(s), {each} chacun · {issues} problème(s) soulevé(s) sur {nodes} nœud(s)',
+  'prod.band':
+    '  coût facturé dans la fourchette approuvée : {inBand}/{runs} exécution(s) terminée(s) ({rate})',
+  'error.productivityInvalid': 'kpai stats --productivity : {message}',
   'confirm.budget': 'Le coût prévu {expected} dépasse votre seuil {threshold}. Continuer ?',
 };

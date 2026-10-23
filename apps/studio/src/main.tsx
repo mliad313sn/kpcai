@@ -5,6 +5,7 @@ import { readConnectionSettings } from './rpc/token';
 import { App } from './ui/App';
 import './styles.css';
 import './console.css';
+import './learn.css';
 
 const settings = readConnectionSettings(window.location, window.history);
 if (settings.wsRefused) reportRefusedWs(settings.url);

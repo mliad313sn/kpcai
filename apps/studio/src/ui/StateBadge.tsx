@@ -3,12 +3,16 @@ import type { NodeState } from '../rpc/schemas';
 import type { RunState } from '../store/types';
 
 /** Every state has an icon AND a word; colour only reinforces them (WCAG 1.4.1). */
-const STATES: Record<NodeState | RunState | 'planned', { icon: string; key: Key; tone: string }> = {
+type Shown = NodeState | RunState | 'planned' | 'disputed';
+
+const STATES: Record<Shown, { icon: string; key: Key; tone: string }> = {
   planned: { icon: '◇', key: 'state.planned', tone: 'muted' },
   pending: { icon: '○', key: 'state.waiting', tone: 'muted' },
   starting: { icon: '◌', key: 'state.starting', tone: 'muted' },
   running: { icon: '▶', key: 'state.running', tone: 'accent' },
   review: { icon: '◑', key: 'state.in_review', tone: 'accent' },
+  // R-405: reviewers disagree and the human is asked; nothing comes out until they choose.
+  disputed: { icon: '⚖', key: 'state.disputed', tone: 'warn' },
   paused: { icon: '❚❚', key: 'state.paused', tone: 'warn' },
   cancelling: { icon: '⊘', key: 'state.cancelling', tone: 'warn' },
   done: { icon: '✓', key: 'state.done', tone: 'ok' },

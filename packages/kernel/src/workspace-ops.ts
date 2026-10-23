@@ -93,7 +93,8 @@ export class WorkspaceOps {
     packs?: PackZoneOptions,
   ): Promise<WorkspaceOptions & { policy: PermissionPolicy }> {
     // Relaxations of approved packs are journaled before they apply (S7, fail closed).
-    const { policy } = await policyFor(this.h.env, packs, packs ? this.h.journal() : undefined);
+    const journal = packs ? this.h.journal() : undefined;
+    const { policy } = await policyFor(this.h.env, packs, journal, this.h.cwd);
     return { home: kpaiHome(this.h.env), zones: policy.zoneSet(), policy };
   }
 
@@ -128,9 +129,12 @@ export class WorkspaceOps {
     label: string,
     sessionId: string,
   ): Promise<string | undefined> {
+    // The run id names the run the write that follows belongs to (learning, R-406).
+    const runId = ns.replace(/-wt$/, '');
     if (!(await isGitTree(root))) {
       this.note(sessionId, {
         action: 'checkpoint unavailable',
+        runId,
         reason: 'not a git repository',
         label,
       });
@@ -140,7 +144,7 @@ export class WorkspaceOps {
     const c = await guarded(() => checkpoint(root, label, { ...o, run: ns }));
     this.note(sessionId, {
       action: 'checkpoint',
-      runId: ns.replace(/-wt$/, ''),
+      runId,
       ref: c.ref,
       label: c.label,
     });

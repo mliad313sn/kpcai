@@ -33,3 +33,4 @@ One page per decision. Format: Context, Decision, Consequences, Revisit when.
 | [0027](0027-unified-memory.md)                       | Unified memory: layers, provenance, propose → confirm, budgeted injection | Accepted |
 | [0028](0028-grading-and-measured-competence.md)      | Grading, measured competence and the bench                                | Accepted |
 | [0029](0029-replay-fork-disputes-review-policy.md)   | Run records, replay, fork, fail-closed disputes, review policy            | Accepted |
+| [0030](0030-phase4-kernel-wiring.md)                 | Productivity, review policy from config, replay/fork CLI, home zone       | Accepted |

@@ -22,6 +22,7 @@ import {
 } from '@kernelpai/tools';
 import { journalPackZones } from '@kernelpai/tools';
 import { kpaiHome, type Env } from './env.js';
+import { homeZones } from './home-zone.js';
 
 export interface PackChoice {
   id: string;
@@ -139,12 +140,14 @@ function choice(s: PackSuggestion, pack: Pack): PackChoice {
 
 /**
  * The graded policy in force: defaults, `policy.json`, and the packs' zones. Relaxations
- * apply only when approved and journaled (S7: fail closed without a journal).
+ * apply only when approved and journaled (S7: fail closed without a journal). With the
+ * workspace `root`, `$KPAI_HOME/memory/**` is a zone when the home is inside it (ADR-0030).
  */
 export async function policyFor(
   env: Env,
   packs?: PackZoneOptions,
   journal?: ToolJournal,
+  root?: string,
 ): Promise<{ policy: GradedPermissionPolicy; packZones: PackZonePlan }> {
   const config = (await loadPolicyConfig(kpaiHome(env))).config;
   const planned = packs ? planPackZones(packs) : undefined;
@@ -153,7 +156,8 @@ export async function policyFor(
       ? journalPackZones(planned, journal, packs?.sessionId)
       : { ...planned, relaxed: [] }
     : { added: [], relaxed: [], pending: [], refused: [] };
-  return { policy: buildPolicy(config, { packZones }), packZones };
+  const forbiddenPaths = homeZones(env, root);
+  return { policy: buildPolicy(config, { packZones, forbiddenPaths }), packZones };
 }
 
 /**
@@ -176,7 +180,8 @@ export async function selectPacks(env: Env, dir: string): Promise<SelectedPacks>
   // Plan view: relaxations count as in force only once approved (not journaled yet here).
   const plan = planPackZones({ enabled: selected, approved });
   const config = (await loadPolicyConfig(kpaiHome(env))).config;
-  const zones = buildPolicy(config, { packZones: plan }).describe().zones;
+  const forbiddenPaths = homeZones(env, dir);
+  const zones = buildPolicy(config, { packZones: plan, forbiddenPaths }).describe().zones;
   return {
     selected,
     approved,

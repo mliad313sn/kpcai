@@ -43,6 +43,8 @@ export function estimateDeps(
     constraints: s.constraints,
     allowSameProvider: o.allowSameProvider === true,
     spread: outputSpread(journal),
+    // The band covers the protocols the run will use (R-404, ADR-0030).
+    ...(s.reviewPolicy ? { reviewPolicy: s.reviewPolicy } : {}),
   };
 }
 
@@ -60,7 +62,7 @@ export async function makePlan(
   const packs = await packsFor(host.env, host.cwd, host.say);
   // R-306: rule files read inside the jail, forbidden zones skipped, before any model call.
   // Without a journal yet, pack relaxations are not applied to this read (fail closed).
-  const { policy } = await policyFor(host.env, busPacks(packs, sessionId));
+  const { policy } = await policyFor(host.env, busPacks(packs, sessionId), undefined, host.cwd);
   const rules = await loadRules(host.cwd, policy.zoneSet(), host.say);
   // ADR-0027: user, project and session memory, local-only facts kept for local providers.
   const memory = await loadMemory(host.env, host.cwd, sessionId, policy.zoneSet(), host.say);

@@ -33,6 +33,57 @@ export const AccuracySchema = z.looseObject({
   }),
 });
 
+const Ratio = z.number().nullable();
+const Count = z.number().int().min(0);
+
+/** One change counted by `stats.productivity` (journal sequences, for audit). */
+const ChangeSchema = z.looseObject({
+  runKey: z.string(),
+  nodeId: z.string(),
+  kind: z.enum(['patch', 'artifact', 'merge']),
+  files: z.array(z.string()),
+  seq: z.number().int(),
+  status: z.enum(['accepted', 'declined', 'failed', 'pending', 'discarded']),
+  landed: z.looseObject({ seq: z.number().int(), ts: z.string() }).optional(),
+  rolledBackSeq: z.number().int().optional(),
+  reworkedSeq: z.number().int().optional(),
+});
+
+/** R-406: productivity from the journal only (docs/metrics/PRODUCTIVITY.md). */
+export const ProductivitySchema = z.looseObject({
+  project: z.string(),
+  since: z.string().nullable(),
+  runs: Count,
+  spentUsd: z.number(),
+  runTimeMs: z.number(),
+  changes: z.looseObject({
+    accepted: Count,
+    declined: Count,
+    failed: Count,
+    pending: Count,
+    discarded: Count,
+  }),
+  runsWithAcceptedChange: Count,
+  rolledBack: Count,
+  reworked: Count,
+  unattributedRestores: Count,
+  costPerAcceptedChangeUsd: Ratio,
+  timePerAcceptedChangeMs: Ratio,
+  rollbackRate: Ratio,
+  reworkRate: Ratio,
+  reworkWindowMs: z.number(),
+  review: z.looseObject({
+    nodes: Count,
+    reviewUsd: z.number(),
+    issuesRaised: Count,
+    acceptedFindings: Count,
+    acceptedRevisions: Count,
+    usdPerAcceptedFinding: Ratio,
+  }),
+  band: z.looseObject({ runs: Count, inBand: Count, rate: Ratio }),
+  list: z.array(ChangeSchema).max(1_000).optional(),
+});
+
 export const CompetenceEntrySchema = z.looseObject({
   ref: Ref,
   taskType: z.string(),
@@ -117,6 +168,17 @@ export const LearningMethods = {
   },
   /** Estimates against billed costs in this workspace (R-402). */
   'stats.accuracy': { params: z.object({}).optional(), result: AccuracySchema },
+  /** Productivity here (R-406): cost and time per accepted change, rollback, rework, review. */
+  'stats.productivity': {
+    params: z
+      .object({
+        since: z.iso.datetime({ offset: true }).optional(),
+        reworkDays: z.number().int().min(1).max(365).optional(),
+        detail: z.boolean().optional(),
+      })
+      .optional(),
+    result: ProductivitySchema,
+  },
   /** Measured competence here, with the evidence the router cites. */
   competence: {
     params: z.object({}).optional(),

@@ -134,8 +134,8 @@ export const enRun = {
   'detail.contributions': 'Contributions',
   'detail.text': 'Text',
   'detail.prompt': 'Prompt',
-  'detail.replay': 'Replay (phase 4)',
-  'detail.fork': 'Fork (phase 4)',
+  'detail.replay': 'Replay…',
+  'detail.fork': 'Fork from here…',
   'routing.title': 'Why this model',
   'routing.noReason':
     "No routing reason for this node: the router did not pick the estimate's model, or the node is not routed yet.",

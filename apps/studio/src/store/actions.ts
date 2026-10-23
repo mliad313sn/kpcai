@@ -15,6 +15,14 @@ import { costOf } from './cost';
 import { formatUsd } from './format';
 import { newRun } from './reducer';
 import { announce, log, patch, setDecliner, studio, updateRun } from './store';
+import type { PlanView, StudioState } from './types';
+
+/** Set by the memory module: reloads the proposals once a memory question is answered. */
+let afterMemoryAnswer: (layer: 'user' | 'project' | 'session') => void = () => undefined;
+
+export function onMemoryAnswer(fn: (layer: 'user' | 'project' | 'session') => void): void {
+  afterMemoryAnswer = fn;
+}
 
 export interface Caller {
   call<M extends MethodName>(
@@ -68,6 +76,7 @@ export async function requestPlan(request: string): Promise<void> {
       ...(raw.rules ? { rules: raw.rules } : {}),
       ...(raw.packs ? { packs: raw.packs } : {}),
       ...(raw.scope ? { scope: raw.scope } : {}),
+      ...(raw.memory ? { memory: raw.memory } : {}),
     };
     patch({ plan, selectedNodeId: undefined });
     const cost = costOf(estimate);
@@ -95,24 +104,32 @@ export function isEdited(plan: { graph: { nodes: unknown[] }; original: { nodes:
   return JSON.stringify(plan.graph.nodes) !== JSON.stringify(plan.original.nodes);
 }
 
+/** Starts the plan: `run.fork` for a fork plan (R-403), else `run.start` with any edits. */
+async function launch(plan: PlanView, s: StudioState): Promise<string> {
+  if (plan.fork) return (await call('run.fork', { planId: plan.planId })).runId;
+  const { runId } = await call('run.start', {
+    request: plan.request,
+    planId: plan.planId,
+    ...(isEdited(plan) ? { graph: { nodes: plan.graph.nodes } } : {}),
+    options: s.runOptions,
+  });
+  return runId;
+}
+
 /** R-301: the approved plan is the one that runs; the kernel validates the edits again. */
 export async function startRun(): Promise<void> {
   const s = studio.getState();
   const plan = s.plan;
   if (!plan) return;
   try {
-    const { runId } = await call('run.start', {
-      request: plan.request,
-      planId: plan.planId,
-      ...(isEdited(plan) ? { graph: { nodes: plan.graph.nodes } } : {}),
-      options: s.runOptions,
-    });
+    const runId = await launch(plan, s);
     updateRun(runId, (r) => ({
       ...newRun(runId, plan.request, r.startedAt),
       ...r,
       request: plan.request,
       graph: r.graph ?? plan.graph,
       estimate: r.estimate ?? plan.estimate,
+      ...(plan.fork ? { forkOf: plan.fork.parent } : {}),
     }));
     patch({ activeRunId: runId, plan: undefined, tab: 'conversation' });
   } catch (e) {
@@ -176,17 +193,27 @@ setDecliner((confirmId) => {
   call('confirm.answer', { confirmId, ok: false }).catch(() => undefined);
 });
 
-/** Removes the confirmation from the queue first: a second answer is never sent. */
-export async function answerConfirm(confirmId: string, ok: boolean): Promise<void> {
+/**
+ * Removes the confirmation from the queue first: a second answer is never sent. A dispute
+ * is settled only by `ok` with one of its option ids (`choice`); anything else rejects.
+ */
+export async function answerConfirm(
+  confirmId: string,
+  ok: boolean,
+  choice?: string,
+): Promise<void> {
   const s = studio.getState();
-  if (!s.confirms.some((c) => c.confirmId === confirmId)) return;
-  patch({ confirms: s.confirms.filter((c) => c.confirmId !== confirmId) });
-  announce(t(ok ? 'confirm.announce.yes' : 'confirm.announce.no'));
+  const c = s.confirms.find((x) => x.confirmId === confirmId);
+  if (!c) return;
+  patch({ confirms: s.confirms.filter((x) => x.confirmId !== confirmId) });
+  const yes = ok && (c.kind !== 'dispute' || choice !== undefined);
+  announce(t(yes ? 'confirm.announce.yes' : 'confirm.announce.no'));
   try {
-    await call('confirm.answer', { confirmId, ok });
+    await call('confirm.answer', { confirmId, ok: yes, ...(yes && choice ? { choice } : {}) });
   } catch (e) {
     fail('fail.answer', e);
   }
+  if (c.kind === 'memory' && c.memory) afterMemoryAnswer(c.memory.layer);
 }
 
 export async function loadSessions(): Promise<void> {

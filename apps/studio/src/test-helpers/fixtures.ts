@@ -1,3 +1,4 @@
+import { learnHandlers } from './learn-fixtures';
 /** A plan like the phase-2 demo: architecture → implementation → tests, reviewed. */
 export const GRAPH = {
   id: 'g1',
@@ -137,6 +138,7 @@ export const SESSIONS = [
 /** Default handlers for a kernel that plans, runs and lists. */
 export function kernelHandlers(): Record<string, (p: unknown) => unknown> {
   return {
+    ...learnHandlers(),
     plan: () => PLAN,
     'run.start': () => ({ runId: 'r1' }),
     'run.pause': () => ({ ok: true }),

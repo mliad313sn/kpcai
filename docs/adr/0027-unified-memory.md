@@ -70,8 +70,11 @@ local-only] fact` items. The kernel reads only successful nodes of runs that wer
 ## Consequences
 
 - Any provider gets the same memory, and switching provider loses nothing (§3.1).
-- The proposal hint (about 80 tokens) and the facts add input tokens to every call. The
-  estimate includes them, because it is made on the graph as it will run.
+- The proposal hint and the facts add input tokens to every call. The hint is kept under
+  80 tokens as the memory budget counts them (characters ÷ 4; 315 characters, 79 tokens;
+  `PROPOSAL_HINT_MAX_TOKENS`, tested): S8 measured the first wording at 107 tokens (427
+  characters), and it was shortened without dropping a rule. The estimate includes both,
+  because it is made on the graph as it will run.
 - A human's "no" in the console leaves a proposal pending rather than rejecting it.
   Rejecting it is an explicit action (`memory.reject`).
 - A model that writes `.kpstudio/memory.md` through the tools reaches later runs only as
@@ -80,5 +83,5 @@ local-only] fact` items. The kernel reads only successful nodes of runs that wer
 ## Revisit when
 
 Relevance selection per node (embeddings or tags) replaces "all facts within the budget";
-a real tokenizer per model; facts shared by a team (phase 8); `$KPAI_HOME/memory/**` as
-an added zone in `@kernelpai/tools` (S5), for workspaces that contain `$KPAI_HOME`.
+a real tokenizer per model; facts shared by a team (phase 8). (`$KPAI_HOME/memory/**` as an
+added zone for workspaces that contain `$KPAI_HOME`: done in the kernel, ADR-0030.)

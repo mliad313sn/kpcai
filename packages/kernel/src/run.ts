@@ -141,11 +141,16 @@ function finish(c: RunContext, run: ActiveRun, full: RunResult): RunOutcome {
       sessionId,
       type: 'intervention',
       nodeId: r.nodeId,
-      payload: { action: 'patch refused: control characters' },
+      payload: { action: 'patch refused: control characters', runId: run.runId },
     });
   }
   for (const r of arts.refused) {
-    const payload = { action: 'artifact refused', path: r.path, reason: r.reason };
+    const payload = {
+      action: 'artifact refused',
+      runId: run.runId,
+      path: r.path,
+      reason: r.reason,
+    };
     c.journal.append({ sessionId, type: 'intervention', nodeId: r.nodeId, payload });
   }
   c.setState(run, cancelled ? 'cancelled' : result.ok ? 'done' : 'failed');

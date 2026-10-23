@@ -10,6 +10,7 @@ import { RECORD_ACTIONS } from '@kernelpai/orchestrator';
 import { createToolBus } from '@kernelpai/tools';
 import { buildRegistry, kpaiHome, openJournal } from './env.js';
 import { KernelError } from './errors.js';
+import { homeZones } from './home-zone.js';
 import { busPacks, selectPacks } from './packs.js';
 import type { KernelHost } from './types.js';
 
@@ -89,6 +90,7 @@ export class Queries {
     const packs = await selectPacks(this.host.env, this.host.cwd).catch(() => undefined);
     const { bus, mcpErrors } = await createToolBus({
       kpaiHome: kpaiHome(this.host.env),
+      policyOptions: { forbiddenPaths: homeZones(this.host.env, this.host.cwd) },
       env: this.host.env,
       ...(packs ? { packs: busPacks(packs, 'tools') } : {}),
     });

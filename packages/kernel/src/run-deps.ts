@@ -16,6 +16,7 @@ import { createToolBus } from '@kernelpai/tools';
 import { BudgetGate, type GateHost } from './budget-gate.js';
 import type { Choose, DisputeInfo } from './confirm.js';
 import { kpaiHome } from './env.js';
+import { homeZones } from './home-zone.js';
 import { NO_MEMORY, memoryResolver } from './memory.js';
 import { busPacks } from './packs.js';
 import { RouterTap, UsageTap } from './routing-info.js';
@@ -92,6 +93,8 @@ export async function runDeps(i: DepsInput): Promise<RunDeps> {
   const sessionId = i.sessionId ?? p.sessionId;
   const { bus, mcpErrors, policyError } = await createToolBus({
     kpaiHome: kpaiHome(host.env),
+    // $KPAI_HOME/memory/** when the home is inside the workspace (ADR-0030).
+    policyOptions: { forbiddenPaths: homeZones(host.env, host.cwd) },
     journal: i.journal,
     env: host.env,
     // The run's domain packs: additions always, approved relaxations journaled (D-020).
@@ -120,6 +123,8 @@ export async function runDeps(i: DepsInput): Promise<RunDeps> {
     confirm: (question) => host.confirm({ kind: 'tool', question, runId: i.runId }),
     root: i.root,
     allowSameProvider: i.flags.allowSameProvider === true,
+    // R-404 (ADR-0030): the runner sets each node's protocol, journaled per change.
+    ...(p.setup.reviewPolicy ? { reviewPolicy: p.setup.reviewPolicy } : {}),
     dispute: disputeHook(i.choose),
     ...(i.onControl ? { onControl: i.onControl } : {}),
   };

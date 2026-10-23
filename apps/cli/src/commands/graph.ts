@@ -43,7 +43,7 @@ async function withScope(o: GraphCliOptions): Promise<GraphCliOptions> {
   return { ...o, scope };
 }
 
-function open(io: Io, o: GraphCliOptions): Kernel {
+export function open(io: Io, o: { db?: string | undefined }): Kernel {
   const m = money(io.env);
   return new Kernel(
     kernelHost(io, {
@@ -57,7 +57,7 @@ function open(io: Io, o: GraphCliOptions): Kernel {
 }
 
 /** A kernel refusal the terminal reports as "not run" with its exit code, else rethrown. */
-function notRun(io: Io, err: unknown): number {
+export function notRun(io: Io, err: unknown): number {
   if (err instanceof KernelError && err.code === 'workspace') {
     io.err(`not run — ${err.message}\n`);
     return 2;
@@ -99,18 +99,7 @@ export async function doCommand(io: Io, o: GraphCliOptions): Promise<number> {
     const p = await kernel.plan(o.request, opts, sessionId);
     io.err(planText(p));
     const handle = await kernel.startRun({ request: o.request, planId: p.planId, options: opts });
-    const outcome = await untilDone(io, kernel, handle);
-    if (outcome.status === 'not_run') return 4;
-    io.out(renderOutputs(p.graph, outcome.result));
-    const patches = await showAndApply(io, kernel, handle.runId, outcome, o);
-    const artifacts = await showAndApplyArtifacts(io, kernel, handle.runId, outcome, o);
-    const merged = await finishIsolated(io, kernel, handle.runId, outcome, o);
-    const review = verificationLine(outcome.result, p.m);
-    const applied = [review, patches, artifacts, merged].filter(Boolean).join(' · ');
-    io.err(
-      `session ${sessionId.slice(0, 8)} · ${formatMoney(outcome.result.costUsd, p.m)} · ${applied}\n`,
-    );
-    return outcome.result.ok ? 0 : 1;
+    return await finishRun(io, kernel, p, handle, o);
   } catch (err) {
     return notRun(io, err);
   } finally {
@@ -118,7 +107,33 @@ export async function doCommand(io: Io, o: GraphCliOptions): Promise<number> {
   }
 }
 
-function planText(p: Plan): string {
+/**
+ * After a run started (`kpai do`, `kpai fork`): live until done (Ctrl+C cancels), then the
+ * outputs, the patches and artifacts (applied only with `--apply`, each write confirmed
+ * unless `--yes-apply`), the isolated run's merge-back, and a summary line.
+ */
+export async function finishRun(
+  io: Io,
+  kernel: Kernel,
+  p: Plan,
+  handle: RunHandle,
+  o: { apply?: boolean; yesApply?: boolean },
+): Promise<number> {
+  const outcome = await untilDone(io, kernel, handle);
+  if (outcome.status === 'not_run') return 4;
+  io.out(renderOutputs(p.graph, outcome.result));
+  const patches = await showAndApply(io, kernel, handle.runId, outcome, o);
+  const artifacts = await showAndApplyArtifacts(io, kernel, handle.runId, outcome, o);
+  const merged = await finishIsolated(io, kernel, handle.runId, outcome, o);
+  const review = verificationLine(outcome.result, p.m);
+  const applied = [review, patches, artifacts, merged].filter(Boolean).join(' · ');
+  io.err(
+    `session ${handle.sessionId.slice(0, 8)} · ${formatMoney(outcome.result.costUsd, p.m)} · ${applied}\n`,
+  );
+  return outcome.result.ok ? 0 : 1;
+}
+
+export function planText(p: Plan): string {
   return (
     renderGraphPlan(p.graph, p.estimate, p.m) +
     renderRules(summarizeRules(p.rules.rules)) +

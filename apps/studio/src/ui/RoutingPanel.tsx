@@ -1,5 +1,8 @@
+import { useEffect } from 'react';
 import { t } from '../i18n/core';
-import type { NodeEstimate } from '../rpc/schemas';
+import type { NodeEstimate, Ref } from '../rpc/schemas';
+import { ensureCompetence } from '../store/learning';
+import { useStudio } from '../store/store';
 import { formatRange, formatScore } from '../store/format';
 import { refKey } from '../store/reducer';
 import type { NodeRun } from '../store/types';
@@ -62,17 +65,64 @@ function Steps({ est }: { est: NodeEstimate }) {
   );
 }
 
+const EVIDENCE = '; evidence: ';
+
+/** The router's reason and, when measured competence is in force, its evidence (ADR-0028). */
+export function splitEvidence(reason: string | undefined): { reason?: string; evidence?: string } {
+  if (!reason) return {};
+  const at = reason.lastIndexOf(EVIDENCE);
+  if (at < 0) return { reason };
+  return { reason: reason.slice(0, at), evidence: reason.slice(at + EVIDENCE.length) };
+}
+
+/** Measured competence here (ADR-0028): the router's cited evidence and the graded record. */
+function Measured(props: { evidence?: string; parts?: Record<string, number | null>; ref?: Ref }) {
+  const { evidence, parts, ref } = props;
+  const entries = useStudio((s) => s.evidence.competence);
+  useEffect(() => ensureCompetence(), []);
+  const mine = ref
+    ? (entries ?? []).filter((e) => e.ref.provider === ref.provider && e.ref.model === ref.model)
+    : [];
+  const unmeasured = parts && 'measuredCompetence' in parts && parts['measuredCompetence'] === null;
+  return (
+    <div className="measured small">
+      {evidence ? (
+        <p>
+          <strong>{t('routing.evidence')}</strong> {evidence}
+        </p>
+      ) : unmeasured ? (
+        <p className="muted">{t('routing.unmeasured')}</p>
+      ) : null}
+      {mine.length > 0 && (
+        <ul aria-label={t('routing.graded', { model: refKey(ref!) })}>
+          {mine.map((e) => (
+            <li key={e.taskType}>
+              {t('routing.gradedRow', { type: e.taskType, evidence: e.evidence })}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 /**
  * R-303 "why this model": the router's one-line reason, its score and breakdown, and the
  * runner-up. Live events (the model actually working) win over the plan's estimate.
  */
 export function RoutingPanel({ est, n }: { est: NodeEstimate | undefined; n?: NodeRun }) {
-  const reason = n?.reason ?? est?.reason;
+  const { reason, evidence } = splitEvidence(n?.reason ?? est?.reason);
   const score = n?.score ?? est?.score;
+  const ref = n?.ref ?? est?.ref ?? undefined;
   return (
     <section aria-labelledby="detail-routing" className="routing">
       <h4 id="detail-routing">{t('routing.title')}</h4>
       <p>{reason ?? <span className="muted">{t('routing.noReason')}</span>}</p>
+      <Measured
+        {...(evidence ? { evidence } : {})}
+        {...(est?.parts ? { parts: est.parts } : {})}
+        {...(ref ? { ref } : {})}
+      />
       {est?.upgraded && <p>{t('routing.upgraded', { why: est.upgraded })}</p>}
       {est?.error && <p className="error-text">{t('routing.cannot', { error: est.error })}</p>}
       <dl className="kv small">

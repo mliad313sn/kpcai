@@ -83,7 +83,8 @@ describe('views of a finished run (no kernel)', () => {
     const detail = screen.getByRole('complementary');
     expect(within(detail).getByRole('heading', { name: 'Contributions' })).toBeTruthy();
     expect(within(detail).queryByRole('button', { name: 'Redirect to…' })).toBeNull();
-    expect(within(detail).getByRole('button', { name: 'Replay (phase 4)' })).toHaveProperty(
+    // Not connected: replay and fork need the kernel.
+    expect(within(detail).getByRole('button', { name: 'Replay…' })).toHaveProperty(
       'disabled',
       true,
     );

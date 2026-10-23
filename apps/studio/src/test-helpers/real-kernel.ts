@@ -71,6 +71,9 @@ export async function startRealKernel(env: Record<string, string> = {}): Promise
     kernel: { env: { KPAI_HOME: home, OLLAMA_HOST: 'http://127.0.0.1:9', ...env }, cwd },
     confirmTimeoutMs: 5000,
     serverFile: false,
+    // Replay and fork take the server's run options (no client options in the protocol):
+    // the offline `kind: test` mocks must be allowed there too.
+    defaults: { allowTest: true },
   });
   return {
     server,

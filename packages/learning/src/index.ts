@@ -78,3 +78,22 @@ export {
   type BenchTaskResult,
   type CompetenceChange,
 } from './bench.js';
+export {
+  CHANGE_ACTIONS,
+  isKernelWrite,
+  markRework,
+  markRollbacks,
+  runChanges,
+  type Change,
+  type ChangeKind,
+  type ChangeStatus,
+  type RollbackScan,
+} from './changes.js';
+export {
+  REWORK_WINDOW_MS,
+  productivity,
+  productivityOf,
+  type ProductivityOptions,
+  type ProductivityReport,
+  type ReviewYield,
+} from './productivity.js';

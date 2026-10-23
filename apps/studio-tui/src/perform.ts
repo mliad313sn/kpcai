@@ -15,6 +15,8 @@ import {
   startRun,
   submit,
 } from '../../studio/src/store/actions';
+import { gradeNode } from '../../studio/src/store/learning';
+import { rejectProposal } from '../../studio/src/store/memory';
 import { isTerminal } from '../../studio/src/store/reducer';
 import { announce, studio } from '../../studio/src/store/store';
 import type { RunView } from '../../studio/src/store/types';
@@ -27,6 +29,8 @@ export interface TuiLine {
   nodeId?: string;
   /** The diff view replaces the plan or thread pane. */
   diff: boolean;
+  /** The option picked (by number) in an open dispute, before y settles it (R-405). */
+  choice?: number;
 }
 
 export const EMPTY_LINE: TuiLine = { mode: 'request', text: '', diff: false };
@@ -109,7 +113,42 @@ function runControl(a: Action): void {
   else if (a.kind === 'pauseResume' && live)
     void control(run.state === 'paused' ? 'resume' : 'pause', run.runId);
   else if (a.kind === 'cancel' && live) void control('cancel', run.runId);
-  else if (a.kind === 'confirm' && s.confirms[0]) void answerConfirm(s.confirms[0].confirmId, a.ok);
+}
+
+/** Picks a dispute option by number; the pick is shown and y then settles with it. */
+function choose(index: number, line: TuiLine): TuiLine {
+  const options = studio.getState().confirms[0]?.dispute?.options ?? [];
+  if (!options[index]) return line;
+  announce(t('tui.disputePicked', { n: index + 1, label: options[index].label }));
+  return { ...line, choice: index };
+}
+
+/** Answers the open confirmation: a dispute needs a picked option; memory may be rejected. */
+function confirm(a: Extract<Action, { kind: 'confirm' }>, line: TuiLine): TuiLine {
+  const c = studio.getState().confirms[0];
+  if (!c) return line;
+  const rest = { ...line };
+  delete rest.choice;
+  if (c.kind === 'dispute' && a.ok) {
+    const option = line.choice === undefined ? undefined : c.dispute?.options[line.choice];
+    if (!option) return (announce(t('tui.disputePickFirst')), line);
+    void answerConfirm(c.confirmId, true, option.id);
+    return rest;
+  }
+  const id = c.memory?.id;
+  const answered = answerConfirm(c.confirmId, a.ok);
+  if (a.reject && id) void answered.then(() => rejectProposal(id));
+  return rest;
+}
+
+/** Ctrl+G / Ctrl+B: grade the selected node of the finished run (ADR-0028). */
+function grade(g: 'good' | 'bad'): void {
+  const run = activeRun();
+  const nodeId = studio.getState().selectedNodeId;
+  const state = nodeId ? run?.nodes[nodeId]?.state : undefined;
+  if (!run || LIVE.has(run.state) || !nodeId || (state !== 'done' && state !== 'failed'))
+    return announce(t('tui.gradeSelect'));
+  void gradeNode(run.runId, nodeId, g, '');
 }
 
 /** Runs one key's action on the shared store; returns the new input line. */
@@ -136,6 +175,13 @@ export function perform(a: Action, line: TuiLine, exit: () => void): TuiLine {
       return line;
     case 'quit':
       exit();
+      return line;
+    case 'choose':
+      return choose(a.index, line);
+    case 'confirm':
+      return confirm(a, line);
+    case 'grade':
+      grade(a.grade);
       return line;
     default:
       runControl(a);

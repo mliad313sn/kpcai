@@ -64,7 +64,8 @@ export class KernelMemory {
   /** The store with the zones in force here (packs' additions; relaxations not applied). */
   private async store(): Promise<MemoryStore> {
     const packs = await selectPacks(this.h.env, this.h.cwd).catch(() => undefined);
-    const { policy } = await policyFor(this.h.env, packs ? busPacks(packs, 'memory') : undefined);
+    const zoned = packs ? busPacks(packs, 'memory') : undefined;
+    const { policy } = await policyFor(this.h.env, zoned, undefined, this.h.cwd);
     return memoryStore(this.h.env, policy.zoneSet());
   }
 

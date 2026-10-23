@@ -6,6 +6,7 @@ import { benchCommand, gradeCommand } from './commands/learning.js';
 import { memoryCommand } from './commands/memory.js';
 import { packCommand } from './commands/pack.js';
 import { providersCommand } from './commands/providers.js';
+import { forkCommand, replayCommand, type NodeCliOptions } from './commands/replay.js';
 import { routeCommand, runCommand, type RunOptions } from './commands/run.js';
 import { statsCommand } from './commands/stats.js';
 import { doCommand, planCommand } from './commands/graph.js';
@@ -59,6 +60,10 @@ const OPTIONS = {
   layer: { type: 'string' },
   author: { type: 'string' },
   'per-kind': { type: 'string' },
+  productivity: { type: 'boolean' },
+  since: { type: 'string' },
+  protocol: { type: 'string' },
+  instruction: { type: 'string' },
 } as const;
 
 function positiveInt(name: string, raw: string | undefined): number | undefined {
@@ -145,6 +150,27 @@ function runOptions(v: Values, rest: string[]): RunOptions {
 
 type Handler = (io: Io, v: Values, rest: string[]) => number | Promise<number>;
 
+/** `kpai replay|fork <run> <node>`: the run and node, the edit, and the usual run flags. */
+function nodeOptions(v: Values, rest: string[]): NodeCliOptions {
+  const [runId, nodeId, ...extra] = rest;
+  if (!runId || !nodeId || extra.length > 0) throw new UsageError(t('error.nodeNeedsArgs'));
+  return {
+    db: v.db,
+    runId,
+    nodeId,
+    model: v.model,
+    protocol: v.protocol,
+    instruction: v.instruction,
+    apply: v.apply,
+    yesApply: v['yes-apply'],
+    ...(v['allow-test'] ? { allowTest: true } : {}),
+    ...(v.yes ? { yes: true } : {}),
+    ...(v['over-budget'] ? { overBudget: true } : {}),
+    ...(v['allow-same-provider'] ? { allowSameProvider: true } : {}),
+    ...(v.isolated ? { isolated: true } : {}),
+  };
+}
+
 function askOptions(v: Values, rest: string[]): Parameters<typeof askCommand>[1] {
   if (rest.length === 0) throw new UsageError(t('error.askNeedsPrompt'));
   return {
@@ -165,7 +191,13 @@ const COMMANDS: Readonly<Record<string, Handler>> = {
   tools: (io) => toolsCommand(io),
   studio: (io, v) =>
     studioCommand(io, { db: v.db, port: portNumber(v.port), allowTest: v['allow-test'] }),
-  stats: (io, v) => statsCommand(io, { db: v.db, session: v.session }),
+  stats: (io, v) =>
+    statsCommand(io, {
+      db: v.db,
+      session: v.session,
+      productivity: v.productivity,
+      since: v.since,
+    }),
   providers: (io) => providersCommand(io),
   ask: (io, v, rest) => askCommand(io, askOptions(v, rest)),
   log: (io, v) =>
@@ -194,6 +226,8 @@ const COMMANDS: Readonly<Record<string, Handler>> = {
       perKind: positiveInt('per-kind', v['per-kind']),
       options: { ...(v['allow-test'] ? { allowTest: true } : {}), ...(v.yes ? { yes: true } : {}) },
     }),
+  replay: (io, v, rest) => replayCommand(io, nodeOptions(v, rest)),
+  fork: (io, v, rest) => forkCommand(io, nodeOptions(v, rest)),
   memory: (io, v, rest) =>
     memoryCommand(io, rest, {
       db: v.db,

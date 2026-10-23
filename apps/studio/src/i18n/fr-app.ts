@@ -161,7 +161,7 @@ export const frApp: Record<keyof typeof enApp, Message> = {
     'Votre premier plan arrive. Relisez-le dans le fil d’exécution, puis appuyez sur Lancer.',
   'tui.title': 'KP Studio — terminal',
   'tui.keys':
-    'Entrée planifier · Ctrl+R lancer · Ctrl+D abandonner · Ctrl+P pause/reprise · Ctrl+X annuler · Tab nœud suivant · Ctrl+N consigne au nœud · Ctrl+T rediriger le nœud · Ctrl+O diff · Ctrl+A appliquer les correctifs · Échap retour · Ctrl+Q quitter',
+    'Entrée planifier · Ctrl+R lancer · Ctrl+D abandonner · Ctrl+P pause/reprise · Ctrl+X annuler · Tab nœud suivant · Ctrl+N consigne au nœud · Ctrl+T rediriger le nœud · Ctrl+O diff · Ctrl+A appliquer les correctifs · Ctrl+G/Ctrl+B noter le nœud · Échap retour · Ctrl+Q quitter',
   'tui.prompt': 'Demande',
   'tui.placeholder': 'décrivez une tâche, puis Entrée',
   'tui.instructPrompt': 'Consigne pour #{id}',

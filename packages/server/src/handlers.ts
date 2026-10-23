@@ -190,8 +190,35 @@ function memoryHandlers(kernel: Kernel): Pick<Handlers, MemoryMethod> {
   };
 }
 
+/** A fork plan as the console sees it: what reruns, what is reused, the estimate. */
+async function forkPlanResult(kernel: Kernel, p: ParamsOf<'run.forkPlan'>, defaults: RunOptions) {
+  const e = p.edit ?? {};
+  const edit = {
+    ...(e.model ? { model: e.model } : {}),
+    ...(e.protocol ? { protocol: e.protocol } : {}),
+    ...(e.instruction ? { instruction: e.instruction } : {}),
+  };
+  const plan = await kernel.forkPlan(p.runId, p.nodeId, edit, defaults);
+  const fork = plan.fork!;
+  return {
+    planId: plan.planId,
+    parent: fork.parent,
+    rerun: fork.rerun,
+    reused: Object.keys(fork.reuse),
+    edits: fork.edits,
+    graph: plan.graph,
+    estimate: plan.estimate,
+  };
+}
+
 type LearningMethod =
-  'grade' | 'stats.accuracy' | 'competence' | 'run.replay' | 'run.forkPlan' | 'run.fork';
+  | 'grade'
+  | 'stats.accuracy'
+  | 'stats.productivity'
+  | 'competence'
+  | 'run.replay'
+  | 'run.forkPlan'
+  | 'run.fork';
 
 /**
  * Grades, measured competence, accuracy (ADR-0028); replay and fork (R-403). A replay
@@ -212,6 +239,12 @@ function learningHandlers(
         ...(p.author ? { author: p.author } : {}),
       }),
     'stats.accuracy': () => kernel.learning.accuracy(),
+    'stats.productivity': (p) =>
+      kernel.learning.productivity({
+        ...(p?.since ? { since: p.since } : {}),
+        ...(p?.reworkDays ? { reworkDays: p.reworkDays } : {}),
+        ...(p?.detail ? { detail: true } : {}),
+      }),
     competence: () => ({ entries: kernel.learning.competence() }),
     'run.replay': (p) =>
       kernel.replay(
@@ -220,25 +253,7 @@ function learningHandlers(
         { ...(p.model ? { model: p.model } : {}), ...(p.protocol ? { protocol: p.protocol } : {}) },
         defaults,
       ),
-    'run.forkPlan': async (p) => {
-      const e = p.edit ?? {};
-      const edit = {
-        ...(e.model ? { model: e.model } : {}),
-        ...(e.protocol ? { protocol: e.protocol } : {}),
-        ...(e.instruction ? { instruction: e.instruction } : {}),
-      };
-      const plan = await kernel.forkPlan(p.runId, p.nodeId, edit, defaults);
-      const fork = plan.fork!;
-      return {
-        planId: plan.planId,
-        parent: fork.parent,
-        rerun: fork.rerun,
-        reused: Object.keys(fork.reuse),
-        edits: fork.edits,
-        graph: plan.graph,
-        estimate: plan.estimate,
-      };
-    },
+    'run.forkPlan': (p) => forkPlanResult(kernel, p, defaults),
     'run.fork': async (p) => {
       // Like run.start: isolated when the workspace is a git working tree (ADR-0021).
       const handle = await kernel.startFork(p.planId, { ...defaults, isolated: 'auto' });

@@ -3,6 +3,7 @@ import { createToolBus, type LocalToolBus, type PackZoneOptions } from '@kernelp
 import { unreviewedOverwrite, type Artifact } from './artifacts.js';
 import type { Confirm } from './confirm.js';
 import { kpaiHome } from './env.js';
+import { homeZones } from './home-zone.js';
 import type { Patch } from './patches.js';
 import type { ApplyResult, ArtifactApplyResult, KernelHost } from './types.js';
 
@@ -25,6 +26,8 @@ export interface ApplyContext {
 async function withBus<T>(c: ApplyContext, f: (bus: LocalToolBus) => Promise<T>): Promise<T> {
   const { bus } = await createToolBus({
     kpaiHome: kpaiHome(c.host.env),
+    // $KPAI_HOME/memory/** when the home is inside the workspace (ADR-0030).
+    policyOptions: { forbiddenPaths: homeZones(c.host.env, c.host.cwd) },
     journal: c.journal,
     env: c.host.env,
     ...(c.packs ? { packs: c.packs } : {}),

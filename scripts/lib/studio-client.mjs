@@ -1,12 +1,12 @@
 import { spawn } from 'node:child_process';
 
 /**
- * Starts `kpai studio` and resolves once it printed its URL: `{ child, url, port, token,
+ * Starts `kpai studio [...args]` and resolves once it printed its URL: `{ child, url, port, token,
  * stop }`. `stop()` sends Ctrl+C (SIGINT) and resolves with the exit code; Windows has no
  * SIGINT for child processes, so there the server is killed instead.
  */
-export function startStudio(bin, { cwd, env, timeoutMs = 20_000 }) {
-  const child = spawn(process.execPath, [bin, 'studio'], {
+export function startStudio(bin, { cwd, env, args = [], timeoutMs = 20_000 }) {
+  const child = spawn(process.execPath, [bin, 'studio', ...args], {
     cwd,
     env,
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -39,7 +39,8 @@ export function startStudio(bin, { cwd, env, timeoutMs = 20_000 }) {
 /**
  * A JSON-RPC 2.0 client on Node's built-in WebSocket, with the same token transport as
  * KP Studio (ADR-0019: the bearer token rides as the second subprotocol). Confirmations
- * (`confirm.request`) go to `client.answer(params) → boolean`; the default is "no".
+ * (`confirm.request`) go to `client.answer(params)`, which returns a boolean, or
+ * `{ ok, choice }` to pick a disputed node's option (R-405); the default is "no".
  */
 export function connectRpc(port, token) {
   const ws = new WebSocket(`ws://127.0.0.1:${port}/rpc`, [
@@ -93,8 +94,9 @@ export function connectRpc(port, token) {
     client.notes.push(note);
     if (note.method === 'confirm.request') {
       client.confirms.push(note.params);
-      const ok = client.answer(note.params) === true;
-      void client.call('confirm.answer', { confirmId: note.params.confirmId, ok });
+      const a = client.answer(note.params);
+      const body = a && typeof a === 'object' ? a : { ok: a === true };
+      void client.call('confirm.answer', { confirmId: note.params.confirmId, ...body });
     }
     for (const w of [...watchers]) w(note);
   });

@@ -155,7 +155,7 @@ export const enApp = {
     'Your first plan is coming. Review it in the execution thread, then press Run.',
   'tui.title': 'KP Studio — terminal',
   'tui.keys':
-    'Enter plan · Ctrl+R run · Ctrl+D discard · Ctrl+P pause/resume · Ctrl+X cancel · Tab next node · Ctrl+N instruct node · Ctrl+T redirect node · Ctrl+O diff · Ctrl+A apply patches · Esc back · Ctrl+Q quit',
+    'Enter plan · Ctrl+R run · Ctrl+D discard · Ctrl+P pause/resume · Ctrl+X cancel · Tab next node · Ctrl+N instruct node · Ctrl+T redirect node · Ctrl+O diff · Ctrl+A apply patches · Ctrl+G/Ctrl+B grade node · Esc back · Ctrl+Q quit',
   'tui.prompt': 'Request',
   'tui.placeholder': 'describe a task, then Enter',
   'tui.instructPrompt': 'Instruction for #{id}',

@@ -35,6 +35,8 @@ jobs:
       # demo-phase3 serves the built web console through `kpai studio`.
       - run: pnpm --filter @kernelpai/studio build
       - run: node scripts/demo-phase3.mjs
+      # Phase 4: memory, grades and routing evidence, bench, replay, fork, dispute, metrics.
+      - run: node scripts/demo-phase4.mjs
       - run: node scripts/bench-router.mjs
 
   e2e:

@@ -32,11 +32,13 @@ const REPO_MEMORY_MAX_BYTES = 64 * 1024;
 
 /** How models are told they may propose facts; a human confirms each one. */
 export const PROPOSAL_HINT =
-  'When your task is to write or change something (not to review, judge or vote), you may ' +
-  'propose facts worth remembering (a convention, a decision, a past mistake, a preference): ' +
-  'end your answer with a ```memory block of "- [project] fact" items (or [user], [session]; ' +
-  'add local-only for facts that must stay on this machine). At most 5, one line each, no ' +
-  'secrets or credential paths. A human confirms each one before it is kept.';
+  'If you write or change something (not review/judge/vote), you may end with a ```memory ' +
+  'block of facts to keep (convention, decision, mistake, preference), one "- [project] fact" ' +
+  'per line ([user], [session] too; add local-only to keep it on this machine). Max 5, no ' +
+  'secrets or credential paths. A human confirms each.';
+
+/** The hint's cost on every write-type call, as the memory budget counts it (ADR-0027). */
+export const PROPOSAL_HINT_MAX_TOKENS = 80;
 
 /** What the plan shows about memory: counts, ids and sources, never the facts' text. */
 export interface MemorySummary {

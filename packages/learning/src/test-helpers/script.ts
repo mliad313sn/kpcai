@@ -30,6 +30,11 @@ export class Script {
     this.sid = this.j.startSession('scripted', cwd);
   }
 
+  /** Moves the journal clock forward (each event already adds one second). */
+  advance(ms: number): void {
+    this.t += ms;
+  }
+
   session(cwd = '/repo'): string {
     this.sid = this.j.startSession('scripted', cwd);
     return this.sid;
@@ -108,20 +113,55 @@ export class Script {
   }
 
   /** A kernel write of a node's patch, after a checkpoint (as `applyAll` journals it). */
-  apply(runId: string, nodeId: string, i: number, decision = 'confirmed', isError = false): string {
-    const cp = `refs/kpai/checkpoints/${runId}/${++this.n}`;
+  apply(
+    runId: string,
+    nodeId: string,
+    i: number,
+    decision = 'confirmed',
+    isError = false,
+    files: string[] = [],
+    ns = runId,
+  ): string {
+    const cp = `refs/kpai/checkpoints/${ns}/${++this.n}`;
     this.note({ action: 'checkpoint', runId, ref: cp, label: `before patch from ${nodeId}` });
     this.tool(`${nodeId}#patch-${i}`, 'kernel/apply', {
       tool: 'git.apply',
       decision,
       isError,
       input: { patch: { chars: 10, sha256: 'x' } },
+      ...(files.length ? { meta: { files, bytes: 10 } } : {}),
     });
     return cp;
   }
 
-  restore(runId: string, checkpoint: string): void {
-    this.note({ action: 'restore', runId, ref: checkpoint, written: 1, deleted: 0, skipped: 0 });
+  /** A kernel write of a node's artifact, after a checkpoint (as `applyArtifacts` does). */
+  artifact(runId: string, nodeId: string, i: number, path: string, decision = 'confirmed'): string {
+    const cp = `refs/kpai/checkpoints/${runId}/${++this.n}`;
+    this.note({ action: 'checkpoint', runId, ref: cp, label: `before artifact ${path}` });
+    this.tool(`${nodeId}#artifact-${i}`, 'kernel/artifact', {
+      tool: 'fs.write',
+      decision,
+      isError: false,
+      input: { path, content: { chars: 5, sha256: 'y' } },
+    });
+    return cp;
+  }
+
+  /** The workspace checkpoint, then the merge-back of an isolated run (`WorkspaceOps.merge`). */
+  merge(runId: string, files: string[]): string {
+    const cp = `refs/kpai/checkpoints/${runId}/${++this.n}`;
+    this.note({ action: 'checkpoint', runId, ref: cp, label: `before merge of run ${runId}` });
+    this.note({ action: 'merge-back', runId, files, checkpoint: cp });
+    return cp;
+  }
+
+  /** A node's run record (`journalNode`), with its protocol result. */
+  record(runId: string, nodeId: string, result: Record<string, unknown>, reused = false): void {
+    this.note({ action: 'node recorded', runId, result: { nodeId, ...result }, reused }, nodeId);
+  }
+
+  restore(runId: string, checkpoint: string, written = 1): void {
+    this.note({ action: 'restore', runId, ref: checkpoint, written, deleted: 0, skipped: 0 });
   }
 
   /** A whole author+critic run of one node, ended by its outcome. */

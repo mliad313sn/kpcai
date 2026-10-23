@@ -61,9 +61,8 @@ export function controlText(e: ControlEvent): string {
         reason: clip(e.reason ?? t('control.noReason')),
       });
     case 'dispute_resolved':
-      return t('control.disputeResolved', {
-        node: nodeName(e),
-        choice: typeof x.choice === 'string' ? clip(x.choice) : '—',
-      });
+      return typeof x.choice === 'string'
+        ? t('control.disputeResolved', { node: nodeName(e), choice: clip(x.choice) })
+        : t('control.disputeRejected', { node: nodeName(e) });
   }
 }

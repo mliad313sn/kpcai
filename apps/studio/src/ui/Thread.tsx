@@ -2,8 +2,8 @@ import { t } from '../i18n/core';
 import { formatDuration, formatRange, formatUsd } from '../store/format';
 import { refKey } from '../store/reducer';
 import { patch, useStudio } from '../store/store';
-import type { RunView } from '../store/types';
-import type { GraphNode } from '../rpc/schemas';
+import type { NodeRun, RunView } from '../store/types';
+import type { GraphNode, NodeEstimate } from '../rpc/schemas';
 import { useNow } from './hooks';
 import { ControlLog } from './ControlLog';
 import { CostMeter } from './CostMeter';
@@ -12,18 +12,43 @@ import { NodeDetail } from './NodeDetail';
 import { PlanBar } from './PlanBar';
 import { RunControls } from './RunControls';
 import { StateBadge } from './StateBadge';
+import { isDisputed } from '../store/disputes';
+import { VerificationLine } from './Evidence';
 import { nodeEstimate, useGraphView, type GraphView } from './view';
 import { Zone } from './Zone';
 
 function RunBar({ run }: { run: RunView }) {
   return (
-    <div className="thread-bar" role="group" aria-label={t('thread.run')}>
-      <StateBadge state={run.state} />
-      <CostMeter spent={run.costUsd} est={run.estimate} />
-      <span className="spacer" />
-      <RunControls run={run} />
-    </div>
+    <>
+      <div className="thread-bar" role="group" aria-label={t('thread.run')}>
+        <StateBadge state={run.state} />
+        <CostMeter spent={run.costUsd} est={run.estimate} />
+        {run.forkOf && (
+          <span className="tag">
+            {t('fork.of', { run: run.forkOf.runId.slice(0, 8), id: run.forkOf.nodeId })}
+          </span>
+        )}
+        <span className="spacer" />
+        <RunControls run={run} />
+      </div>
+      {run.verification && <VerificationLine v={run.verification} />}
+    </>
   );
+}
+
+/** A node's cost: the estimate's band before it runs, what it spent once it has. */
+function costText(v: GraphView, n: NodeRun | undefined, est: NodeEstimate | undefined): string {
+  if (v.mode === 'run' && n) return formatUsd(n.costUsd);
+  if (!est) return '–';
+  const range = est.band
+    ? formatRange(est.band.lowUsd, est.band.highUsd)
+    : formatRange(est.minUsd, est.expectedUsd);
+  return t('thread.est', { range });
+}
+
+/** Reused from the parent run (fork plan or forked run): not run, not billed again. */
+function reusedIn(v: GraphView, plan: { fork?: { reused: string[] } } | undefined, id: string) {
+  return v.mode === 'plan' ? !!plan?.fork?.reused.includes(id) : !!v.run?.reused?.includes(id);
 }
 
 function NodeCard(props: { node: GraphNode; v: GraphView; now: number; selected: boolean }) {
@@ -31,18 +56,16 @@ function NodeCard(props: { node: GraphNode; v: GraphView; now: number; selected:
   const n = v.run?.nodes[node.id];
   const est = nodeEstimate(v, node.id);
   const ref = n?.ref ?? node.model ?? est?.ref ?? undefined;
-  const state = v.mode === 'plan' ? 'planned' : (n?.state ?? 'pending');
+  const plan = useStudio((s) => s.plan);
+  const reused = reusedIn(v, plan, node.id);
+  const state =
+    v.mode === 'plan'
+      ? 'planned'
+      : isDisputed(v.run, node.id)
+        ? 'disputed'
+        : (n?.state ?? 'pending');
   const duration = n?.startedAt ? formatDuration((n.endedAt ?? now) - n.startedAt) : '–';
-  const cost =
-    v.mode === 'plan' || !n
-      ? est
-        ? t('thread.est', {
-            range: est.band
-              ? formatRange(est.band.lowUsd, est.band.highUsd)
-              : formatRange(est.minUsd, est.expectedUsd),
-          })
-        : '–'
-      : formatUsd(n.costUsd);
+  const cost = costText(v, n, est);
   return (
     <button
       type="button"
@@ -60,6 +83,7 @@ function NodeCard(props: { node: GraphNode; v: GraphView; now: number; selected:
           {ref ? refKey(ref) : est?.error ? t('thread.unroutable') : '—'}
         </span>
         {node.model && !n && <span className="tag">{t('thread.yourChoice')}</span>}
+        {reused && <span className="tag">{t('thread.reused')}</span>}
       </span>
       <span className="node-meta small">
         <span>

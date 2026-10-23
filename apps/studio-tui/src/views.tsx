@@ -9,7 +9,9 @@ import { controlText } from '../../studio/src/store/controls';
 import { costLine, costOf } from '../../studio/src/store/cost';
 import { formatDuration, formatRange, formatUsd } from '../../studio/src/store/format';
 import { refKey } from '../../studio/src/store/reducer';
+import { isDisputed } from '../../studio/src/store/disputes';
 import type { ConfirmView, NodeRun, PlanView, RunView } from '../../studio/src/store/types';
+import { DisputeBody, MemoryBody, PlanExtras, VerificationText, inert } from './learn';
 
 const STATE: Record<string, { icon: string; key: Key; color?: string }> = {
   planned: { icon: '◇', key: 'state.planned' },
@@ -17,6 +19,7 @@ const STATE: Record<string, { icon: string; key: Key; color?: string }> = {
   starting: { icon: '◌', key: 'state.starting' },
   running: { icon: '▶', key: 'state.running', color: 'cyan' },
   review: { icon: '◑', key: 'state.in_review', color: 'cyan' },
+  disputed: { icon: '⚖', key: 'state.disputed', color: 'yellow' },
   paused: { icon: '❚❚', key: 'state.paused', color: 'yellow' },
   cancelling: { icon: '⊘', key: 'state.cancelling', color: 'yellow' },
   done: { icon: '✓', key: 'state.done', color: 'green' },
@@ -50,6 +53,7 @@ export function PlanPane({ plan, selected }: { plan: PlanView; selected?: string
           </Text>
         );
       })}
+      <PlanExtras plan={plan} />
       {!plan.estimate.complete &&
         plan.estimate.problems.map((p, i) => (
           <Text key={i} color="red">
@@ -63,7 +67,7 @@ export function PlanPane({ plan, selected }: { plan: PlanView; selected?: string
 function lastLine(n: NodeRun | undefined): string {
   const streams = Object.values(n?.streams ?? {});
   const text = streams.at(-1) ?? n?.contributions.at(-1)?.text ?? '';
-  const line = text.trimEnd().split('\n').at(-1) ?? '';
+  const line = inert(text.trimEnd().split('\n').at(-1) ?? '');
   return line.length > 100 ? `${line.slice(0, 100)}…` : line;
 }
 
@@ -93,12 +97,14 @@ export function ThreadPane({ run, selected }: { run: RunView; selected?: string 
       <Text bold>
         {t('tui.thread')} · <Badge state={run.state} /> · <SpendText run={run} />
       </Text>
+      <VerificationText run={run} />
       {(run.graph?.nodes ?? []).map((g) => {
         const n = run.nodes[g.id];
         return (
           <Box key={g.id} flexDirection="column">
             <Text inverse={selected === g.id}>
-              #{g.id} <Badge state={n?.state ?? 'pending'} /> {g.title}
+              #{g.id} <Badge state={isDisputed(run, g.id) ? 'disputed' : (n?.state ?? 'pending')} />{' '}
+              {g.title}
               {n?.ref ? ` · ${refKey(n.ref)}` : ''} · {formatUsd(n?.costUsd ?? 0)}
             </Text>
             {lastLine(n) ? <Text dimColor> {lastLine(n)}</Text> : null}
@@ -162,7 +168,7 @@ function PatchLines({ patch }: { patch: string }) {
         const color = diffColor(l);
         return (
           <Text key={i} {...(color ? { color } : {})}>
-            {l || ' '}
+            {inert(l) || ' '}
           </Text>
         );
       })}
@@ -199,7 +205,7 @@ export function DiffPane({ run }: { run: RunView | undefined }) {
 }
 
 /** A confirmation: the question and any diff or content as text; the default is No. */
-export function ConfirmPane({ c, now }: { c: ConfirmView; now: number }) {
+export function ConfirmPane({ c, now, choice }: { c: ConfirmView; now: number; choice?: number }) {
   const body = c.patch ?? c.content ?? '';
   const lines = body ? body.split('\n') : [];
   const left = Math.max(0, c.receivedAt + c.timeoutMs - now);
@@ -207,17 +213,23 @@ export function ConfirmPane({ c, now }: { c: ConfirmView; now: number }) {
     <Box flexDirection="column" borderStyle="double" borderColor="yellow" paddingX={1}>
       <Text bold>{t('tui.confirm', { title: t(`confirm.title.${c.kind}`) })}</Text>
       {c.risk ? <Text>{t('confirm.risk', { risk: t(`confirm.risk.${c.risk}`) })}</Text> : null}
-      <Text>{c.question}</Text>
+      <Text>{inert(c.question)}</Text>
       {lines.slice(0, MAX_LINES).map((l, i) => (
         <Text key={i} dimColor>
-          {l}
+          {inert(l)}
         </Text>
       ))}
       {lines.length > MAX_LINES ? (
         <Text dimColor>{t('tui.confirmMore', { count: lines.length - MAX_LINES })}</Text>
       ) : null}
-      <Text>{t('confirm.timeout', { time: formatDuration(left) })}</Text>
-      <Text bold>{t('tui.confirmKeys')}</Text>
+      {c.dispute ? <DisputeBody c={c} {...(choice !== undefined ? { choice } : {})} /> : null}
+      {c.memory ? <MemoryBody c={c} /> : null}
+      <Text>
+        {t(c.dispute ? 'dispute.timeout' : c.memory ? 'memory.timeout' : 'confirm.timeout', {
+          time: formatDuration(left),
+        })}
+      </Text>
+      {c.dispute || c.memory ? null : <Text bold>{t('tui.confirmKeys')}</Text>}
     </Box>
   );
 }

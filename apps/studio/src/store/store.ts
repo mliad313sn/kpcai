@@ -6,9 +6,11 @@ import { createStore, useStore } from 'zustand';
 import type { NotificationName, NotificationParams } from '../rpc/client';
 import { GraphEventSchema, TaskGraphSchema, parseArtifacts, parseEstimate } from '../rpc/schemas';
 import { resolveLocale, setLocale, t, type Key } from '../i18n/core';
+import { parseDisputeRecords, parseReused, parseVerification } from '../rpc/learning-schemas';
 import { controlText } from './controls';
+import { applyDisputeControl, applyDisputeRecords } from './disputes';
 import { loadPrefs, savePrefs } from './prefs';
-import { applyEvent, applyResult, newRun } from './reducer';
+import { applyEvent, applyResult, blankNode, newRun } from './reducer';
 import type { RunView, StudioState } from './types';
 
 const MAX_LOGS = 200;
@@ -38,6 +40,10 @@ export function initialState(): StudioState {
     paletteOpen: false,
     prefs,
     surface: 'web',
+    memory: { layers: {}, pending: [], loading: false },
+    evidence: { loading: false },
+    replays: {},
+    grades: {},
   };
 }
 
@@ -102,13 +108,28 @@ function onPlanned(p: NotificationParams<'run.planned'>): void {
   updateRun(p.runId, (r) => ({ ...r, graph: graph.data, estimate }));
 }
 
+/** A fork's reused nodes ran in the parent run: they are shown done, never billed again. */
+function markReused(r: RunView, reused: string[]): RunView {
+  if (reused.length === 0) return r;
+  const nodes = { ...r.nodes };
+  for (const id of reused) {
+    const n = nodes[id] ?? blankNode();
+    if (n.state === 'pending') nodes[id] = { ...n, state: 'done' };
+  }
+  return { ...r, nodes, reused };
+}
+
 function onDone(p: NotificationParams<'run.done'>): void {
   const artifacts = parseArtifacts(p.artifacts);
+  const verification = parseVerification(p.verification);
+  const records = parseDisputeRecords(p.result);
+  const reused = parseReused(p.result);
   updateRun(p.runId, (r) => ({
-    ...applyResult(r, p.result),
+    ...markReused(applyDisputeRecords(applyResult(r, p.result), records), reused),
     patches: p.patches,
     artifacts,
     ...(p.worktree ? { worktree: p.worktree } : {}),
+    ...(verification ? { verification } : {}),
   }));
   const key = studio.getState().surface === 'tui' ? 'tui.announce.patches' : 'run.announce.patches';
   if (p.patches.length) announce(t(key, { count: p.patches.length }));
@@ -116,7 +137,9 @@ function onDone(p: NotificationParams<'run.done'>): void {
 
 function onControl(p: NotificationParams<'run.control'>): void {
   const entry = { event: p.event, at: Date.now() };
-  updateRun(p.runId, (r) => ({ ...r, controls: [...r.controls, entry].slice(-MAX_CONTROLS) }));
+  updateRun(p.runId, (r) =>
+    applyDisputeControl({ ...r, controls: [...r.controls, entry].slice(-MAX_CONTROLS) }, p.event),
+  );
   announce(controlText(p.event));
 }
 

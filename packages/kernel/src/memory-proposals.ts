@@ -62,7 +62,7 @@ export async function queueProposals(c: ProposalContext, result: GraphResult): P
   const { list, dropped } = found(result);
   if (list.length === 0 && dropped === 0) return [];
   const sessionId = c.plan.sessionId;
-  const { policy } = await policyFor(c.env, busPacks(c.plan.packs, sessionId));
+  const { policy } = await policyFor(c.env, busPacks(c.plan.packs, sessionId), undefined, c.cwd);
   const store = memoryStore(c.env, policy.zoneSet());
   const repo = await folderKey(c.cwd);
   const ids: string[] = [];

@@ -84,6 +84,37 @@ describe('learning, replay and fork over the protocol', () => {
   });
 });
 
+describe('stats.productivity (R-406)', () => {
+  it('returns a result that passes the protocol schema, with and without detail', async () => {
+    const { c } = await boot();
+    const { runId, done } = await runToEnd(c, 'run.start', {
+      request: REQ,
+      options: { isolated: false },
+    });
+    const p = (await ok(c, 'stats.productivity')) as Record<string, unknown> & {
+      runs: number;
+      review: { acceptedFindings: number };
+    };
+    expect(p.runs).toBeGreaterThanOrEqual(1);
+    expect(p).not.toHaveProperty('list');
+    const v = (done as { verification?: { acceptedFindings: number } }).verification;
+    expect(p.review.acceptedFindings).toBe(v?.acceptedFindings);
+    const d = (await ok(c, 'stats.productivity', {
+      since: '2000-01-01T00:00:00Z',
+      reworkDays: 3,
+      detail: true,
+    })) as { list: unknown[]; reworkWindowMs: number; since: string };
+    expect(d.list).toEqual([]);
+    expect(d.reworkWindowMs).toBe(3 * 86_400_000);
+    expect(d.since).toBe('2000-01-01T00:00:00.000Z');
+    expect(runId).toBeTruthy();
+    for (const params of [{ since: 'soon' }, { reworkDays: 0 }, { reworkDays: 400 }]) {
+      const bad = await c.call('stats.productivity', params);
+      expect(bad.error?.code, JSON.stringify(params)).toBe(-32602);
+    }
+  });
+});
+
 describe('dispute answers (R-405)', () => {
   const dispute = {
     nodeId: 'n',

@@ -27,6 +27,7 @@ export {
   AccuracySchema,
   CompetenceEntrySchema,
   DisputeSchema,
+  ProductivitySchema,
   ReplayResultSchema,
 } from './protocol-learning.js';
 export {

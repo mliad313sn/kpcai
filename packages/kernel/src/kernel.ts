@@ -109,9 +109,13 @@ export class Kernel extends Queries {
     });
   }
 
-  /** Reruns a finished run's node beside the original (R-403); never while the run is live. */
-  replay(...args: Parameters<KernelReplays['replay']>): ReturnType<KernelReplays['replay']> {
+  /**
+   * Reruns a finished run's node beside the original (R-403); never while the run is live.
+   * It spends and its tools act in the workspace, so the workspace is guarded like a run's.
+   */
+  async replay(...args: Parameters<KernelReplays['replay']>): ReturnType<KernelReplays['replay']> {
     this.notLive(args[0], 'replay a node');
+    await this.checkWorkspace();
     return this.replays.replay(...args);
   }
 

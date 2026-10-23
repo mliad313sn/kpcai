@@ -40,3 +40,17 @@ export function formatDuration(ms: number): string {
 export function formatScore(score: number | undefined): string {
   return score === undefined || !Number.isFinite(score) ? '—' : score.toFixed(2);
 }
+
+const percent = new Map<string, Intl.NumberFormat>();
+
+/** A ratio (0.25) as a percentage in the display language: `25%`, `25 %`. */
+export function formatPct(ratio: number | null | undefined): string {
+  if (ratio === null || ratio === undefined || !Number.isFinite(ratio)) return '—';
+  const tag = getLocale() === 'fr' ? 'fr-FR' : 'en-US';
+  let f = percent.get(tag);
+  if (!f) {
+    f = new Intl.NumberFormat(tag, { style: 'percent', maximumFractionDigits: 0 });
+    percent.set(tag, f);
+  }
+  return f.format(ratio);
+}

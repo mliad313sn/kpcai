@@ -6,11 +6,17 @@ import {
 } from '@kernelpai/core';
 import { outputCalibration } from '@kernelpai/executor';
 import type { Journal } from '@kernelpai/journal';
-import { ModelPlanner, TemplatePlanner, type BudgetHook } from '@kernelpai/orchestrator';
+import {
+  ModelPlanner,
+  TemplatePlanner,
+  type BudgetHook,
+  type ReviewPolicy,
+} from '@kernelpai/orchestrator';
 import { candidates as scanCandidates, type ProviderRegistry } from '@kernelpai/providers';
 import { CompetenceStore } from '@kernelpai/learning';
 import { CompetenceRouter } from '@kernelpai/router';
 import { buildRegistry, routingProfile, type Env } from './env.js';
+import { reviewPolicyOf } from './review-config.js';
 import { rulesResolver } from './rules.js';
 import type { Pack } from '@kernelpai/packs';
 
@@ -41,6 +47,8 @@ export interface GraphSetup {
   candidates: Candidate[];
   constraints: RoutingConstraints;
   router: CompetenceRouter;
+  /** R-404 from `KPAI_REVIEW_POLICY` (ADR-0030): applied to the estimate and to the run. */
+  reviewPolicy?: ReviewPolicy;
 }
 
 export async function graphSetup(
@@ -51,6 +59,8 @@ export async function graphSetup(
   /** The workspace whose measured competence routing blends in (ADR-0028). */
   project?: string,
 ): Promise<GraphSetup> {
+  // Read first: a bad setting fails before any provider is scanned.
+  const reviewPolicy = reviewPolicyOf(env);
   const registry = buildRegistry(env, say);
   const scan = await scanCandidates(registry);
   if (o.verbose) for (const u of scan.unavailable) say(`  – ${u.provider}: ${u.reason}\n`);
@@ -74,7 +84,13 @@ export async function graphSetup(
       ? { measured: CompetenceStore.fromJournal(journal, { project }) }
       : {}),
   });
-  return { registry, candidates: scan.candidates, constraints, router };
+  return {
+    registry,
+    candidates: scan.candidates,
+    constraints,
+    router,
+    ...(reviewPolicy ? { reviewPolicy } : {}),
+  };
 }
 
 /** Template by default (free, instant, deterministic); `planner: 'model'` asks a routed model. */

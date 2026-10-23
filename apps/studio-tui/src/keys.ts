@@ -3,7 +3,9 @@
  * actions use Ctrl so typing never triggers them. Ctrl+N and Ctrl+T turn the line into an
  * instruction or a redirect for the selected node; Esc goes back to the request line. A
  * confirmation takes over the keyboard and only y/o (yes) is a yes: anything else — n,
- * Esc, Enter — is the default No.
+ * Esc, Enter — is the default No. A dispute (R-405) first takes a number to pick an
+ * option; y then settles it with that option, anything else rejects (fail closed). A
+ * memory proposal (ADR-0027) also takes r to reject it; No leaves it pending.
  */
 export type Action =
   | { kind: 'type'; text: string }
@@ -20,7 +22,9 @@ export type Action =
   | { kind: 'redirect' }
   | { kind: 'escape' }
   | { kind: 'quit' }
-  | { kind: 'confirm'; ok: boolean }
+  | { kind: 'confirm'; ok: boolean; reject?: true }
+  | { kind: 'choose'; index: number }
+  | { kind: 'grade'; grade: 'good' | 'bad' }
   | { kind: 'none' };
 
 export interface KeyInfo {
@@ -46,13 +50,27 @@ const CTRL: Record<string, Action['kind']> = {
   c: 'quit',
 };
 
-export function confirmAction(input: string): Action {
-  return { kind: 'confirm', ok: /^[yo]$/i.test(input) };
+/** What a confirmation is about: plain yes/no, a dispute (options), a memory proposal. */
+export type Confirming = boolean | 'dispute' | 'memory';
+
+export function confirmAction(input: string, kind: Confirming = true, ctrl = false): Action {
+  if (!ctrl && kind === 'dispute' && /^[1-9]$/.test(input))
+    return { kind: 'choose', index: Number(input) - 1 };
+  if (!ctrl && kind === 'memory' && /^r$/i.test(input))
+    return { kind: 'confirm', ok: false, reject: true };
+  return { kind: 'confirm', ok: !ctrl && /^[yo]$/i.test(input) };
 }
 
-export function keyAction(input: string, key: KeyInfo, confirming: boolean): Action {
-  if (confirming) return key.ctrl && input === 'c' ? { kind: 'quit' } : confirmAction(input);
+const GRADES: Record<string, 'good' | 'bad'> = { g: 'good', b: 'bad' };
+
+export function keyAction(input: string, key: KeyInfo, confirming: Confirming): Action {
+  if (confirming)
+    return key.ctrl && input === 'c'
+      ? { kind: 'quit' }
+      : confirmAction(input, confirming, key.ctrl === true);
   if (key.ctrl) {
+    const grade = GRADES[input.toLowerCase()];
+    if (grade) return { kind: 'grade', grade };
     const kind = CTRL[input.toLowerCase()];
     return kind ? ({ kind } as Action) : { kind: 'none' };
   }

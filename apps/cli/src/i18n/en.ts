@@ -32,6 +32,12 @@ Usage:
       [--local-only] [--exclude p1,p2] [--max-tokens N] [--yes] [--over-budget]
       [--new-session] [--allow-test] [--verbose]          --allow-test lets routing use offline mock providers
   kpai stats [--session <id>]          Fallback rate, cost per task, estimate error, router latency
+      [--productivity [--since <ISO date>]]  Cost and time per accepted change, rollback and
+                                       rework rates, review yield (from the journal only)
+  kpai replay <run> <node> [-m provider/model] [--protocol P]
+                                       Rerun one finished node beside the original (writes nothing)
+  kpai fork <run> <node> [-m provider/model] [--instruction <text>]
+                                       Rerun from a node, reusing what came before (like kpai do)
   kpai providers                       Detect providers and list models
   kpai ask -m <provider/model> <text>  Send one request, stream, journal it
       [--system <text>] [--max-tokens N] [--yes]
@@ -43,6 +49,7 @@ Global: --db <path> (default $KPAI_HOME/journal.db, KPAI_HOME=~/.kernelpai)
         --lang en|fr (default $KPAI_LANG, then LC_ALL, LC_MESSAGES, LANG)
 `,
   'error.usage': '{message}\n\n{usage}',
+  'error.nodeNeedsArgs': 'replay and fork need a run id and a node id',
   'error.gradeNeedsArgs': 'kpai grade needs a run id, a node id and good or bad',
   'error.provider': 'error ({kind}): {message}\n',
   'error.generic': 'error: {message}\n',
@@ -69,5 +76,18 @@ Global: --db <path> (default $KPAI_HOME/journal.db, KPAI_HOME=~/.kernelpai)
   'confirm.prompt': '{question} [y/N] ',
   /** Answers that mean yes, comma-separated (anything else is no). */
   'confirm.yesWords': 'y, yes',
+  'prod.header': 'productivity here (from the journal only; see docs/metrics/PRODUCTIVITY.md)',
+  'prod.since': '  runs started since {since}',
+  'prod.runs': '  {runs} run(s) · spent {spent} · run time {time}',
+  'prod.changes':
+    '  changes: {accepted} accepted · {declined} declined · {failed} failed · {pending} pending · {discarded} discarded',
+  'prod.perChange': '  per accepted change: {cost} · {time}',
+  'prod.perChangeNone': '  per accepted change: – (no accepted change yet)',
+  'prod.rework':
+    '  rolled back {rolledBack} ({rollbackRate}) · reworked {reworked} ({reworkRate}) within {days} day(s) · restores not attributed: {unattributed}',
+  'prod.review':
+    '  review {usd} for {findings} accepted finding(s), {each} each · {issues} issue(s) raised on {nodes} node(s)',
+  'prod.band': '  billed cost inside the approved band: {inBand}/{runs} finished run(s) ({rate})',
+  'error.productivityInvalid': 'kpai stats --productivity: {message}',
   'confirm.budget': 'Expected cost {expected} is above your threshold {threshold}. Continue?',
 } as const;

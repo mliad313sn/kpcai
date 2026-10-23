@@ -5,7 +5,8 @@ import { t } from '../../studio/src/i18n/core';
 import { answerConfirm } from '../../studio/src/store/actions';
 import { refKey } from '../../studio/src/store/reducer';
 import { patch, useStudio } from '../../studio/src/store/store';
-import { keyAction } from './keys';
+import type { ConfirmView } from '../../studio/src/store/types';
+import { keyAction, type Confirming } from './keys';
 import { EMPTY_LINE, perform, type TuiLine } from './perform';
 import {
   AgentsPane,
@@ -81,6 +82,27 @@ function InputLine({ line }: { line: TuiLine }) {
   );
 }
 
+/**
+ * What the keyboard answers while a question is open; a new question never inherits the
+ * option picked for the previous one.
+ */
+function useConfirming(
+  confirm: ConfirmView | undefined,
+  setLine: (f: (l: TuiLine) => TuiLine) => void,
+): Confirming {
+  const id = confirm?.confirmId;
+  useEffect(() => {
+    setLine((l) => {
+      if (l.choice === undefined) return l;
+      const next = { ...l };
+      delete next.choice;
+      return next;
+    });
+  }, [id, setLine]);
+  if (!confirm) return false;
+  return confirm.kind === 'dispute' || confirm.kind === 'memory' ? confirm.kind : true;
+}
+
 export function TuiApp() {
   const { exit } = useApp();
   const [line, setLine] = useState<TuiLine>(EMPTY_LINE);
@@ -94,8 +116,9 @@ export function TuiApp() {
   useConfirmTimeout();
   // Announcements name terminal keys, not web tabs (e.g. patches ready: Ctrl+O, Ctrl+A).
   useEffect(() => patch({ surface: 'tui' }), []);
+  const confirming = useConfirming(confirm, setLine);
   useInput((input, key) => {
-    setLine((current) => perform(keyAction(input, key, !!confirm), current, exit));
+    setLine((current) => perform(keyAction(input, key, confirming), current, exit));
   });
   const showDiff = line.diff && !plan;
   return (
@@ -103,7 +126,13 @@ export function TuiApp() {
       <Text bold>
         {t('tui.title')} · {t(`conn.${conn}`)}
       </Text>
-      {confirm ? <ConfirmPane c={confirm} now={now} /> : null}
+      {confirm ? (
+        <ConfirmPane
+          c={confirm}
+          now={now}
+          {...(line.choice !== undefined ? { choice: line.choice } : {})}
+        />
+      ) : null}
       {plan ? <PlanPane plan={plan} {...(selected ? { selected } : {})} /> : null}
       {showDiff ? <DiffPane run={run} /> : null}
       {!plan && !showDiff && run ? (

@@ -1,10 +1,25 @@
 import type { MethodResult, RunOptions } from '@kernelpai/kernel/protocol';
+import type {
+  DisputeRecord,
+  ProductivityView,
+  ReplayView,
+  Verification,
+} from '../rpc/learning-schemas';
 
 export type RunSummary = MethodResult<'runs.list'>['runs'][number];
 export type Checkpoint = MethodResult<'run.checkpoints'>['checkpoints'][number];
 export type Rules = NonNullable<MethodResult<'plan'>['rules']>;
 export type PlanPacks = NonNullable<MethodResult<'plan'>['packs']>;
 export type ScopeStatus = NonNullable<MethodResult<'plan'>['scope']>;
+/** Unified memory (ADR-0027): facts with provenance, proposals, what a plan sends. */
+export type Fact = MethodResult<'memory.list'>['facts'][number];
+export type PendingFact = MethodResult<'memory.pending'>['pending'][number];
+export type MemoryLayer = Fact['layer'];
+export type MemorySummary = NonNullable<MethodResult<'plan'>['memory']>;
+/** Grades, measured competence and estimate accuracy (ADR-0028). */
+export type Accuracy = MethodResult<'stats.accuracy'>;
+export type AccuracyRow = Accuracy['runs'];
+export type CompetenceEntry = MethodResult<'competence'>['entries'][number];
 import type { LocalePref } from '../i18n/core';
 import type {
   Contribution,
@@ -101,6 +116,66 @@ export interface RunView {
   artifacts: Artifact[];
   /** The run's git worktree when it ran isolated (R-307). */
   worktree?: string;
+  /** Review spend against accepted findings (R-404), from `run.done`. */
+  verification?: Verification;
+  /** Disputed nodes (R-405): open while the human is asked, then how it was settled. */
+  disputes?: Record<string, DisputeView>;
+  /** A fork: the run and node it started from, and the nodes reused from it (R-403). */
+  forkOf?: { runId: string; nodeId: string };
+  reused?: string[];
+}
+
+/** A disputed node: `open` while it waits for the human; `chosen` or `rejected` after. */
+export interface DisputeView {
+  status: 'open' | 'chosen' | 'rejected';
+  reason?: string;
+  /** Option ids and labels named by `node_disputed`. */
+  options?: Array<{ id: string; label: string }>;
+  /** Label of the chosen option (model text, shown as text). */
+  choice?: string;
+  record?: DisputeRecord;
+}
+
+/** One layer's file as `memory.list` returned it. */
+export interface LayerView {
+  file: string;
+  exists: boolean;
+  facts: Fact[];
+  problems: Array<{ line: number; message: string }>;
+}
+
+export interface MemoryView {
+  layers: Partial<Record<MemoryLayer, LayerView>>;
+  pending: PendingFact[];
+  /** The session whose session layer is shown. */
+  sessionId?: string;
+  loading: boolean;
+}
+
+export interface EvidenceView {
+  accuracy?: Accuracy;
+  /** R-406 productivity from the journal, when the kernel offers `stats.productivity`. */
+  productivity?: ProductivityView;
+  competence?: CompetenceEntry[];
+  loading: boolean;
+}
+
+/** A replay of one node (R-403): in flight, or its side-by-side result. */
+export type ReplayEntry = { pending: true } | { pending: false; result: ReplayView };
+
+export interface GradeView {
+  grade: 'good' | 'bad';
+  /** The model the grade went to (`provider/model`), as the kernel says. */
+  graded: string;
+  note?: string;
+}
+
+/** A fork plan (R-403): what reruns, what is reused from the parent run, the edits. */
+export interface ForkPlanView {
+  parent: { runId: string; nodeId: string };
+  rerun: string[];
+  reused: string[];
+  edits: string[];
 }
 
 /** Result of `plan.validate` for the plan as edited (R-301). */
@@ -130,6 +205,10 @@ export interface PlanView {
   packs?: PlanPacks;
   /** Authorised scope status; the kernel refuses the run while it has problems. */
   scope?: ScopeStatus;
+  /** Memory every node gets: counts, sources, truncation, distrust (ADR-0027). */
+  memory?: MemorySummary;
+  /** Set when this plan is a fork of a past run: it starts with `run.fork`. */
+  fork?: ForkPlanView;
 }
 
 export interface ConfirmView {
@@ -181,7 +260,8 @@ export interface LogLine {
 }
 
 export type Zone = 'explorer' | 'agents' | 'thread';
-export type Tab = 'conversation' | 'diff' | 'artifacts' | 'runs' | 'terminal' | 'files';
+export type Tab =
+  'conversation' | 'diff' | 'artifacts' | 'runs' | 'memory' | 'evidence' | 'terminal' | 'files';
 
 export interface Prefs {
   theme: 'system' | 'dark' | 'light';
@@ -234,4 +314,12 @@ export interface StudioState {
   prefs: Prefs;
   /** Which client renders this store: wording that names a key or a tab differs. */
   surface: 'web' | 'tui';
+  /** Memory editor: facts per layer and model proposals waiting for a human. */
+  memory: MemoryView;
+  /** Accuracy & competence view (R-402, ADR-0028). */
+  evidence: EvidenceView;
+  /** Replays by `runId:nodeId`, newest kept. */
+  replays: Record<string, ReplayEntry>;
+  /** Manual grades given in this window, by `runId:nodeId`. */
+  grades: Record<string, GradeView>;
 }

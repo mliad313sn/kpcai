@@ -1,11 +1,12 @@
-import { useEffect } from 'react';
 import { t, type Key } from '../i18n/core';
 import { answerConfirm } from '../store/actions';
-import { formatDuration } from '../store/format';
+import { rejectProposal } from '../store/memory';
 import { useStudio } from '../store/store';
 import type { ConfirmView } from '../store/types';
 import { PatchText } from './DiffView';
-import { useNow } from './hooks';
+import { TimeLeft, useConfirmDeadline } from './ConfirmParts';
+import { DisputeDialog } from './DisputeDialog';
+import { MemoryFact } from './MemoryFact';
 import { Modal } from './Modal';
 
 const RISK: Record<NonNullable<ConfirmView['risk']>, { icon: string; key: Key }> = {
@@ -64,16 +65,43 @@ export function ConfirmModal() {
   const current = useStudio((s) => s.confirms[0]);
   const queued = useStudio((s) => s.confirms.length - 1);
   if (!current) return null;
+  if (current.kind === 'dispute' && current.dispute)
+    return <DisputeDialog key={current.confirmId} c={current} queued={queued} />;
   return <ConfirmDialog key={current.confirmId} c={current} queued={queued} />;
 }
 
+/** A model's proposed fact (ADR-0027): keep it, leave it pending (default), or reject it. */
+function MemoryButtons({ c }: { c: ConfirmView }) {
+  const id = c.memory!.id;
+  return (
+    <div className="row end">
+      <button
+        type="button"
+        className="confirm-no"
+        onClick={() => void answerConfirm(c.confirmId, false)}
+      >
+        {t('memory.later')}
+      </button>
+      <button
+        type="button"
+        className="danger"
+        onClick={() => void answerConfirm(c.confirmId, false).then(() => rejectProposal(id))}
+      >
+        {t('memory.reject')}
+      </button>
+      <button
+        type="button"
+        className="primary"
+        onClick={() => void answerConfirm(c.confirmId, true)}
+      >
+        {t('memory.keep')}
+      </button>
+    </div>
+  );
+}
+
 function ConfirmDialog({ c, queued }: { c: ConfirmView; queued: number }) {
-  const now = useNow(250);
-  const deadline = c.receivedAt + c.timeoutMs;
-  useEffect(() => {
-    const t = setTimeout(() => void answerConfirm(c.confirmId, false), deadline - Date.now());
-    return () => clearTimeout(t);
-  }, [c.confirmId, deadline]);
+  const deadline = useConfirmDeadline(c);
   const no = () => void answerConfirm(c.confirmId, false);
   const risk = c.risk ? RISK[c.risk] : undefined;
   return (
@@ -95,22 +123,30 @@ function ConfirmDialog({ c, queued }: { c: ConfirmView; queued: number }) {
         {c.question}
       </pre>
       <Payload c={c} />
-      <p className="muted" aria-live="off">
-        {t('confirm.timeout', { time: formatDuration(Math.max(0, deadline - now)) })}
-        {queued > 0 ? ` · ${t('confirm.queued', { count: queued })}` : ''}
-      </p>
-      <div className="row end">
-        <button type="button" className="confirm-no" onClick={no}>
-          {t('confirm.no')}
-        </button>
-        <button
-          type="button"
-          className={c.risk === 'destructive' ? 'danger' : 'primary'}
-          onClick={() => void answerConfirm(c.confirmId, true)}
-        >
-          {t('confirm.yes')}
-        </button>
-      </div>
+      {c.memory && <MemoryFact m={c.memory} />}
+      <TimeLeft
+        deadline={deadline}
+        queued={queued}
+        {...(c.memory ? { text: 'memory.timeout' as const } : {})}
+      />
+      {c.memory ? <MemoryButtons c={c} /> : <YesNo c={c} no={no} />}
     </Modal>
+  );
+}
+
+function YesNo({ c, no }: { c: ConfirmView; no: () => void }) {
+  return (
+    <div className="row end">
+      <button type="button" className="confirm-no" onClick={no}>
+        {t('confirm.no')}
+      </button>
+      <button
+        type="button"
+        className={c.risk === 'destructive' ? 'danger' : 'primary'}
+        onClick={() => void answerConfirm(c.confirmId, true)}
+      >
+        {t('confirm.yes')}
+      </button>
+    </div>
   );
 }

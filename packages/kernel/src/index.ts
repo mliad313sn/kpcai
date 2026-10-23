@@ -79,9 +79,12 @@ export {
 export { MAX_PROPOSALS_PER_RUN, queueProposals } from './memory-proposals.js';
 export {
   KernelLearning,
+  MAX_PRODUCTIVITY_LIST,
   type GradeInput,
   type GradeResult,
   type LearningHost,
+  type ProductivityInput,
+  type ProductivityView,
 } from './learning.js';
 export { KernelReplays, type NodeEdit, type ReplayHost } from './replay.js';
 export { disputeHook, disputeInfo, runDeps, type DepsInput, type RunDeps } from './run-deps.js';

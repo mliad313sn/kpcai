@@ -9,6 +9,8 @@ const ICON: Record<string, string> = {
   node_redirected: '↪',
   instruction_added: '✎',
   control_refused: '✕',
+  node_disputed: '⚖',
+  dispute_resolved: '⚖',
 };
 
 function time(at: number): string {

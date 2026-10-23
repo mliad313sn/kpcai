@@ -5,6 +5,8 @@ import type { Tab } from '../store/types';
 import { Conversation } from './Conversation';
 import { DiffView } from './DiffView';
 import { ArtifactsView } from './ArtifactsView';
+import { EvidenceView } from './Evidence';
+import { MemoryView } from './MemoryView';
 import { RunsView } from './RunsView';
 
 export const TABS: Array<{ id: Tab; label: Key }> = [
@@ -12,6 +14,8 @@ export const TABS: Array<{ id: Tab; label: Key }> = [
   { id: 'diff', label: 'tab.diff' },
   { id: 'artifacts', label: 'tab.artifacts' },
   { id: 'runs', label: 'tab.runs' },
+  { id: 'memory', label: 'tab.memory' },
+  { id: 'evidence', label: 'tab.evidence' },
   { id: 'terminal', label: 'tab.terminal' },
   { id: 'files', label: 'tab.files' },
 ];
@@ -24,18 +28,26 @@ function Placeholder({ what }: { what: Key }) {
 export function CenterTabs() {
   const tab = useStudio((s) => s.tab);
   const patches = useStudio((s) => (s.activeRunId ? s.runs[s.activeRunId]?.patches.length : 0));
+  const pending = useStudio((s) => s.memory.pending.length);
   return (
     <section className="zone zone-center" aria-labelledby="zone-center-heading">
       <h2 id="zone-center-heading" className="sr-only" tabIndex={-1}>
         {t('zone.workspace')}
       </h2>
-      <TabList tab={tab} patches={patches ?? 0} />
+      <TabList tab={tab} patches={patches ?? 0} pending={pending} />
       <TabPanel tab={tab} />
     </section>
   );
 }
 
-function TabList({ tab: current, patches }: { tab: Tab; patches: number }) {
+function tabLabel(tab: (typeof TABS)[number], patches: number, pending: number): string {
+  if (tab.id === 'diff' && patches) return t('tab.diffCount', { count: patches });
+  if (tab.id === 'memory' && pending) return t('tab.memoryCount', { count: pending });
+  return t(tab.label);
+}
+
+function TabList(props: { tab: Tab; patches: number; pending: number }) {
+  const { tab: current, patches, pending } = props;
   const refs = useRef<Array<HTMLButtonElement | null>>([]);
   const onKeyDown = (e: React.KeyboardEvent, i: number) => {
     const n = TABS.length;
@@ -68,7 +80,7 @@ function TabList({ tab: current, patches }: { tab: Tab; patches: number }) {
           onClick={() => patch({ tab: tab.id })}
           onKeyDown={(e) => onKeyDown(e, i)}
         >
-          {tab.id === 'diff' && patches ? t('tab.diffCount', { count: patches }) : t(tab.label)}
+          {tabLabel(tab, patches, pending)}
         </button>
       ))}
     </div>
@@ -88,6 +100,8 @@ function TabPanel({ tab }: { tab: Tab }) {
       {tab === 'diff' && <DiffView />}
       {tab === 'runs' && <RunsView />}
       {tab === 'artifacts' && <ArtifactsView />}
+      {tab === 'memory' && <MemoryView />}
+      {tab === 'evidence' && <EvidenceView />}
       {tab === 'terminal' && <Placeholder what="tab.terminalLater" />}
       {tab === 'files' && <Placeholder what="tab.filesLater" />}
     </div>
