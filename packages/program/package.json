@@ -1,0 +1,19 @@
+{
+  "name": "@kernelpai/program",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Program mode (D-025, ADR-0031): charter, envelope, state machine and reports of the AI Product Owner assistant",
+  "license": "UNLICENSED",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "dependencies": {
+    "zod": "^4.1.0"
+  }
+}

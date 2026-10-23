@@ -334,6 +334,12 @@ importers:
         specifier: ^4.1.0
         version: 4.6.7
 
+  packages/program:
+    dependencies:
+      zod:
+        specifier: ^4.1.0
+        version: 4.6.7
+
   packages/providers:
     dependencies:
       '@ai-sdk/deepseek':

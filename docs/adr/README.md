@@ -34,3 +34,4 @@ One page per decision. Format: Context, Decision, Consequences, Revisit when.
 | [0028](0028-grading-and-measured-competence.md)      | Grading, measured competence and the bench                                | Accepted |
 | [0029](0029-replay-fork-disputes-review-policy.md)   | Run records, replay, fork, fail-closed disputes, review policy            | Accepted |
 | [0030](0030-phase4-kernel-wiring.md)                 | Productivity, review policy from config, replay/fork CLI, home zone       | Accepted |
+| [0031](0031-program-and-enterprise-mode.md)          | Program and Enterprise mode: charter, delegation envelope, portfolio      | Accepted |

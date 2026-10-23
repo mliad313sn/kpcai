@@ -20,6 +20,7 @@ export default defineConfig({
       '@kernelpai/orchestrator': src('./packages/orchestrator/src/index.ts'),
       '@kernelpai/learning': src('./packages/learning/src/index.ts'),
       '@kernelpai/server': src('./packages/server/src/index.ts'),
+      '@kernelpai/program': src('./packages/program/src/index.ts'),
     },
   },
   test: {

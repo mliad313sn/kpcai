@@ -41,6 +41,9 @@
       "path": "packages/server"
     },
     {
+      "path": "packages/program"
+    },
+    {
       "path": "apps/cli"
     },
     {

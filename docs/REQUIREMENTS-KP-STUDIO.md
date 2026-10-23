@@ -96,6 +96,14 @@ to end. Built on the phase 3–6 kernel; no new trust boundary.
 | R-804 | Could  | Opt-in, anonymised sharing of competence evidence across teams (community benchmark).                      | W3    |
 | R-805 | Could  | ISO/IEC 42001 readiness pack (scope, controls mapped to features).                                         | B §4  |
 
+## Program and Enterprise mode (D-025, D-026, D-028)
+
+The full table lives in [design/ENTERPRISE-MODE.md §17](design/ENTERPRISE-MODE.md), with acceptance tests per row:
+
+- **R-5P1..R-5PA (phase 5):** program core. Charter from a goal, Sponsor approval bound to the charter hash, delegation envelope, gates with independent review, evidence-bound reports.
+- **R-5E1..R-5E14 (phase 5):** virtual enterprise. Org chart and departments, portfolio and queue, headless daemon, mixed model sources (local, BYOK API, subscription CLIs) with per-department policy, outbound reports and the Enterprise view.
+- **R-6E1..R-6E6 (phase 6):** remote approvals, opt-in, loopback by default, passkeys or device pairing; Sponsor-reserved items never approved remotely (Q-12).
+
 ## Proof points to measure before any public claim
 
 1. Share of runs whose actual cost falls inside the shown band (target ≥ 80 %, live data needs Q-2).
