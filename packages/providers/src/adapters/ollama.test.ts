@@ -104,7 +104,7 @@ describe('OllamaAdapter', () => {
       res.end('{"error":"model \\"x\\" not found"}');
     });
     await expect(collect(at(server.url))).rejects.toMatchObject({
-      kind: 'bad_request',
+      kind: 'unavailable',
       status: 404,
     });
     await expect(collect(at(await deadUrl()))).rejects.toMatchObject({ kind: 'unavailable' });

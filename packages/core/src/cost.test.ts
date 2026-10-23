@@ -50,6 +50,24 @@ describe('cost', () => {
     expect(est.expectedCostUsd).toBe(est.maxCostUsd);
   });
 
+  it('uses a calibrated expected output when given, clipped to the cap', () => {
+    const req = {
+      model: 'm',
+      maxOutputTokens: 1000,
+      messages: [{ role: 'user' as const, content: 'hi' }],
+    };
+    expect(estimateRequest(req, card, { expectedOutputTokens: 120 })).toMatchObject({
+      basis: 'calibrated',
+      expectedCostUsd: costUsd(card.price, { inputTokens: 5, outputTokens: 120 }),
+    });
+    expect(estimateRequest(req, card, { expectedOutputTokens: 5000 }).expectedCostUsd).toBe(
+      estimateRequest(req, card).maxCostUsd,
+    );
+    expect(estimateRequest(req, card, { expectedOutputTokens: Number.NaN }).basis).toBe(
+      'heuristic',
+    );
+  });
+
   it('formats amounts for humans', () => {
     expect(formatUsd(0)).toBe('$0');
     expect(formatUsd(0.000021)).toBe('$0.000021');

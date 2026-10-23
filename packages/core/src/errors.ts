@@ -47,9 +47,13 @@ export class ProviderError extends Error {
 export function kindFromStatus(status: number): ProviderErrorKind {
   if (status === 401 || status === 403) return 'auth';
   if (status === 429) return 'rate_limit';
-  if (status === 408 || status === 409 || status >= 500) return 'unavailable';
+  // 402 out of credits, 404 retired model, 413 too large for this model: another
+  // provider or model may well succeed, so these are fallback-eligible (review F12).
+  if (MODEL_SPECIFIC.has(status) || status >= 500) return 'unavailable';
   return 'bad_request';
 }
+
+const MODEL_SPECIFIC: ReadonlySet<number> = new Set([402, 404, 408, 409, 413]);
 
 export function isAbortError(err: unknown): boolean {
   return err instanceof Error && (err.name === 'AbortError' || err.name === 'APIUserAbortError');

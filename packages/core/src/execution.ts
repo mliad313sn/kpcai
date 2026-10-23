@@ -1,5 +1,5 @@
 import type { ProviderErrorKind } from './errors.js';
-import type { ModelRef, RoutingDecision, TaskNode } from './routing.js';
+import type { ModelRef, RoutingDecision, ScoredCandidate, TaskNode } from './routing.js';
 import type { StopReason, Usage } from './schemas.js';
 
 export interface Attempt {
@@ -27,6 +27,11 @@ export interface ExecutionHooks {
   onText?(delta: string, ref: ModelRef): void;
   onAttemptStart?(ref: ModelRef, index: number): void;
   onAttemptFailed?(attempt: Attempt): void;
+  /**
+   * Called before every fallback attempt (principle 6: a fallback may cost more than the
+   * first choice). Resolve false to stop the chain; the executor journals the stop.
+   */
+  beforeFallback?(next: ScoredCandidate, failed: Attempt): boolean | Promise<boolean>;
 }
 
 export interface Executor {

@@ -10,7 +10,10 @@ describe('errors', () => {
     [500, 'unavailable'],
     [529, 'unavailable'],
     [400, 'bad_request'],
-    [404, 'bad_request'],
+    [422, 'bad_request'],
+    [402, 'unavailable'],
+    [404, 'unavailable'],
+    [413, 'unavailable'],
   ] as const)('maps HTTP %i to %s', (status, kind) => {
     expect(kindFromStatus(status)).toBe(kind);
   });

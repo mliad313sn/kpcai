@@ -12,9 +12,9 @@ export interface CostEstimate {
   maxOutputTokens: number;
   /** Cost if the model used its full output cap. */
   maxCostUsd: number;
-  /** Cost for a typical answer (a quarter of the cap, at least 256 tokens). */
+  /** Cost for a typical answer: calibrated from history, else a quarter of the cap (≥ 256). */
   expectedCostUsd: number;
-  basis: 'heuristic';
+  basis: 'heuristic' | 'calibrated';
 }
 
 /**
@@ -31,19 +31,32 @@ export function costUsd(price: Price, usage: Usage): number {
   return Math.round(raw * 1e6) / 1e6;
 }
 
-export function estimateRequest(req: ChatRequest, card: ModelCard): CostEstimate {
+export interface EstimateOptions {
+  /** Calibrated typical output for this model and task (from history); else a quarter of the cap. */
+  expectedOutputTokens?: number;
+}
+
+export function estimateRequest(
+  req: ChatRequest,
+  card: ModelCard,
+  options: EstimateOptions = {},
+): CostEstimate {
   const inputTokens = req.messages.reduce(
     (sum, m) => sum + estimateTokens(m.content) + MESSAGE_OVERHEAD_TOKENS,
     0,
   );
   const cap = Math.min(req.maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS, card.maxOutput);
-  const expectedOut = Math.min(cap, Math.max(256, Math.ceil(cap / 4)));
+  const calibrated = options.expectedOutputTokens;
+  const expectedOut =
+    calibrated !== undefined && Number.isFinite(calibrated) && calibrated > 0
+      ? Math.min(cap, Math.ceil(calibrated))
+      : Math.min(cap, Math.max(256, Math.ceil(cap / 4)));
   return {
     inputTokens,
     maxOutputTokens: cap,
     maxCostUsd: costUsd(card.price, { inputTokens, outputTokens: cap }),
     expectedCostUsd: costUsd(card.price, { inputTokens, outputTokens: expectedOut }),
-    basis: 'heuristic',
+    basis: calibrated !== undefined && calibrated > 0 ? 'calibrated' : 'heuristic',
   };
 }
 
