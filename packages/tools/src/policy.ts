@@ -1,0 +1,152 @@
+import { realpathSync } from 'node:fs';
+import path from 'node:path';
+import {
+  refToString,
+  type PermissionDecision,
+  type PermissionPolicy,
+  type ToolCall,
+  type ToolContext,
+  type ToolDefinition,
+  type ToolRisk,
+} from '@kernelpai/core';
+import { matchesForbidden, toPosixRel } from './paths.js';
+
+export interface GradedPolicyOptions {
+  /**
+   * Per-model deny list (spec §3.3): key `provider/model`, `provider/*` or `*`;
+   * value: tool-name globs (`shell.*`, `mcp.github.*`, `*`).
+   */
+  denyByModel?: Readonly<Record<string, readonly string[]>>;
+  /** Forbidden path globs (spec §6, deepened in phase 6): any matching path is refused. */
+  forbiddenPaths?: readonly string[];
+}
+
+/** Optional hook the bus calls after a human said yes, so a batch is confirmed once. */
+export interface ConfirmAwarePolicy extends PermissionPolicy {
+  confirmed(def: ToolDefinition, call: ToolCall, ctx: ToolContext): void;
+  /** Why the last `deny` was decided for this call (journaled). */
+  reason?(def: ToolDefinition, call: ToolCall, ctx: ToolContext): string | undefined;
+}
+
+export function isConfirmAware(p: PermissionPolicy): p is ConfirmAwarePolicy {
+  return typeof (p as Partial<ConfirmAwarePolicy>).confirmed === 'function';
+}
+
+const PATH_KEYS = new Set(['path', 'paths', 'from', 'to', 'file', 'files', 'target', 'cwd', 'dir']);
+const DIFF_KEYS = new Set(['diff', 'patch']);
+
+/** File paths named in a unified diff's headers (`--- a/x`, `+++ b/x`, `diff --git a/x b/y`). */
+export function diffPaths(diff: string): string[] {
+  const out: string[] = [];
+  for (const line of diff.split(/\r?\n/)) {
+    const m = /^(?:---|\+\+\+) (?:[ab]\/)?(\S+)/.exec(line);
+    if (m && m[1] !== '/dev/null') out.push(m[1] as string);
+    const g = /^diff --git a\/(\S+) b\/(\S+)/.exec(line);
+    if (g) out.push(g[1] as string, g[2] as string);
+    const r = /^rename (?:from|to) (\S+)/.exec(line);
+    if (r) out.push(r[1] as string);
+  }
+  return out;
+}
+
+/** Paths a call names: path-like fields, diff headers, and every shell argument. */
+export function pathsInCall(call: ToolCall): string[] {
+  const input = call.input as Record<string, unknown> | null;
+  if (!input || typeof input !== 'object') return [];
+  const out: string[] = [];
+  const add = (v: unknown): void => {
+    if (typeof v === 'string') out.push(v);
+    else if (Array.isArray(v)) v.forEach(add);
+  };
+  for (const [k, v] of Object.entries(input)) {
+    if (PATH_KEYS.has(k)) add(v);
+    if (DIFF_KEYS.has(k) && typeof v === 'string') out.push(...diffPaths(v));
+  }
+  if (call.name === 'shell.run') add(input.args);
+  return out;
+}
+
+/**
+ * Root-relative forms of a path to test against forbidden globs: the lexical one,
+ * and the real one when it exists, so an in-root symlink to `.env` is caught too.
+ */
+function relForms(root: string, p: string): string[] {
+  const base = path.resolve(root);
+  const abs = path.resolve(base, p.replace(/\\/g, '/'));
+  const forms = [toPosixRel(path.relative(base, abs))];
+  try {
+    forms.push(toPosixRel(path.relative(realpathSync.native(base), realpathSync.native(abs))));
+  } catch {
+    // Missing paths have no real form; the lexical one is enough.
+  }
+  return forms;
+}
+
+/** Tool-name glob: `*` matches any run of characters, dots included (`mcp.github.*`). */
+function toolGlob(glob: string): RegExp {
+  const body = glob.split('*').map((s) => s.replace(/[|{}()[\]^$+?.\\]/g, '\\$&'));
+  return new RegExp(`^${body.join('.*')}$`);
+}
+
+function scopeKey(...parts: string[]): string {
+  return parts.join('\u0000');
+}
+
+/**
+ * Spec §3.3 graded permissions: read → allow; write → confirm once per batch
+ * (session + node), unless trusted for this session on this root; destructive →
+ * confirm every call. Per-model deny and forbidden paths refuse outright.
+ */
+export class GradedPermissionPolicy implements ConfirmAwarePolicy {
+  private readonly trusted = new Set<string>();
+  private readonly batches = new Set<string>();
+  private readonly deny: { model: string; tools: RegExp[] }[];
+  private readonly forbidden: readonly string[];
+
+  constructor(options: GradedPolicyOptions = {}) {
+    this.deny = Object.entries(options.denyByModel ?? {}).map(([model, tools]) => ({
+      model,
+      tools: tools.map(toolGlob),
+    }));
+    this.forbidden = options.forbiddenPaths ?? [];
+  }
+
+  decide(def: ToolDefinition, call: ToolCall, ctx: ToolContext): PermissionDecision {
+    if (this.reason(def, call, ctx) !== undefined) return 'deny';
+    if (def.risk === 'read') return 'allow';
+    if (def.risk === 'destructive') return 'confirm';
+    if (this.trusted.has(scopeKey(ctx.sessionId, path.resolve(ctx.root), 'write'))) return 'allow';
+    return this.batches.has(this.batchKey(ctx)) ? 'allow' : 'confirm';
+  }
+
+  reason(def: ToolDefinition, call: ToolCall, ctx: ToolContext): string | undefined {
+    if (this.modelDenied(def.name, refToString(ctx.model))) {
+      return `tool ${def.name} is denied for model ${refToString(ctx.model)}`;
+    }
+    const hit = pathsInCall(call).find((p) =>
+      relForms(ctx.root, p).some((rel) => matchesForbidden(rel, this.forbidden)),
+    );
+    return hit === undefined ? undefined : `path is in a forbidden zone: ${hit}`;
+  }
+
+  trust(scope: { sessionId: string; root: string; risk: Exclude<ToolRisk, 'destructive'> }): void {
+    this.trusted.add(scopeKey(scope.sessionId, path.resolve(scope.root), scope.risk));
+  }
+
+  confirmed(def: ToolDefinition, _call: ToolCall, ctx: ToolContext): void {
+    if (def.risk === 'write') this.batches.add(this.batchKey(ctx));
+  }
+
+  private batchKey(ctx: ToolContext): string {
+    return scopeKey(ctx.sessionId, ctx.nodeId, path.resolve(ctx.root));
+  }
+
+  private modelDenied(tool: string, model: string): boolean {
+    const provider = model.split('/')[0] ?? '';
+    return this.deny.some(
+      (d) =>
+        (d.model === '*' || d.model === model || d.model === `${provider}/*`) &&
+        d.tools.some((re) => re.test(tool)),
+    );
+  }
+}
