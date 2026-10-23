@@ -50,9 +50,9 @@ describe('editable plan (R-301) and cost band (R-302)', () => {
     await plan(user);
     await user.click(screen.getByRole('button', { name: /#impl/ }));
     const detail = screen.getByRole('complementary');
-    const t0 = performance.now();
+    // The < 100 ms budget for this edit is measured in a real browser by
+    // apps/studio-e2e/tests/latency.spec.ts; jsdom timings on shared CI runners are not the product's.
     await user.selectOptions(within(detail).getByLabelText('Model'), 'anthropic/model-e');
-    expect(performance.now() - t0).toBeLessThan(100);
     expect(s().plan?.graph.nodes[1]?.model).toEqual({ provider: 'anthropic', model: 'model-e' });
     expect(screen.getByRole('button', { name: /^Run/ })).toHaveProperty('disabled', true);
     await user.selectOptions(within(detail).getByLabelText('Protocol'), 'debate');
