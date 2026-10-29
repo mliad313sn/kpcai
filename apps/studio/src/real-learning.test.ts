@@ -44,7 +44,8 @@ async function run(request: string): Promise<string> {
   await requestPlan(request);
   await startRun();
   const runId = s().activeRunId!;
-  await until(() => s().runs[runId]?.state === 'done' && s().runs[runId]?.ok !== undefined, 15_000);
+  // `ok` comes with graph_done; `settled` only once run.done (verification, patches) is in.
+  await until(() => s().runs[runId]?.settled === true, 15_000);
   return runId;
 }
 

@@ -106,6 +106,8 @@ export interface RunView {
   nodes: Record<string, NodeRun>;
   costUsd: number;
   ok?: boolean;
+  /** True once `run.done` (patches, artifacts, verification) has been applied. */
+  settled?: boolean;
   patches: Patch[];
   /** Node ids whose patches were applied. */
   applied: string[];

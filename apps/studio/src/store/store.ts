@@ -128,6 +128,7 @@ function onDone(p: NotificationParams<'run.done'>): void {
   const reused = parseReused(p.result);
   updateRun(p.runId, (r) => ({
     ...markReused(applyDisputeRecords(applyResult(r, p.result), records), reused),
+    settled: true,
     patches: p.patches,
     artifacts,
     ...(p.worktree ? { worktree: p.worktree } : {}),

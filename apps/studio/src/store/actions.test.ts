@@ -82,6 +82,13 @@ describe('actions against a fake kernel', () => {
       runId: 'r1',
       event: { type: 'node_state', nodeId: 'impl', state: 'done' },
     });
+    kernel.notify('run.event', {
+      runId: 'r1',
+      event: { type: 'graph_done', costUsd: 0.05, ok: true },
+    });
+    await until(() => expect(s().runs.r1?.ok).toBe(true));
+    // graph_done gives the verdict, not the final data: only run.done settles the run.
+    expect(s().runs.r1?.settled).toBeUndefined();
     kernel.notify('run.done', {
       runId: 'r1',
       result: { ok: true, results: { impl: { output: 'final' } } },
@@ -92,6 +99,7 @@ describe('actions against a fake kernel', () => {
     const run = s().runs.r1!;
     expect(run.nodes.impl).toMatchObject({ state: 'done', output: 'final', costUsd: 0.05 });
     expect(run.patches[0]?.patch).toBe(PATCH);
+    expect(run.settled).toBe(true);
     expect(s().logs.map((l) => l.message)).toContain('Dropped a malformed run event');
     expect(s().announcement.text).toBe('Run finished');
   });
