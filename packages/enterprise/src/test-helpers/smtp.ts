@@ -22,6 +22,8 @@ export async function fakeSmtp(
   const server = createServer((sock) => {
     sockets.add(sock);
     sock.on('close', () => sockets.delete(sock));
+    // The client may reset the connection after QUIT; that is not a test failure.
+    sock.on('error', () => undefined);
     sock.setEncoding('utf8');
     let buf = '';
     let data: string[] | undefined;

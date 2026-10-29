@@ -117,7 +117,8 @@ export async function sendMail(m: Mail): Promise<Outcome> {
     const s = open(m);
     sock = s;
     const failed = new Promise<Outcome>((resolve) => {
-      s.once('error', () => resolve({ ok: false, retry: true, status: 'network' }));
+      // `on`, not `once`: a later socket error (e.g. a reset after QUIT) must never be unhandled.
+      s.on('error', () => resolve({ ok: false, retry: true, status: 'network' }));
       s.setTimeout(m.timeoutMs, () => resolve({ ok: false, retry: true, status: 'timeout' }));
       s.once('close', () => resolve({ ok: false, retry: true, status: 'network' }));
     });
