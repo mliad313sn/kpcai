@@ -5,6 +5,7 @@ import { DEFAULT_ZONES, defaultCaseInsensitive, zoneHit, zoneSetFromGlobs } from
 import { previewLines, stripControls } from '../text.js';
 import { ok, ToolError, type LocalTool, type ToolOutcome } from '../types.js';
 import { failed, git, outcome, type GitToolOptions } from './git-exec.js';
+import { hashFiles, joinImages } from './images.js';
 import { assertPrintable, checkSections, parseNumstat, parsePatch, summaryModes } from './patch.js';
 
 interface Location {
@@ -139,9 +140,15 @@ export function gitApplyTool(opts: GitToolOptions): LocalTool {
       // Re-inspected: the tree may have changed while the human was reading.
       const { files, at } = await inspectPatch(opts, ctx, patch);
       const meta = { files, bytes: Buffer.byteLength(patch, 'utf8') };
+      // S10 R6 J3: hashes before and after, so a later revert can be recognised.
+      const pre = await hashFiles(ctx.root, files);
       const applied = await gitApply(opts, ctx, at, [], patch);
       if (applied.code !== 0) return outcome(applied, { ...meta, stage: 'apply' });
-      return ok(`applied patch to ${files.length} file(s): ${files.join(', ')}`, meta);
+      const images = joinImages(pre, await hashFiles(ctx.root, files));
+      return ok(`applied patch to ${files.length} file(s): ${files.join(', ')}`, {
+        ...meta,
+        images,
+      });
     },
   };
 }

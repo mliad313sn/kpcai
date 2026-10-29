@@ -10,6 +10,7 @@ import type { Journal } from '@kernelpai/journal';
 import type { ControlOutcome, ReplayResult, RunControl } from '@kernelpai/orchestrator';
 import { applyAll, applyArtifacts, runApplyContext, type ApplyContext } from './apply.js';
 import type { GateHost } from './budget-gate.js';
+import { askJournal } from './asks.js';
 import { askQueue, hostChoose, hostConfirm, type Choose, type Confirm } from './confirm.js';
 import { KernelError } from './errors.js';
 import { checkEdit, editedPlan, makePlan, type KernelPlanCheck } from './planning.js';
@@ -72,7 +73,9 @@ export class Kernel extends Queries {
     // A question of a run cancelled while it waited is declined unasked (review P3-F2).
     const queue = askQueue();
     const voided = (req: { runId?: string }): boolean => this.cancelling(req.runId);
-    this.confirm = hostConfirm(host.confirm, voided, queue);
+    // S10 R6 J2: each answered question of a run is journaled in the run's session.
+    const log = askJournal(() => this.journal, this.runs);
+    this.confirm = hostConfirm(host.confirm, voided, queue, log);
     // Disputes share the confirmations' queue: one question at a time (R-405, P2-F7).
     this.choose = hostChoose(host.choose, voided, queue);
     this.workspace = new WorkspaceOps({

@@ -24,6 +24,8 @@ import {
   type PackZoneOptions,
   type RunWorktree,
   type WorkspaceOptions,
+  hashFiles,
+  joinImages,
 } from '@kernelpai/tools';
 import type { Confirm } from './confirm.js';
 import { kpaiHome, type Env } from './env.js';
@@ -304,15 +306,12 @@ export class WorkspaceOps {
       return saved !== 'failed';
     };
     try {
-      const r = await mergeBack(
-        this.h.cwd,
-        runId,
-        this.gate(o.policy, this.h.cwd, sessionId, ask),
-        o,
-      );
+      const gate = this.gate(o.policy, this.h.cwd, sessionId, ask);
+      const r = await imaged(this.h.cwd, shown.files, () => mergeBack(this.h.cwd, runId, gate, o));
       if (!r.applied)
         return { merged: false, reason: 'nothing to merge', files: [], omitted: r.omitted };
-      this.note(sessionId, { action: 'merge-back', runId, files: r.files, checkpoint: saved });
+      const { files, images } = r;
+      this.note(sessionId, { action: 'merge-back', runId, files, checkpoint: saved, images });
       return {
         merged: true,
         files: r.files,
@@ -332,4 +331,15 @@ export class WorkspaceOps {
     this.note(sessionId, { action: 'worktree discarded', runId, removed: r.removed });
     return r;
   }
+}
+
+/** S10 R6 J3: the workspace hashes of the merged files, before and after the merge. */
+async function imaged<T extends { files: string[] }>(
+  root: string,
+  before: readonly string[],
+  merge: () => Promise<T>,
+): Promise<T & { images: ReturnType<typeof joinImages> }> {
+  const pre = await hashFiles(root, before);
+  const r = await merge();
+  return { ...r, images: joinImages(pre, await hashFiles(root, r.files)) };
 }

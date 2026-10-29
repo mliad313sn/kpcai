@@ -1,7 +1,9 @@
 /** Messages en français de la CLI `kpai` (WI-S6-02) : mêmes clés et paramètres qu'en anglais. */
 import type { Catalogue } from './core.js';
+import { nsFr } from './north-star.js';
 
 export const fr: Catalogue = {
+  ...nsFr,
   usage: `KernelPAI (phase 3)
 
 Utilisation :
@@ -35,6 +37,9 @@ Utilisation :
   kpai program list|show|approve|pause|resume|stop|inbox|answer|heartbeat
                                        Vous êtes le Sponsor (answer <id> <q> yes|no, --trivial)
   kpai serve [--headless]              Démon sans interface sur 127.0.0.1 : exécute les programmes
+  kpai report list|show <programme> [<id>]  Rapports : questions, changements, prévision, risque
+  kpai notify list|test <canal>|check  Canaux sortants (enterprise/channels.json) : chiffres seuls
+                                       par défaut, canaux tiers refusés sauf autorisation (Q-11)
   kpai run <demande>                   Classe, route selon la compétence, vérifie le budget,
                                        exécute avec repli automatique, journalise tout
   kpai route <demande>                 Même plan et même routage, à blanc (rien n'est envoyé)
@@ -44,6 +49,8 @@ Utilisation :
   kpai stats [--session <id>]          Taux de repli, coût par tâche, erreur d'estimation, latence du routeur
       [--productivity [--since <date ISO>]]  Coût et durée par modification acceptée, taux
                                        d'annulation et de reprise, rendement de la relecture (journal seul)
+      [--north-star [--since <date ISO>]]    Résultats vérifiés et durables par semaine et les six
+                                       garde-fous (docs/metrics/NORTH-STAR.md)
   kpai replay <exécution> <nœud> [-m fournisseur/modèle] [--protocol P]
                                        Réexécute un nœud terminé à côté de l'original (n'écrit rien)
   kpai fork <exécution> <nœud> [-m fournisseur/modèle] [--instruction <texte>]

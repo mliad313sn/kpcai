@@ -15,7 +15,8 @@
   "dependencies": {
     "@kernelpai/core": "workspace:*",
     "@kernelpai/journal": "workspace:*",
-    "@kernelpai/orchestrator": "workspace:*"
+    "@kernelpai/orchestrator": "workspace:*",
+    "@kernelpai/program": "workspace:*"
   },
   "devDependencies": {
     "@kernelpai/router": "workspace:*"

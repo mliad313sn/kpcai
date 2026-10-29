@@ -2,7 +2,10 @@
  * English messages of the `kpai` CLI (WI-S6-02). Whole sentences with named `{params}`;
  * command names, flags and values stay as typed. Kernel and model text is never here.
  */
+import { nsEn } from './north-star.js';
+
 export const en = {
+  ...nsEn,
   usage: `KernelPAI (phase 3)
 
 Usage:
@@ -36,6 +39,9 @@ Usage:
   kpai program list|show|approve|pause|resume|stop|inbox|answer|heartbeat
                                        You are the Sponsor (answer <id> <q> yes|no, --trivial)
   kpai serve [--headless]              Headless daemon on 127.0.0.1: runs approved programs
+  kpai report list|show <program> [<id>]  Executive reports: asks, changes, forecast, top risk
+  kpai notify list|test <channel>|check  Outbound channels (enterprise/channels.json): counts only
+                                       by default, third-party ones refused unless allowed (Q-11)
   kpai run <request>                   Classify, route by competence, budget-check,
                                        run with automatic fallback, journal everything
   kpai route <request>                 Same plan and routing, dry run (nothing sent)
@@ -45,6 +51,8 @@ Usage:
   kpai stats [--session <id>]          Fallback rate, cost per task, estimate error, router latency
       [--productivity [--since <ISO date>]]  Cost and time per accepted change, rollback and
                                        rework rates, review yield (from the journal only)
+      [--north-star [--since <ISO date>]]    Durable Verified Outcomes per week and the six
+                                       guardrails (docs/metrics/NORTH-STAR.md)
   kpai replay <run> <node> [-m provider/model] [--protocol P]
                                        Rerun one finished node beside the original (writes nothing)
   kpai fork <run> <node> [-m provider/model] [--instruction <text>]

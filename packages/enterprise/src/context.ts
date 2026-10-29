@@ -1,5 +1,6 @@
 /** What every part of the runtime shares: the store, the kernel, the feed, the clock. */
 import type { GraphOptions, Kernel } from '@kernelpai/kernel';
+import type { Outbox } from './channels/outbox.js';
 import type { ConfirmGate } from './confirm-gate.js';
 import type { Feed } from './feed.js';
 import type { RunStarter } from '@kernelpai/program';
@@ -28,6 +29,8 @@ export interface Ctx {
   feed: Feed;
   starter: ProgramStarter;
   gate: ConfirmGate;
+  /** Reports and alerts waiting for the outbound channels (ADR-0036). */
+  outbox: Outbox;
   clock: () => Date;
   options: GraphOptions;
   /** Runs started by this process, by run id. */

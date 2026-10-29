@@ -119,7 +119,8 @@ function gateVerdict(c: Ctx, id: string, escId: string, yes: boolean, now: Date)
     return;
   }
   c.feed.line(`gate ${phase.id} passed`, id, [{ kind: 'run', id: review.runId }], now);
-  if (t.state.status === 'delivered') writeReport(c, id, 'final', now);
+  // R-5E8: the last gate gives the final report; any other passed gate is a milestone.
+  writeReport(c, id, t.state.status === 'delivered' ? 'final' : 'milestone', now);
 }
 
 /** Acts once on each answered question the runtime raised. */

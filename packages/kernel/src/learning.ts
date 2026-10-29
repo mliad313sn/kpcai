@@ -9,6 +9,7 @@ import {
   GradeError,
   estimateAccuracy,
   localAuthor,
+  northStar,
   productivity,
   recordGrade,
   runBench,
@@ -17,6 +18,7 @@ import {
   type BenchReport,
   type BenchRunResult,
   type CompetenceEntry,
+  type NorthStarReport,
   type ProductivityReport,
 } from '@kernelpai/learning';
 import type { Journal } from '@kernelpai/journal';
@@ -66,6 +68,19 @@ export interface ProductivityInput {
   /** Include the audited list of changes (capped at `MAX_PRODUCTIVITY_LIST`). */
   detail?: boolean;
 }
+
+export interface NorthStarInput {
+  /** Outcomes and guardrails from this instant (ISO 8601); default the whole journal read. */
+  since?: string;
+  /** Include the audited deliverables and outcomes (capped at `MAX_PRODUCTIVITY_LIST`). */
+  detail?: boolean;
+}
+
+/** The north star as front ends get it: the audit lists only on request, and capped. */
+export type NorthStarView = Omit<NorthStarReport, 'deliverables' | 'list'> & {
+  deliverables?: NorthStarReport['deliverables'];
+  list?: NorthStarReport['list'];
+};
 
 /** The report as front ends get it: `list` only on request, and capped. */
 export type ProductivityView = Omit<ProductivityReport, 'list'> & {
@@ -126,6 +141,27 @@ export class KernelLearning {
     }
     const { list, ...counts } = r;
     return i.detail ? { ...counts, list: list.slice(0, MAX_PRODUCTIVITY_LIST) } : counts;
+  }
+
+  /**
+   * The north star here, Durable Verified Outcomes per week, and its six guardrails, from
+   * the journal only (docs/metrics/NORTH-STAR.md).
+   */
+  northStar(i: NorthStarInput = {}): NorthStarView {
+    let r: NorthStarReport;
+    try {
+      r = northStar(this.h.journal(), {
+        project: this.h.cwd,
+        ...(i.since !== undefined ? { since: i.since } : {}),
+      });
+    } catch (err) {
+      if (err instanceof RangeError) throw new KernelError('invalid', err.message.slice(0, 200));
+      throw err;
+    }
+    const { deliverables, list, ...rest } = r;
+    if (!i.detail) return rest;
+    const cap = MAX_PRODUCTIVITY_LIST;
+    return { ...rest, deliverables: deliverables.slice(0, cap), list: list.slice(0, cap) };
   }
 
   /** A cost question: asked, or accepted by `yes` and said so. */

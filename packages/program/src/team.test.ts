@@ -17,7 +17,8 @@ describe('default charter (S10 R7)', () => {
     const c = smallTeamCharter(base);
     expect(c.departments.map((d) => d.kind)).toEqual(['engineering', 'review']);
     expect(c.seats.map((s) => s.kind)).toEqual(['builder', 'reviewer']);
-    expect(c.reports.cadence).toEqual({ every: 'gate' });
+    // Q-8 (ADR-0036): a daily digest, sent only when something changed.
+    expect(c.reports.cadence).toEqual({ every: 'hours', hours: 24 });
   });
 
   it('adds a pack specialist when a pack applies; departments only on request', () => {

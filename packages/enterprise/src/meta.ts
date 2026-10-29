@@ -95,6 +95,8 @@ export const ProgramMetaSchema = z.object({
     .max(10_000)
     .default([]),
   pausedReason: z.string().max(500).optional(),
+  /** The last `events.jsonl` line a report or digest heartbeat covered (ADR-0036). */
+  reportSeq: z.number().int().min(0).optional(),
 });
 export type ProgramMeta = z.infer<typeof ProgramMetaSchema>;
 

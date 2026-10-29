@@ -83,6 +83,8 @@ export {
   type GradeInput,
   type GradeResult,
   type LearningHost,
+  type NorthStarInput,
+  type NorthStarView,
   type ProductivityInput,
   type ProductivityView,
 } from './learning.js';

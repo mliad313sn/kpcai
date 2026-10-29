@@ -4,7 +4,7 @@
  * the headless daemon. It shares the host's kernel; the kernel's questions for a program
  * run are routed here (`confirmFor`) and answered by the envelope or the Sponsor's inbox.
  */
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import {
   KernelError,
   kpaiHome,
@@ -14,6 +14,8 @@ import {
   type KernelHost,
 } from '@kernelpai/kernel';
 import { charterHash, type ProgramState } from '@kernelpai/program';
+import type { ChannelsFile } from './channels/config.js';
+import { Outbox, type Delivery } from './channels/outbox.js';
 import { ConfirmGate } from './confirm-gate.js';
 import { sessionCache, type Ctx } from './context.js';
 import { Daemon } from './daemon.js';
@@ -25,7 +27,7 @@ import { programCard, snapshot } from './snapshot.js';
 import { Sponsor } from './sponsor.js';
 import { KernelRunStarter, programContext } from './starter.js';
 import { watch } from './dispatch.js';
-import { EnterpriseStore } from './store.js';
+import { EnterpriseStore, writeAtomic } from './store.js';
 
 export interface RuntimeOptions {
   kernel: Kernel;
@@ -76,6 +78,13 @@ export class EnterpriseRuntime {
       waitMs: () => this.store.config().confirmWaitMinutes * 60_000,
       ...(o.pollMs ? { pollMs: o.pollMs } : {}),
       session: (id) => sessionOf(id),
+    });
+    c.outbox = new Outbox({
+      store: this.store,
+      feed: this.feed,
+      env: o.env,
+      clock,
+      fact: (id, payload) => c.fact(id, payload),
     });
     c.starter = new KernelRunStarter({
       kernel: o.kernel,
@@ -179,11 +188,39 @@ export class EnterpriseRuntime {
     };
   }
 
+  /** Outbound channels as configured: env var names, never their values (ADR-0036). */
+  channels(): ChannelsFile {
+    return this.c.outbox.config();
+  }
+
+  /** `kpai notify test`: one content-free test notice to one configured channel. */
+  notifyTest(channelId: string): Promise<Delivery[]> {
+    return this.c.outbox.deliver({ kind: 'test', channelId });
+  }
+
+  /**
+   * The dead-man check for cron (`kpai notify check`): a stale heartbeat alerts the channels
+   * once per silence. Returns the heartbeat's status, `none` when no daemon ever ran here.
+   */
+  async deadManCheck(): Promise<'ok' | 'alert' | 'stale' | 'none'> {
+    const hb = readHeartbeat(this.store.path(HEARTBEAT_FILE), this.c.clock());
+    if (!hb) return 'none';
+    if (hb.status !== 'stale') return hb.status;
+    const marker = this.store.path('deadman.json');
+    const told = existsSync(marker) ? readFileSync(marker, 'utf8').trim() : '';
+    if (told !== hb.at) {
+      await this.c.outbox.deliver({ kind: 'alert', alert: { staleSince: hb.at } });
+      writeAtomic(marker, hb.at);
+    }
+    return 'stale';
+  }
+
   /** Waits for settlements in flight (tests and shutdown). */
   async idle(): Promise<void> {
     // A run that just ended starts its settlement on a later turn: let it begin.
     await new Promise((r) => setTimeout(r, 1));
-    while (this.c.settling.size || this.c.inflight.size) {
+    while (this.c.settling.size || this.c.inflight.size || this.c.outbox.pending) {
+      if (this.c.outbox.pending) await this.c.outbox.flush();
       await Promise.allSettled([...this.c.settling]);
       await new Promise((r) => setTimeout(r, 10));
     }

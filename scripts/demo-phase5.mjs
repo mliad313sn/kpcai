@@ -188,6 +188,20 @@ check(
   kpai('program', 'heartbeat', '--check').status === 0,
   'kpai program heartbeat --check: fresh',
 );
+say('North star from the journal only (S10, docs/metrics/NORTH-STAR.md)');
+const ns = kpai('stats', '--north-star');
+const block = ns.stdout.slice(ns.stdout.indexOf('north star here'));
+process.stdout.write(block.split('\n').slice(0, 14).join('\n').replace(/^/gm, '  ') + '\n');
+check(ns.status === 0 && /north star here/.test(ns.stdout), 'kpai stats --north-star runs');
+check(
+  /G3 silent runs 0\/\d+ \(0%\)/.test(ns.stdout),
+  'the run cut by the crash was settled, not left silent (G3)',
+);
+check(/G5 safety invariants: 0 \(ok\)/.test(ns.stdout), 'safety invariants at 0 (G5)');
+check(
+  /rubber-stamped 0\/1 \(0%\)/.test(ns.stdout),
+  'the gate yes came 3 s after its evidence was opened: not a rubber stamp (G2)',
+);
 c.close?.();
 const code = await d.stop();
 console.log(`  daemon stopped (${code})`);

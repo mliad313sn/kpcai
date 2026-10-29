@@ -103,12 +103,28 @@ export function planRecord(p: Plan): JournalEventInput {
   };
 }
 
+/**
+ * S10 R6 J1: the intent a run serves. A program names it (`charter-wp`); a run a person
+ * started without one serves its own request (`human-request`, the run id: B-28). A fork
+ * inherits its parent's intent (read from its `run started` parent); an unattended run with
+ * no intent names none (it was not fixed by a human).
+ */
+export function runIntent(
+  runId: string,
+  o: GraphOptions,
+  fork: boolean,
+): { id: string; origin: string } | undefined {
+  if (o.intent) return o.intent;
+  if (fork || o.unattended === true) return undefined;
+  return { id: runId, origin: 'human-request' };
+}
+
 /** S10 R6 J1: the run's intent id and origin, before anything of it is journaled. */
-export function intentRecord(sessionId: string, runId: string, o: GraphOptions) {
+export function intentRecord(sessionId: string, runId: string, o: GraphOptions, intent = o.intent) {
   const payload = {
     action: 'run intent',
     runId,
-    intent: o.intent,
+    intent,
     unattended: o.unattended === true,
   };
   return { sessionId, type: 'intervention' as const, payload };

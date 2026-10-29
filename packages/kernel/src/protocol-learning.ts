@@ -84,6 +84,53 @@ export const ProductivitySchema = z.looseObject({
   list: z.array(ChangeSchema).max(1_000).optional(),
 });
 
+const Mix = z.looseObject({ V1: Count, V2: Count, V3: Count });
+
+/** S10 north star (docs/metrics/NORTH-STAR.md): DVO per week and six guardrails. */
+export const NorthStarSchema = z.looseObject({
+  project: z.string(),
+  since: z.string().nullable(),
+  now: z.string(),
+  durability: z.enum(['rollback and revert', 'rollback-only']),
+  intents: Count,
+  dvo: Count,
+  dvoDoc: Count,
+  provisional: Count,
+  mix: Mix,
+  v3Share: Ratio,
+  weeks: z.array(
+    z.looseObject({
+      week: z.string(),
+      start: z.string(),
+      dvo: Count,
+      dvoDoc: Count,
+      mix: Mix,
+      final: z.boolean(),
+    }),
+  ),
+  guardrails: z.looseObject({
+    g1Cost: z.looseObject({ spentUsd: z.number(), costPerDvoUsd: Ratio }),
+    g2Attention: z.looseObject({
+      asks: Count,
+      rubberStamp: z.looseObject({ consequential: Count, stamped: Count, rate: Ratio }),
+    }),
+    g3Silent: z.looseObject({ started: Count, silent: Count, rate: Ratio }),
+    g4Escape: z.looseObject({ accepted: Count, escaped: Count, rate: Ratio }),
+    g5Safety: z.looseObject({ total: Count, ok: z.boolean() }),
+    g6Energy: z.looseObject({ measured: z.boolean() }),
+  }),
+  breached: z.array(z.string()),
+  notMeasured: z.array(z.string()),
+  list: z
+    .array(z.looseObject({ intent: z.string(), week: z.string() }))
+    .max(1_000)
+    .optional(),
+  deliverables: z
+    .array(z.looseObject({ landedAt: z.string() }))
+    .max(1_000)
+    .optional(),
+});
+
 export const CompetenceEntrySchema = z.looseObject({
   ref: Ref,
   taskType: z.string(),
@@ -182,6 +229,16 @@ export const LearningMethods = {
       })
       .optional(),
     result: ProductivitySchema,
+  },
+  /** S10 north star here: Durable Verified Outcomes per week and the six guardrails. */
+  'stats.northStar': {
+    params: z
+      .object({
+        since: z.iso.datetime({ offset: true }).optional(),
+        detail: z.boolean().optional(),
+      })
+      .optional(),
+    result: NorthStarSchema,
   },
   /** Measured competence here, with the evidence the router cites. */
   competence: {

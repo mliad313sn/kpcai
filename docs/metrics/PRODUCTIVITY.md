@@ -95,3 +95,5 @@ Ratios are rounded to 4 decimals, money to 6.
 - `kpai stats --productivity [--since <date>]` and protocol `stats.productivity`
   (kernel wiring by S1; integration spec in the phase 4 WP5 report).
 - The accuracy and productivity view of KP Studio (S6, WP4).
+- The north star built on these changes (Durable Verified Outcomes and six guardrails, S10):
+  [NORTH-STAR.md](NORTH-STAR.md), `kpai stats --north-star`, protocol `stats.northStar`.

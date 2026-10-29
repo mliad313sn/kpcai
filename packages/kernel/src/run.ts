@@ -15,7 +15,7 @@ import { collectArtifacts } from './artifacts.js';
 import { queueProposals } from './memory-proposals.js';
 import { collect } from './patches.js';
 import { runnable } from './planning.js';
-import { intentRecord, recordOutcome } from './run-record.js';
+import { intentRecord, recordOutcome, runIntent } from './run-record.js';
 import { annotate } from './routing-info.js';
 import { runDeps } from './run-deps.js';
 import { routingRecord, type GraphOptions } from './setup.js';
@@ -61,7 +61,8 @@ export interface RunContext {
  */
 export async function executeRun(c: RunContext, run: ActiveRun): Promise<RunOutcome> {
   // S10 R6 J1: why the run exists, before anything else of it is journaled.
-  if (run.flags.intent) c.journal.append(intentRecord(run.plan.sessionId, run.runId, run.flags));
+  const intent = runIntent(run.runId, run.flags, run.plan.fork !== undefined);
+  if (intent) c.journal.append(intentRecord(run.plan.sessionId, run.runId, run.flags, intent));
   let o: RunOutcome | undefined;
   try {
     o = await runToEnd(c, run);

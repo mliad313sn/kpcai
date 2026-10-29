@@ -45,7 +45,7 @@ describe('unattended runs and intents', () => {
     await k.close();
   });
 
-  it('an interactive run journals no intent and is not unattended', async () => {
+  it('an interactive run serves its own human request (J1, B-28) and is not unattended', async () => {
     const host = recordingHost({ KPAI_CONFIRM_ABOVE_USD: '100' });
     const k = new Kernel(host);
     const sessionId = k.openSession('interactive', false);
@@ -53,7 +53,15 @@ describe('unattended runs and intents', () => {
     const h = await k.startRun({ request: REQ, planId: plan.planId, options: IN_PLACE });
     await h.done;
     const events = k.events(sessionId, 10_000);
-    expect(events.some((e) => e.payload['action'] === 'run intent')).toBe(false);
+    const intents = events.filter((e) => e.payload['action'] === 'run intent');
+    expect(intents.map((e) => e.payload)).toEqual([
+      {
+        action: 'run intent',
+        runId: h.runId,
+        intent: { id: h.runId, origin: 'human-request' },
+        unattended: false,
+      },
+    ]);
     expect(startedRouting(host.env, sessionId)).not.toHaveProperty('unattended');
     await k.close();
   });

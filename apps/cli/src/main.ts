@@ -17,6 +17,7 @@ import { extensionsCommand } from './commands/extensions.js';
 import { ticketCommand } from './commands/ticket.js';
 import { programCommand } from './commands/program.js';
 import { serveCommand } from './commands/serve.js';
+import { notifyCommand, reportCommand } from './commands/report.js';
 import {
   checkpointsCommand,
   discardCommand,
@@ -66,6 +67,7 @@ const OPTIONS = {
   author: { type: 'string' },
   'per-kind': { type: 'string' },
   productivity: { type: 'boolean' },
+  'north-star': { type: 'boolean' },
   since: { type: 'string' },
   protocol: { type: 'string' },
   instruction: { type: 'string' },
@@ -246,6 +248,8 @@ const COMMANDS: Readonly<Record<string, Handler>> = {
       check: v.check,
       allowTest: v['allow-test'],
     }),
+  report: (io, v, rest) => reportCommand(io, rest, { db: v.db }),
+  notify: (io, v, rest) => notifyCommand(io, rest, { db: v.db, yes: v.yes }),
   // `kpai serve` is always headless (the UI is `kpai studio`); --headless is accepted.
   serve: (io, v) =>
     serveCommand(io, { db: v.db, port: portNumber(v.port), allowTest: v['allow-test'] }),
@@ -257,6 +261,7 @@ const COMMANDS: Readonly<Record<string, Handler>> = {
       session: v.session,
       productivity: v.productivity,
       since: v.since,
+      northStar: v['north-star'],
     }),
   providers: (io) => providersCommand(io),
   ask: (io, v, rest) => askCommand(io, askOptions(v, rest)),

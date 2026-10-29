@@ -10,6 +10,14 @@ export { fsTools, FS_READ_MAX_BYTES } from './builtins/fs.js';
 export { gitTools, type GitToolOptions, type GitApplyRules } from './builtins/git.js';
 export { inspectPatch, type InspectedPatch } from './builtins/git-apply.js';
 export {
+  MAX_IMAGE_BYTES,
+  MAX_IMAGE_FILES,
+  hashFiles,
+  joinImages,
+  type FileImage,
+  type FileImages,
+} from './builtins/images.js';
+export {
   assertPrintable,
   parsePatch,
   checkSections,

@@ -278,6 +278,7 @@ type LearningMethod =
   | 'grade'
   | 'stats.accuracy'
   | 'stats.productivity'
+  | 'stats.northStar'
   | 'competence'
   | 'run.replay'
   | 'run.replayPlan'
@@ -307,6 +308,11 @@ function learningHandlers(
       kernel.learning.productivity({
         ...(p?.since ? { since: p.since } : {}),
         ...(p?.reworkDays ? { reworkDays: p.reworkDays } : {}),
+        ...(p?.detail ? { detail: true } : {}),
+      }),
+    'stats.northStar': (p) =>
+      kernel.learning.northStar({
+        ...(p?.since ? { since: p.since } : {}),
         ...(p?.detail ? { detail: true } : {}),
       }),
     competence: () => ({ entries: kernel.learning.competence() }),

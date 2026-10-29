@@ -86,6 +86,10 @@ export class Liveness {
       alerts: alerts.map((a) => a.rule),
       programs: hb.programs,
       running: hb.running,
+      // S10 R6 J5: the beat's interval, queue depth and oldest open question (G3).
+      intervalSec: cfg.heartbeatSec,
+      queued: this.c.store.queue().pending.length,
+      oldestAskAgeSec: oldestAskAge(programs, now),
     });
     this.c.feed.notify('enterprise.heartbeat', { ...hb });
     this.announce(alerts, now);
@@ -95,9 +99,11 @@ export class Liveness {
   /** New alerts go to the journal and the feed once; a cleared alert may fire again. */
   private announce(alerts: WatchAlert[], now: Date): void {
     const keys = new Set(alerts.map((a) => `${a.rule}|${a.programId ?? ''}|${a.runId ?? ''}`));
+    const fresh: string[] = [];
     for (const a of alerts) {
       const key = `${a.rule}|${a.programId ?? ''}|${a.runId ?? ''}`;
       if (this.seen.has(key)) continue;
+      fresh.push(a.rule);
       this.c.fact(a.programId, { action: 'watchdog alert', rule: a.rule, runId: a.runId });
       this.c.feed.line(
         `watchdog: ${a.rule} — ${a.text}`,
@@ -108,5 +114,17 @@ export class Liveness {
     }
     this.seen.clear();
     for (const k of keys) this.seen.add(k);
+    // R2: a new alert also leaves the machine, as rule ids only (ADR-0036).
+    if (fresh.length) this.c.outbox.push({ kind: 'alert', alert: { rules: [...new Set(fresh)] } });
   }
+}
+
+/** Age in seconds of the oldest unanswered question of any program, or null when none. */
+export function oldestAskAge(
+  programs: ReadonlyArray<{ escalations: ReadonlyArray<{ at: string; answer?: unknown }> }>,
+  now: Date,
+): number | null {
+  const open = programs.flatMap((p) => p.escalations.filter((e) => e.answer === undefined));
+  const first = Math.min(...open.map((e) => Date.parse(e.at)).filter(Number.isFinite));
+  return Number.isFinite(first) ? Math.max(0, Math.round((now.getTime() - first) / 1000)) : null;
 }

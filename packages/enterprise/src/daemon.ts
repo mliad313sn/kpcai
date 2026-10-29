@@ -20,7 +20,8 @@ import {
 import type { EnterpriseConfig } from './config.js';
 import { cancelRun, type Ctx } from './context.js';
 import { launch } from './dispatch.js';
-import { Liveness } from './liveness.js';
+import { HEARTBEAT_FILE, Liveness, readHeartbeat } from './liveness.js';
+import { maybeDigest } from './period.js';
 import { stepProgram, type Need } from './program-step.js';
 import { recoverInterrupted } from './recover.js';
 import { writeAtomic } from './store.js';
@@ -49,8 +50,13 @@ export class Daemon {
   async start(): Promise<boolean> {
     if (!this.claim()) return false;
     const now = this.c.clock();
+    // Dead-man: a stale heartbeat left by the previous daemon is reported once it is back.
+    const last = readHeartbeat(this.c.store.path(HEARTBEAT_FILE), now);
+    if (last?.status === 'stale')
+      this.c.outbox.push({ kind: 'alert', alert: { staleSince: last.at } });
     await this.c.store.locked(() => recoverInterrupted(this.c, now));
     await this.c.store.locked(() => this.liveness.maybeBeat(this.c.store.config(), now, true));
+    this.notify();
     const every = this.c.store.config().tickMs;
     this.timer = setInterval(() => void this.tick(), every);
     this.timer.unref();
@@ -81,6 +87,15 @@ export class Daemon {
       void launch(this.c, p);
     }
     await this.c.store.locked(() => this.liveness.maybeBeat(cfg, this.c.clock()));
+    this.notify();
+  }
+
+  /** Sends what the pass queued, in the background: a channel never blocks a program. */
+  private notify(): void {
+    if (!this.c.outbox.pending) return;
+    const p = this.c.outbox.flush();
+    this.c.settling.add(p);
+    void p.finally(() => this.c.settling.delete(p));
   }
 
   private steps(cfg: EnterpriseConfig): Need[] {
@@ -94,6 +109,7 @@ export class Daemon {
         );
       try {
         out.push(...stepProgram(this.c, id, now, busy, cfg.portfolio.killSwitch));
+        maybeDigest(this.c, id, now);
       } catch (err) {
         this.c.feed.line(
           `step failed: ${err instanceof Error ? err.message.slice(0, 200) : String(err)}`,

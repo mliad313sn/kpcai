@@ -24,3 +24,11 @@ ADR-0031 made `packages/program` pure: charter, envelope, machine, scheduler, re
 ## Revisit when
 
 Several daemons per home, the queue outgrows JSON (SQLite, B-23), remote approvals (phase 6), or gate verdicts get a typed findings channel.
+
+## Addendum (D-034: north-star journal fields, S8)
+
+- **J1** every attended run that is not a fork journals a `run intent` (`human-request`; `ticket:<id>` for tickets); a fork inherits its parent's intent.
+- **J2** `confirmation answered`: kind, risk, consequential, answer, asked and answered times, and what was viewed (`diff` or `none`). Never the question text, only for questions of a known run.
+- **J3** `git.apply`, `fs.write` and `merge-back` carry SHA-256 images of each file before and after, so reverts are detected.
+- **J5** the heartbeat fact carries `intervalSec`, `queued` and `oldestAskAgeSec`.
+- J4 (energy) is not journaled yet; energy is reported as "not measured" until descriptors carry coefficients.

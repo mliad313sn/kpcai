@@ -37,7 +37,9 @@ async function show(io: Io, kernel: Kernel, id: string): Promise<number> {
 async function run(io: Io, kernel: Kernel, id: string, o: TicketCliOptions): Promise<number> {
   const r = await kernel.tickets.forRun(id);
   // The ticket's own skill and agent apply unless you named others on the command line.
-  const opts: GraphCliOptions = { ...r.options, ...o, request: r.request };
+  // S10 R6 J1: every run of one ticket serves one human intent, however often it is rerun.
+  const intent = { id: `ticket:${r.ticket.id}`, origin: 'human-request' };
+  const opts: GraphCliOptions = { ...r.options, ...o, request: r.request, intent };
   const sessionId = kernel.openSession(`ticket ${id}`, !o.newSession);
   await kernel.checkWorkspace();
   const p = await kernel.plan(r.request, opts, sessionId);

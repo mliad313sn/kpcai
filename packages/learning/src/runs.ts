@@ -22,7 +22,8 @@ export interface RunRecord {
   events: JournalEvent[];
   /** Events about the run after it ended: writes, checkpoints, restores, merges. */
   after: JournalEvent[];
-  outcome?: { status: string; cancelled: boolean; seq: number };
+  /** `sources`: the source kinds the run used (D-028: `local`, `api`, `subscription`). */
+  outcome?: { status: string; cancelled: boolean; seq: number; sources?: string[] };
   /** A cancel was journaled while it ran, or the outcome says cancelled. */
   cancelled: boolean;
 }
@@ -111,6 +112,12 @@ class Splitter {
       r.runId = runId;
       const cancelled = e.payload.cancelled === true;
       r.outcome = { status: str(e.payload.status) ?? 'failed', cancelled, seq: e.seq };
+      const sources = [
+        e.payload.source,
+        ...(Array.isArray(e.payload.sources) ? e.payload.sources : []),
+      ];
+      const kinds = sources.filter((x): x is string => typeof x === 'string');
+      if (kinds.length > 0) r.outcome.sources = [...new Set(kinds)];
       r.cancelled ||= cancelled;
       this.close(st);
       return;

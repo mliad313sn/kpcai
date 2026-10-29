@@ -3,6 +3,7 @@ import path from 'node:path';
 import type { ToolContext } from '@kernelpai/core';
 import { resolveInRoot, toPosixRel, touchesGitDir, type JailedPath } from '../paths.js';
 import { ok, ToolError, type LocalTool } from '../types.js';
+import { hashFiles, joinImages } from './images.js';
 
 /** Bytes read by `fs.read` at most (the bus also caps what reaches the model). */
 export const FS_READ_MAX_BYTES = 256 * 1024;
@@ -115,9 +116,17 @@ const fsWrite: LocalTool = {
     await mkdir(path.dirname(j.abs), { recursive: true });
     // Re-check after creating parents: a racing symlink must not redirect the write.
     const again = await jailWrite(ctx, j.rel);
+    const pre = await hashFiles(again.realRoot, [again.rel]);
     await writeFile(again.abs, content, 'utf8');
     const bytes = Buffer.byteLength(content, 'utf8');
-    return ok(`wrote ${bytes} bytes to ${j.rel}`, { path: j.rel, bytes, created: !j.exists });
+    // S10 R6 J3: the file's hash before and after the write.
+    const images = joinImages(pre, await hashFiles(again.realRoot, [again.rel]));
+    return ok(`wrote ${bytes} bytes to ${j.rel}`, {
+      path: j.rel,
+      bytes,
+      created: !j.exists,
+      images,
+    });
   },
 };
 

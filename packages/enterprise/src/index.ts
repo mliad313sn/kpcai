@@ -14,3 +14,12 @@ export { programContext, KernelRunStarter } from './starter.js';
 export type { Activity, Emit } from './feed.js';
 export type { DraftInput, Drafted } from './draft.js';
 export type { ProgramMeta, Ref } from './meta.js';
+export {
+  CHANNELS_FILE,
+  isLocal,
+  loadChannels,
+  refusal,
+  type ChannelSpec,
+  type ChannelsFile,
+} from './channels/config.js';
+export type { Delivery } from './channels/outbox.js';

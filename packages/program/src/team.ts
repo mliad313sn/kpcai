@@ -115,7 +115,8 @@ export function smallTeamCharter(d: TeamDraft): Charter {
       subscriptions: [],
       expires: expiryFrom(d.now),
     },
-    reports: { cadence: d.cadence ?? { every: 'gate' } },
+    // Q-8: a daily digest by default (sent only when something changed, S10 R4 b).
+    reports: { cadence: d.cadence ?? { every: 'hours', hours: 24 } },
   });
 }
 

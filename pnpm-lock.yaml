@@ -305,6 +305,9 @@ importers:
       '@kernelpai/orchestrator':
         specifier: workspace:*
         version: link:../orchestrator
+      '@kernelpai/program':
+        specifier: workspace:*
+        version: link:../program
     devDependencies:
       '@kernelpai/router':
         specifier: workspace:*

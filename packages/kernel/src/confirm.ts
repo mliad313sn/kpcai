@@ -116,8 +116,27 @@ export function hostConfirm(
   confirm: Confirm | undefined,
   voided: (req: ConfirmRequest) => boolean = () => false,
   queue: AskQueue = askQueue(),
+  answered?: (req: ConfirmRequest, a: AskTimes) => void,
 ): Confirm {
   if (!confirm) return () => Promise.resolve(false);
+  const ask = async (req: ConfirmRequest): Promise<boolean> => {
+    const askedAt = new Date();
+    // A host that throws is not an answer: the error goes on, unrecorded, as before.
+    const yes = (await confirm(req)) === true;
+    try {
+      answered?.(req, { askedAt, answeredAt: new Date(), yes });
+    } catch {
+      // Recording an answer never changes it.
+    }
+    return yes;
+  };
   return async (req) =>
-    (await queue(() => (voided(req) ? Promise.resolve(false) : confirm(req)))) === true;
+    (await queue(() => (voided(req) ? Promise.resolve(false) : ask(req)))) === true;
+}
+
+/** When a question reached the human and when they answered it (S10 R6 J2). */
+export interface AskTimes {
+  askedAt: Date;
+  answeredAt: Date;
+  yes: boolean;
 }
