@@ -32,6 +32,12 @@ export function quoted(text: string, max = 300): string {
 }
 
 /**
+ * A question that relaxes a D-020 protection (P5-R3): it reads no file and moves no device,
+ * but it is consequential (`confirm.zone`): never pre-answered, never batch-approved.
+ */
+const RELAXES = { kind: 'tool', risk: 'read', physical: false, zoneRelaxation: true } as const;
+
+/**
  * WI-S1-01: refuses a folder that is not a workspace. When only opt-in pack files (a lone
  * binary, a capture) were found, asks the human once and remembers a yes.
  */
@@ -40,7 +46,7 @@ export async function guardWorkspace(env: Env, cwd: string, confirm: Confirm): P
   if (v.ok) return;
   if (v.askOptIn.length > 0) {
     const question = `Only files that need your opt-in were found in ${cwd} (packs: ${v.askOptIn.join(', ')}). Treat this folder as a workspace for them from now on?`;
-    if (await confirm({ kind: 'tool', question, risk: 'read' })) {
+    if (await confirm({ ...RELAXES, question })) {
       await saveOptIns(env, cwd, v.askOptIn);
       return;
     }
@@ -102,7 +108,7 @@ export async function askZoneRelaxations(
     const key = relaxKey(r.pack, r.allow);
     if (declined.includes(key)) continue;
     const question = `Pack ${r.pack} asks to exempt ${oneLine(r.allow, 200)} from the name heuristics (*secret*, credentials*). Reason given by the pack file, not verified by KernelPAI: ${quoted(r.reason)}. Credential files stay forbidden. Allow it in this folder?`;
-    answers.push({ key, approved: await confirm({ kind: 'tool', question, risk: 'read' }) });
+    answers.push({ key, approved: await confirm({ ...RELAXES, question }) });
   }
   if (answers.length === 0) return packs;
   await saveZoneDecisions(env, cwd, answers);

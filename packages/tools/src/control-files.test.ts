@@ -1,6 +1,12 @@
 /** D-035 control files: never pre-answered or batched (P5-F2), no test evidence (P5-F4). */
 import { describe, expect, it } from 'vitest';
-import { isControlPath, isTestConfigPath, patchPaths, writesControl } from './control-files.js';
+import {
+  isControlPath,
+  isLockfilePath,
+  isTestConfigPath,
+  patchPaths,
+  writesControl,
+} from './control-files.js';
 import { formatEvidence, readTestEvidence, evidenceSummary } from './test-evidence.js';
 
 describe('control files', () => {
@@ -23,6 +29,39 @@ describe('control files', () => {
       expect(isControlPath(p), p).toBe(false);
     expect(isTestConfigPath('.kpstudio/test.json')).toBe(true);
     expect(isTestConfigPath('.kpstudio/hooks.json')).toBe(false);
+  });
+
+  it('P5-R2: package-manager, toolchain and lockfiles are control; ordinary files are not', () => {
+    for (const p of [
+      '.npmrc',
+      'sub/.yarnrc',
+      '.yarnrc.yml',
+      '.pnpmrc',
+      'pnpm-workspace.yaml',
+      '.pnpmfile.cjs',
+      'bunfig.toml',
+      '.nvmrc',
+      '.node-version',
+      '.tool-versions',
+      '.pnp.cjs',
+      'package-lock.json',
+      'pnpm-lock.yaml',
+      'yarn.lock',
+      'bun.lockb',
+      'poetry.lock',
+      '.yarn/releases/yarn-4.cjs',
+      '.cargo/config.toml',
+      'pytest/__main__.py',
+      'sitecustomize.py',
+      'lib/site.pth',
+      'go.work',
+    ])
+      expect(isControlPath(p), p).toBe(true);
+    for (const p of ['src/npmrc.ts', 'docs/yarn.md', 'src/pytest_helpers.py', 'lockfile.txt'])
+      expect(isControlPath(p), p).toBe(false);
+    expect(isLockfilePath('a/PNPM-LOCK.yaml')).toBe(true);
+    expect(isLockfilePath('.npmrc')).toBe(false);
+    expect(writesControl('fs.write', { path: '.npmrc' })).toBe(true);
   });
 
   it('reads every path a patch names, renames and quoted names included', () => {

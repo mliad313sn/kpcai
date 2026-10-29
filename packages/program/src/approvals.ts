@@ -13,7 +13,8 @@ export type ApprovalClass = 'trivial' | 'consequential';
  * (`confirm.budget`). Everything else is consequential: spend past an accepted cap or of
  * an unknown amount (`confirm.overcap`) or beyond the envelope, a tool that runs code or
  * acts past the worktree (`confirm.exec`), a write outside a worktree (`confirm.outside`)
- * or to a control file (`confirm.control`) (D-035, P5-F2), merges, widening, gates,
+ * or to a control file (`confirm.control`) (D-035, P5-F2), a pack zone relaxation or
+ * workspace opt-in (`confirm.zone`, P5-R3), merges, widening, gates,
  * progress pauses, destructive or physical steps, disputes and unknown rules.
  */
 const TRIVIAL_RULES: ReadonlySet<string> = new Set(['confirm.write', 'confirm.budget']);

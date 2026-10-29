@@ -17,7 +17,13 @@ import {
   type TestCommandConfig,
 } from './test-detect.js';
 import { evidenceOf, type ParserName } from './test-parse.js';
-import { tamperNote, testConfigTamper, type TamperCheck } from './test-tamper.js';
+import {
+  tamperEntries,
+  tamperMeta,
+  tamperNote,
+  testConfigTamper,
+  type TamperCheck,
+} from './test-tamper.js';
 
 export interface TestRunToolOptions {
   /** The test command; detected from the workspace when absent. */
@@ -104,7 +110,8 @@ function outcome({ cmd, args, sandbox, timeoutMs, tamper }: Ran, r: RunResult): 
     output,
   };
   const parsed = evidenceOf(facts, prefer);
-  const e = tamper.files.length ? { ...parsed, tampered: tamper.files } : parsed;
+  const tampered = tamperEntries(tamper);
+  const e = tampered.length ? { ...parsed, tampered } : parsed;
   const why = r.error
     ? `failed to start: ${r.error}`
     : r.timedOut
@@ -122,11 +129,11 @@ function outcome({ cmd, args, sandbox, timeoutMs, tamper }: Ran, r: RunResult): 
     ...{ passed: e.passed, failed: e.failed, skipped: e.skipped, failing: e.failing },
     ...{ sandbox: sandbox.mode, exitCode: r.code, timedOut: r.timedOut, truncated: r.truncated },
     ...{ aborted: r.aborted, runMs: r.durationMs },
-    // P5-F4: a run that changed its own test configuration proves nothing (packages/learning).
-    tampered: tamper.files.length > 0,
+    // P5-F4, P5-R2: a run that changed what its tests run, or left the runner unverified,
+    // proves nothing (packages/learning).
+    ...tamperMeta(tamper),
     // False outside git: nothing to compare with, so no claim either way.
     configChecked: tamper.checked,
-    ...(tamper.files.length ? { tamperedFiles: tamper.files } : {}),
   };
   return e.status === 'passed' ? ok(body, meta) : fail(body, meta);
 }

@@ -3,8 +3,17 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Journal } from '@kernelpai/journal';
 import { describe, expect, it } from 'vitest';
-import { askZoneRelaxations, FROM_REPOSITORY, gatherScope, oneLine, quoted } from './authorise.js';
-import type { Confirm } from './confirm.js';
+import { consequentialAsk } from './asks.js';
+import {
+  askZoneRelaxations,
+  FROM_REPOSITORY,
+  gatherScope,
+  guardWorkspace,
+  oneLine,
+  quoted,
+} from './authorise.js';
+import type { Confirm, ConfirmRequest } from './confirm.js';
+import { confirmFacts } from './sources.js';
 import { Kernel } from './kernel.js';
 import type { SelectedPacks } from './packs.js';
 import { REQ, TEST_OPTIONS, recordingHost } from './test-helpers/fixture.js';
@@ -83,5 +92,36 @@ describe('a repository pack cannot spoof a built-in pack (P3-F4)', () => {
     expect(p.packs.pending.map((r) => r.allow)).not.toContain('src/**');
     expect(JSON.stringify(p.packs)).not.toMatch(/Required by KernelPAI/);
     await k.close();
+  });
+});
+
+describe('relaxing a protection is a fact of the question (D-035, P5-R3)', () => {
+  const recording = (): { confirm: Confirm; asked: ConfirmRequest[] } => {
+    const asked: ConfirmRequest[] = [];
+    return { confirm: (req) => (asked.push(req), Promise.resolve(false)), asked };
+  };
+  const expectZone = (req: ConfirmRequest | undefined): void => {
+    expect(req).toMatchObject({ kind: 'tool', physical: false, zoneRelaxation: true });
+    expect(confirmFacts(req!).zoneRelaxation).toBe(true);
+    expect(consequentialAsk(req!)).toBe(true);
+  };
+
+  it('a pack zone relaxation says so', async () => {
+    const { confirm, asked } = recording();
+    const home = mkdtempSync(join(tmpdir(), 'kpai-auth-home-'));
+    const cwd = mkdtempSync(join(tmpdir(), 'kpai-auth-ws-'));
+    const relax = { pack: 'p', allow: 'docs/**', reason: 'r' };
+    const packs = { pending: [relax], approved: [], relaxed: [] } as unknown as SelectedPacks;
+    await askZoneRelaxations({ KPAI_HOME: home }, cwd, confirm, packs);
+    expectZone(asked[0]);
+  });
+
+  it('a workspace opt-in says so', async () => {
+    const { confirm, asked } = recording();
+    const home = mkdtempSync(join(tmpdir(), 'kpai-auth-home-'));
+    const cwd = mkdtempSync(join(tmpdir(), 'kpai-auth-ws-'));
+    writeFileSync(join(cwd, 'firmware.bin'), 'x');
+    await expect(guardWorkspace({ KPAI_HOME: home }, cwd, confirm)).rejects.toThrow();
+    expectZone(asked[0]);
   });
 });

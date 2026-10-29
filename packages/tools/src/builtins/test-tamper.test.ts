@@ -14,7 +14,9 @@ import { resolveTestCommand } from './test-detect.js';
 import { testRunTool } from './test-run.js';
 import { testConfigTamper } from './test-tamper.js';
 
-const PASS = 'node -e "console.log(\' Tests  7 passed (7)\')"';
+// A script file, not `node -e "…"`: nested quotes do not survive npm's cmd.exe on Windows.
+const PASS = 'node pass.js';
+const PASS_JS = "console.log(' Tests  7 passed (7)')\n";
 const pkg = (scripts: Record<string, string>, extra: Record<string, unknown> = {}) =>
   JSON.stringify({ name: 'p', scripts, ...extra }, null, 2);
 
@@ -32,7 +34,11 @@ const files = async (root: string) => (await testConfigTamper(root, undefined)).
 
 describe('test configuration tampering (P5-F4)', () => {
   it('a run that rewrites scripts.test gets a tampered run: asked, evidence, meta', async () => {
-    const root = await repo({ 'package.json': pkg({ test: 'node real-tests.mjs' }) });
+    // pass.js is committed: only the test script changes.
+    const root = await repo({
+      'package.json': pkg({ test: 'node real-tests.mjs' }),
+      'pass.js': PASS_JS,
+    });
     await put(root, { 'package.json': pkg({ test: PASS }) });
     const journal = new RecordingJournal();
     const bus = new LocalToolBus({
@@ -62,7 +68,11 @@ describe('test configuration tampering (P5-F4)', () => {
       'package.json': pkg({ test: 'vitest run', build: 'tsc' }, { dependencies: { a: '1' } }),
       'src/a.ts': 'x',
     });
-    expect(await testConfigTamper(root, undefined)).toEqual({ checked: true, files: [] });
+    expect(await testConfigTamper(root, undefined)).toEqual({
+      checked: true,
+      files: [],
+      unverified: [],
+    });
     await put(root, {
       'src/a.ts': 'y',
       'src/b.ts': 'new',
@@ -109,11 +119,15 @@ describe('test configuration tampering (P5-F4)', () => {
   it('outside git nothing can be compared: unchecked, not tampered', async () => {
     const { dir, cleanup } = await tempDir('kpai-tamper-');
     cleanups.push(cleanup);
-    expect(await testConfigTamper(dir, undefined)).toEqual({ checked: false, files: [] });
+    expect(await testConfigTamper(dir, undefined)).toEqual({
+      checked: false,
+      files: [],
+      unverified: [],
+    });
   });
 
   it('shell.run journals tampered too, so `npm test` by hand is no evidence', async () => {
-    const root = await repo({ 'package.json': pkg({ test: 'vitest run' }) });
+    const root = await repo({ 'package.json': pkg({ test: 'vitest run' }), 'pass.js': PASS_JS });
     await put(root, { 'package.json': pkg({ test: PASS }) });
     const journal = new RecordingJournal();
     const bus = new LocalToolBus({

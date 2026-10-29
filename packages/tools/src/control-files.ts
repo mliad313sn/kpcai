@@ -2,7 +2,9 @@
  * Control files (D-035, P5-F2/F4): files that decide how KP Studio, an agent or the
  * project's own tests behave. A run that writes one changes the rules it is judged by, so
  * such a write is never pre-answered or batch-approved, and a test run whose configuration
- * the run changed is no test evidence. Matching is lexical and case-insensitive.
+ * the run changed is no test evidence. P5-R2 adds the package-manager, toolchain and
+ * lockfiles that pick the runner (`.npmrc`, `.yarnrc.yml`, `pnpm-workspace.yaml`, …).
+ * Matching is lexical and case-insensitive.
  */
 
 /** Directories whose every file is control: KP Studio's and Claude Code's settings. */
@@ -29,7 +31,58 @@ const TEST_CONFIG_FILES = [
   /^(vitest|jest)\.(config|workspace)\.json$/,
   /^\.mocharc(\.[\w]+)?$/,
   /^\.?(babel|swc)(rc|\.config\.[cm]?[jt]s)$/,
+  /\.pth$/,
 ];
+
+/**
+ * P5-R2: package-manager, toolchain and module-resolution files. They decide which runner
+ * (and which version, shell or loader) a test command reaches without naming a test file:
+ * `.npmrc` `script-shell` / `node-options`, a pnpm hook, a Yarn PnP map, a Node or Python
+ * version pin, a Python module that shadows pytest from the working directory.
+ */
+const RUNNER_CONFIG_NAMES = new Set([
+  '.npmrc',
+  '.yarnrc',
+  '.yarnrc.yml',
+  '.pnpmrc',
+  'pnpm-workspace.yaml',
+  '.pnpmfile.cjs',
+  '.pnpmfile.mjs',
+  'bunfig.toml',
+  '.nvmrc',
+  '.node-version',
+  '.tool-versions',
+  '.python-version',
+  '.pnp.cjs',
+  '.pnp.js',
+  '.pnp.loader.mjs',
+  '.pnp.data.json',
+  'go.work',
+  'rust-toolchain',
+  'rust-toolchain.toml',
+  'sitecustomize.py',
+  'usercustomize.py',
+  'pytest.py',
+]);
+
+/** Lockfiles: they change which runner a command resolves to (P5-R2). */
+const LOCKFILE_NAMES = new Set([
+  'package-lock.json',
+  'npm-shrinkwrap.json',
+  'yarn.lock',
+  'pnpm-lock.yaml',
+  'bun.lockb',
+  'bun.lock',
+  'poetry.lock',
+  'uv.lock',
+  'pipfile.lock',
+  'pdm.lock',
+]);
+
+/** Directories whose every file configures a toolchain: Yarn (releases, plugins, PnP cache), Cargo (`runner`). */
+const TOOL_DIRS = new Set(['.yarn', '.cargo']);
+/** A `.py` file under one of these shadows pytest itself (`python -m pytest` imports from the cwd). */
+const PY_SHADOW_DIRS = new Set(['pytest', '_pytest']);
 
 /** The repository file naming the test command (also in test-detect.ts). */
 const REPO_TEST_JSON = '.kpstudio/test.json';
@@ -42,11 +95,20 @@ function segments(rel: string): string[] {
     .filter((s) => s !== '' && s !== '.');
 }
 
-/** True for a file that configures how the project's tests run (P5-F4). */
+/** True for a lockfile (P5-R2): a change to it may change the resolved runner. */
+export function isLockfilePath(rel: string): boolean {
+  return LOCKFILE_NAMES.has(segments(rel).pop() ?? '');
+}
+
+/** True for a file that configures how the project's tests run (P5-F4, P5-R2). */
 export function isTestConfigPath(rel: string): boolean {
   const s = segments(rel);
   const name = s[s.length - 1] ?? '';
+  const dirs = s.slice(0, -1);
   if (s.join('/').endsWith(REPO_TEST_JSON)) return true;
+  if (dirs.some((d) => TOOL_DIRS.has(d))) return true;
+  if (name.endsWith('.py') && dirs.some((d) => PY_SHADOW_DIRS.has(d))) return true;
+  if (RUNNER_CONFIG_NAMES.has(name) || LOCKFILE_NAMES.has(name)) return true;
   return TEST_CONFIG_NAMES.has(name) || TEST_CONFIG_FILES.some((re) => re.test(name));
 }
 

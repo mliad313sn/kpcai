@@ -107,6 +107,9 @@ function checkConfirm(
     return escalate('confirm.destructive', 'destructive action', 'destructive');
   if (a.confirm === 'dispute' || a.confirm === 'memory')
     return escalate(`confirm.${a.confirm}`, 'a human choice by design (R-405, ADR-0027)');
+  // P5-R3: relaxing a protection zone is never a trivial in-worktree write.
+  if (a.zoneRelaxation)
+    return escalate('confirm.zone', 'relaxes a protection zone of the workspace (D-020)');
   if (a.confirm === 'budget') return checkBudgetConfirm(state, pre, a);
   return checkWriteConfirm(pre, a);
 }

@@ -23,7 +23,8 @@ export interface TestEvidence extends TestCounts {
   /** Failing test names, from the test output (untrusted text), at most 20. */
   failing: string[];
   /**
-   * P5-F4 (D-035): test configuration files the run changed before this test run. A
+   * P5-F4, P5-R2 (D-035): test configuration or runner-side files the run changed before
+   * this test run, and what left the runner unverified (`… (runner unverified)`). A
    * tampered run is shown to the critic and counts as no test evidence anywhere.
    */
   tampered?: string[];
@@ -31,7 +32,8 @@ export interface TestEvidence extends TestCounts {
 
 export const MAX_FAILING = 20;
 const FAILING_HEAD = 'failing tests:';
-const TAMPERED_HEAD = 'tampered (this run changed its own test configuration; not test evidence): ';
+const TAMPERED_HEAD =
+  'tampered (this run changed its own test configuration or runner; not test evidence): ';
 const MAX_TAMPERED = 10;
 const HEADER =
   /^test\.run: (passed|failed|no-tests|error) \(([\w.-]{1,32}), exit (-?\d+|none)\)(?:: (\d+|\?) passed, (\d+|\?) failed, (\d+|\?) skipped)?$/;
@@ -103,6 +105,8 @@ export function evidenceSummary(e: TestEvidence): string {
     'no-tests': 'no test ran',
     error: 'the test run did not complete',
   }[e.status];
-  const tampered = e.tampered?.length ? ' (tampered: the run changed its test configuration)' : '';
+  const tampered = e.tampered?.length
+    ? ' (tampered: the run changed its test configuration or runner)'
+    : '';
   return `${what}${counts} [${e.runner}]${tampered}${names}`.slice(0, 600);
 }

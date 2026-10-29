@@ -62,6 +62,8 @@ export const ProposedActionSchema = z.discriminatedUnion('kind', [
     physical: z.boolean().default(false),
     /** The write touches a control file (`.kpstudio/`, `.claude/`, package.json…, D-035). */
     control: z.boolean().default(false),
+    /** Relaxes a D-020 protection: a pack zone relaxation, a workspace opt-in (P5-R3). */
+    zoneRelaxation: z.boolean().default(false),
     /** For `budget`: spend past a cap already accepted (D-035); like a missing amount. */
     overCap: z.boolean().default(false),
   }),

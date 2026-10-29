@@ -40,14 +40,24 @@ API: `northStar(journal, { project, since?, now?, durableWindowMs?, verify? })`.
 - **Diagnostic.** `v3Share` = V3 ÷ (DVO + DVO-doc). It has no target.
 - **Durability label.** `rollback and revert` once any write in the project carries J3 images, else `rollback-only`.
 
-| Gaming move                                     | Why it does not raise DVO (test in `north-star.test.ts`)                        |
-| ----------------------------------------------- | ------------------------------------------------------------------------------- |
-| Split a change into more patches, runs or forks | One intent, one DVO ("splitting one intent … never inflates it")                |
-| Lenient critic, no tests                        | Code stays V1 ("code needs V2, documents V1")                                   |
-| Self-review                                     | V0 ("a V0 doc does not count")                                                  |
-| Accept now, revert tomorrow                     | Undone within 7 days ("a later write back to the pre-image is a revert")        |
-| Re-deliver an old intent in a new week          | Once ever ("later ones of the intent never count")                              |
-| Rewrite the test script so it "passes"          | A `tampered` test run is no evidence: code stays V1 (`tampered.test.ts`, D-035) |
+| Gaming move                                                                                                    | Why it does not raise DVO (test in `north-star.test.ts`)                                                                                                                      |
+| -------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Split a change into more patches, runs or forks                                                                | One intent, one DVO ("splitting one intent … never inflates it")                                                                                                              |
+| Lenient critic, no tests                                                                                       | Code stays V1 ("code needs V2, documents V1")                                                                                                                                 |
+| Self-review                                                                                                    | V0 ("a V0 doc does not count")                                                                                                                                                |
+| Accept now, revert tomorrow                                                                                    | Undone within 7 days ("a later write back to the pre-image is a revert")                                                                                                      |
+| Re-deliver an old intent in a new week                                                                         | Once ever ("later ones of the intent never count")                                                                                                                            |
+| Rewrite the test script so it "passes"                                                                         | A `tampered` test run is no evidence: code stays V1 (`tampered.test.ts`, D-035)                                                                                               |
+| Edit a file the test script runs, add an `.npmrc` `script-shell`, plant a runner in git-ignored `node_modules` | The runner side, package-manager configs and the runner's resolution path are checked too: `tampered` or "runner unverified", code stays V1 (`test-tamper-r2.test.ts`, P5-R2) |
+
+**Limits of the tamper check (P5-R2).** The line: test files and the code under test may change; anything that decides how tests run or what counts as a pass may not (configs, package-manager and toolchain files, runner-relevant lockfile entries, runner scripts and setup files and what they import, any executable file, anything new under `node_modules` or a venv). The check is lexical and file-based, so it cannot see everything; where it cannot be precise it says "tests ran, runner unverified" and the run earns no V2. It does not catch:
+
+- code under test that forges a result from inside the runner's process (`process.exit(0)`, printing a summary line, patching `expect`): the critic reads the diff;
+- references built at run time (computed `require` paths, environment variables), bare imports of workspace packages, Makefile targets, `conftest.py` imports and `pytest_plugins`;
+- deletions under `node_modules`, Python bytecode caches, and ignored build output (`dist`, `target`, `coverage`) other than runner-side files;
+- commits the run makes itself (the check compares with HEAD).
+
+In an in-place run HEAD can be older than the run, so whatever was installed since the last commit leaves the runner unverified: honest, not precise. An isolated run that installs its own dependencies is unverified for the same reason (ADR-0032, P5-R2 addendum).
 
 ## Guardrails (window = runs and events at or after `since`)
 

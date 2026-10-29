@@ -6,6 +6,9 @@
  * and a stopped (or ended) program cancel them; a paused program pauses them (nothing new
  * is scheduled, steps in flight finish) and resumes them when the program runs again.
  * Each action is journaled once. Read-only on the store: files are replaced atomically.
+ * A cancel also ends the questions the run waits on (P5-R1): the gate expires them, so the
+ * run settles at once and a late yes is refused. A pause keeps them (resumable), but they
+ * cannot be answered until the program runs again (`Sponsor.answer`).
  */
 import { attempt, type Ctx, type LiveRun } from './context.js';
 
@@ -29,11 +32,19 @@ function wanted(c: Ctx, live: LiveRun, killed: boolean): { want: Want; why: stri
   return { want: undefined, why: '' };
 }
 
-function act(c: Ctx, runId: string, live: LiveRun, want: Exclude<Want, undefined>): boolean {
+function act(
+  c: Ctx,
+  runId: string,
+  live: LiveRun,
+  want: Exclude<Want, undefined>,
+  why: string,
+): boolean {
   if (want === 'cancel') {
     const done = attempt(() => c.kernel.cancel(runId));
     // A run the kernel no longer knows, or one already winding down, is not asked again.
     live.guard = 'cancelled';
+    // P5-R1: a question the run waits on ends now, as a no, and expires in the inbox.
+    c.gate.abandon(runId, why);
     return done === true;
   }
   if (want === 'pause') {
@@ -57,7 +68,7 @@ export function guardRuns(c: Ctx): Record<'cancel' | 'pause' | 'resume', string[
   for (const [runId, live] of c.live) {
     if (live.guard === 'cancelled') continue;
     const { want, why } = wanted(c, live, killed);
-    if (!want || !act(c, runId, live, want)) continue;
+    if (!want || !act(c, runId, live, want, why)) continue;
     out[want].push(runId);
     const action = { cancel: 'run cancelled', pause: 'run paused', resume: 'run resumed' }[want];
     c.fact(live.programId, { action: `${action} by the daemon`, runId, wpId: live.wpId, why });

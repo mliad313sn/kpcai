@@ -203,8 +203,12 @@ function kernelHost(
     },
     onRunState: (runId, state) => void broadcast('run.state', { runId, state }),
     onControl: (runId, event) => void broadcast('run.control', { runId, event }),
-    // A cancelled run's open questions become "no" and the dialogs close (P3-F2).
-    cancelConfirmations: (runId) => void broker.declineRun(runId),
+    // A cancelled run's open questions become "no" and the dialogs close (P3-F2); a program
+    // run's question in the Sponsor's inbox expires (P5-R1).
+    cancelConfirmations: (runId) => {
+      ent.rt?.cancelConfirmations(runId);
+      void broker.declineRun(runId);
+    },
     onRunPlanned: (runId, plan) =>
       void broadcast('run.planned', {
         runId,

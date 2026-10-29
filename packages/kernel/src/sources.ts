@@ -98,6 +98,7 @@ export function confirmFacts(req: ConfirmRequest): {
   inWorktree: boolean;
   physical: boolean;
   control: boolean;
+  zoneRelaxation: boolean;
   overCap: boolean;
 } {
   return {
@@ -110,6 +111,7 @@ export function confirmFacts(req: ConfirmRequest): {
     physical: req.physical !== false,
     // D-035: said by the asker; a missing amount alone already makes a budget ask over-cap.
     control: req.control === true,
+    zoneRelaxation: req.zoneRelaxation === true,
     overCap: req.overCap === true,
   };
 }

@@ -4,9 +4,14 @@
  * file are consequential: never pre-answered, never batch-approved, counted by G2. Only
  * in-envelope, in-worktree, low-risk questions stay trivial.
  */
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { ConfirmRequest } from '@kernelpai/kernel';
 import { approvalClass, rubberStampRate } from '@kernelpai/program';
+import { askZoneRelaxations } from '../../kernel/src/authorise.js';
+import type { SelectedPacks } from '../../kernel/src/packs.js';
 import { fakeStarter } from './test-helpers/fake.js';
 import { world, type World } from './test-helpers/world.js';
 
@@ -106,6 +111,25 @@ describe('consequential program questions (D-035, P5-F2)', () => {
     const [e] = await opened(w, programId, 1);
     expect(e!.rule).toBe('confirm.control');
     expect(approvalClass(e!)).toBe('consequential');
+    fake.runs.forEach((x) => x.finish());
+  });
+
+  it('a pack zone relaxation is confirm.zone: consequential, never pre-answered (P5-R3)', async () => {
+    w = world();
+    const { programId, fake } = await running(w);
+    const ctx = { programId, wpId: 'wp1' };
+    const relax = { pack: 'p', allow: 'docs/**', reason: 'r' };
+    const packs = { pending: [relax], approved: [], relaxed: [] } as unknown as SelectedPacks;
+    const cwd = mkdtempSync(join(tmpdir(), 'kpai-zone-ws-'));
+    const asked = askZoneRelaxations(w.host.env, cwd, (q) => w!.rt.ctx.gate.decide(ctx, q), packs);
+    const [e] = await opened(w, programId, 1);
+    expect(e!.rule).toBe('confirm.zone');
+    expect(w.rt.snapshot().inbox[0]?.class).toBe('consequential');
+    const batch = await w.rt.sponsor.answerBatch(programId, [e!.id], 'yes');
+    expect(batch.answered).toEqual([]);
+    await w.rt.sponsor.viewed(programId, { kind: 'escalation', id: e!.id }, e!.id);
+    await w.rt.sponsor.answer(programId, e!.id, 'no');
+    expect((await asked).relaxed).toEqual([]);
     fake.runs.forEach((x) => x.finish());
   });
 });

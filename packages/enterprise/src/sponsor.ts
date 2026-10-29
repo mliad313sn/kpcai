@@ -9,7 +9,7 @@ import { KernelError } from '@kernelpai/kernel';
 import { answerBlocker, approvalClass } from '@kernelpai/program';
 import type { Ctx } from './context.js';
 import { guardRuns } from './guard.js';
-import type { Ref } from './meta.js';
+import type { ProgramMeta, Ref } from './meta.js';
 
 function must(ok: boolean, code: 'refused' | 'not_found', message: string): void {
   if (!ok) throw new KernelError(code, message);
@@ -74,6 +74,20 @@ export class Sponsor {
     });
   }
 
+  /**
+   * Why a run's question cannot be answered now (P5-R1, D-035): a paused program keeps it
+   * (pause is resumable) but takes no answer until it runs again; a stop or the kill switch
+   * ends it (the run guard expires it, this covers the moment before the guard acts).
+   */
+  private held(m: ProgramMeta['escalations'][string] | undefined, status: string): string | false {
+    if (m?.expired) return 'expired';
+    if (m?.kind !== 'confirm') return false;
+    if (status === 'paused') return 'waits: the program is paused, answer after it resumes';
+    if (status === 'stopped' || status === 'delivered') return `ended: the program is ${status}`;
+    if (this.c.store.config().portfolio.killSwitch) return 'ended: the kill switch is on';
+    return false;
+  }
+
   async answer(
     id: string,
     escalationId: string,
@@ -86,16 +100,13 @@ export class Sponsor {
       const { state, meta } = this.c.store.read(id);
       const e = state.escalations.find((x) => x.id === escalationId);
       must(!!e && !e.answer, 'not_found', `no open question ${escalationId}`);
-      must(!meta.escalations[escalationId]?.expired, 'refused', `question ${escalationId} expired`);
+      const held = this.held(meta.escalations[escalationId], state.status);
+      must(!held, 'refused', `question ${escalationId} ${held || ''}`);
       const seen = meta.viewed.filter((v) => v.escalationId === escalationId).at(-1);
       const why = answerBlocker(e!, { viewed: !!seen, batch });
       must(!why, 'refused', `${escalationId}: ${why ?? ''}`);
-      const t = this.c.store.applyLocked(
-        id,
-        { type: 'answer', id: escalationId, answer },
-        'sponsor',
-        now,
-      );
+      const event = { type: 'answer', id: escalationId, answer };
+      const t = this.c.store.applyLocked(id, event, 'sponsor', now);
       must(t.ok, 'refused', t.ok ? '' : t.reason);
       const rec = {
         escalationId,

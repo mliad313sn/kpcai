@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { RESERVED_ITEMS, ConfirmKindSchema } from './actions.js';
+import { approvalClass } from './approvals.js';
 import { checkAction, widenings } from './envelope.js';
 import { EnvelopeSchema, type Envelope, type ProgramState } from './schemas.js';
 import { NOW, run, running } from './test-helpers/fixtures.js';
@@ -274,6 +275,13 @@ describe('confirmation classes (D-035, P5-F2)', () => {
     expect(rule({ confirm: 'tool', risk: 'write', control: true })).toBe('confirm.control');
     expect(rule({ confirm: 'patch', risk: 'write', control: true })).toBe('confirm.control');
     expect(rule({ confirm: 'tool', risk: 'write' })).toBe('confirm.worktree');
+  });
+  it('a pack zone relaxation or workspace opt-in is confirm.zone, even pre-answered (P5-R3)', () => {
+    const zone = { confirm: 'tool', risk: 'read', zoneRelaxation: true };
+    expect(rule(zone)).toBe('confirm.zone');
+    expect(rule({ ...zone, inWorktree: false })).toBe('confirm.zone');
+    expect(rule({ ...zone, confirm: 'patch', risk: 'write' })).toBe('confirm.zone');
+    expect(approvalClass({ rule: rule(zone) })).toBe('consequential');
   });
 });
 

@@ -23,7 +23,11 @@ export const GOAL = [
   '- add a token parser with tests [[diff:src/b.ts]] [[testdiff:test/b.test.ts]]',
 ].join('\n');
 
-export function world(env: Record<string, string> = {}, existing?: RecordingHost): World {
+export function world(
+  env: Record<string, string> = {},
+  existing?: RecordingHost,
+  pollMs = 5,
+): World {
   const host = existing ?? recordingHost({ KPAI_CONFIRM_ABOVE_USD: '100', ...env });
   const human: ConfirmRequest[] = [];
   const holder: { rt?: EnterpriseRuntime } = {};
@@ -40,7 +44,7 @@ export function world(env: Record<string, string> = {}, existing?: RecordingHost
     env: host.env,
     options: { allowTest: true },
     emit: (name, params) => void emitted.push({ name, params }),
-    pollMs: 5,
+    pollMs,
   });
   holder.rt = rt;
   const config = (over: Partial<EnterpriseConfig>): void =>

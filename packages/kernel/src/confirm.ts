@@ -40,6 +40,11 @@ export interface ConfirmRequest {
    * package.json or a test configuration. Never pre-answered, never batch-approved.
    */
   control?: boolean;
+  /**
+   * The question relaxes a D-020 protection (D-035, P5-R3): a pack's zone relaxation or a
+   * workspace opt-in. Consequential (`confirm.zone`): never pre-answered, never batched.
+   */
+  zoneRelaxation?: boolean;
   /** For `budget`: spend past a cap the human already accepted (D-035, P5-F2). */
   overCap?: boolean;
   /** For `patch`: the exact diff that would be applied (shown apart from the question). */

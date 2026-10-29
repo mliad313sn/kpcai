@@ -190,8 +190,19 @@ export {
   type RunnerKind,
 } from './builtins/test-detect.js';
 export { evidenceOf, parseOutput, type ParserName, type RunFacts } from './builtins/test-parse.js';
-export { testConfigTamper, tamperNote, type TamperCheck } from './builtins/test-tamper.js';
-export { isControlPath, isTestConfigPath, patchPaths, writesControl } from './control-files.js';
+export {
+  testConfigTamper,
+  tamperMeta,
+  tamperNote,
+  type TamperCheck,
+} from './builtins/test-tamper.js';
+export {
+  isControlPath,
+  isLockfilePath,
+  isTestConfigPath,
+  patchPaths,
+  writesControl,
+} from './control-files.js';
 export {
   MCP_PINS_FILE,
   canonicalJson,

@@ -121,6 +121,14 @@ export class EnterpriseRuntime {
     return ctx ? this.c.gate.decide(ctx, req) : undefined;
   }
 
+  /**
+   * The kernel cancelled a run (`KernelHost.cancelConfirmations`): a program run's
+   * question waiting in the Sponsor's inbox ends now, as a no, and expires (P5-R1).
+   */
+  cancelConfirmations(runId: string): void {
+    this.c.gate.abandon(runId, 'run cancelled');
+  }
+
   /** Disputes in a program run fail closed: picking an answer is a human choice (R-405). */
   chooseFor(): Promise<string | null> | undefined {
     const ctx = programContext.getStore();

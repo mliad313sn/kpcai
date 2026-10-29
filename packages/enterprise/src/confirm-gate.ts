@@ -8,6 +8,7 @@
 import { randomBytes } from 'node:crypto';
 import { confirmFacts, type ConfirmRequest, type Kernel } from '@kernelpai/kernel';
 import { checkAction, type ProgramState } from '@kernelpai/program';
+import { attempt } from './context.js';
 import type { Feed } from './feed.js';
 import type { EnterpriseStore } from './store.js';
 import type { ProgramContext } from './starter.js';
@@ -42,8 +43,21 @@ export function withoutReservation(s: ProgramState, runId: string | undefined): 
   };
 }
 
+/** Kernel run states in which a question of the run is void. */
+const ENDED: ReadonlySet<string> = new Set(['cancelling', 'cancelled', 'done', 'failed']);
+const CANCELLED: ReadonlySet<string> = new Set(['cancelling', 'cancelled']);
+
+interface Waiting {
+  runId: string | undefined;
+  wake: (why: string) => void;
+}
+
 export class ConfirmGate {
   private readonly pollMs: number;
+  /** Questions waiting for the Sponsor in this process, by escalation id. */
+  private readonly waiting = new Map<string, Waiting>();
+  /** Runs whose question ended because they were cancelled or stopped, and why (P5-R1). */
+  private readonly voided = new Map<string, string>();
 
   constructor(private readonly d: GateDeps) {
     this.pollMs = d.pollMs ?? 500;
@@ -55,6 +69,11 @@ export class ConfirmGate {
     const facts = confirmFacts(req);
     const v = checkAction(withoutReservation(state, req.runId), facts, now);
     const base = { programId: ctx.programId, runId: req.runId, kind: req.kind, rule: v.rule };
+    const gone = this.voidReason(ctx.programId, req.runId);
+    if (gone) {
+      this.fact(ctx.programId, { action: 'confirmation refused', ...base, reason: gone });
+      return false;
+    }
     if (v.verdict === 'allow' && PRE_ANSWER_RULES.has(v.rule)) {
       this.fact(ctx.programId, {
         action: 'pre-answered',
@@ -108,20 +127,79 @@ export class ConfirmGate {
     this.d.feed.line(`${ctx.wpId}: a question waits for you (${rule})`, ctx.programId, [
       { kind: 'escalation', id },
     ]);
-    return this.wait(ctx.programId, id, now.getTime() + this.d.waitMs());
+    return this.wait(ctx.programId, id, req.runId, now.getTime() + this.d.waitMs());
   }
 
-  private async wait(programId: string, id: string, until: number): Promise<boolean> {
-    for (;;) {
-      const x = this.d.store.read(programId).state.escalations.find((e) => e.id === id);
-      if (x?.answer) return x.answer === 'yes';
-      if (this.d.clock().getTime() >= until) break;
-      await new Promise((r) => setTimeout(r, this.pollMs));
+  /**
+   * The guard cancelled or stopped a run (P5-R1, D-035): its questions end now, as a no,
+   * and expire in the store, so a late yes is refused. Other kernel cancels arrive here too
+   * (`cancelConfirmations`); the poll also notices them on its own.
+   */
+  abandon(runId: string, why: string): void {
+    for (const w of this.waiting.values()) if (w.runId === runId) w.wake(why);
+  }
+
+  /** Why a run's question was voided (once): its settlement records it as cancelled. */
+  takeVoided(runId: string): string | undefined {
+    const why = this.voided.get(runId);
+    this.voided.delete(runId);
+    return why;
+  }
+
+  /** Why a question of this run can no longer be answered yes, if it cannot (P5-R1). */
+  private voidReason(programId: string, runId: string | undefined): string | undefined {
+    const killed = attempt(() => this.d.store.config().portfolio.killSwitch);
+    if (killed) return 'kill switch on';
+    const status = attempt(() => this.d.store.read(programId).state.status);
+    if (status === 'stopped' || status === 'delivered') return `program ${status}`;
+    if (runId === undefined) return undefined;
+    // A run this kernel does not know (a test's fake) is judged on the store alone.
+    const state = attempt(() => this.d.kernel.runInfo(runId).state);
+    if (!state || !ENDED.has(state)) return undefined;
+    return CANCELLED.has(state) ? 'run cancelled' : `run ${state}`;
+  }
+
+  private async wait(
+    programId: string,
+    id: string,
+    runId: string | undefined,
+    until: number,
+  ): Promise<boolean> {
+    const w: Waiting = { runId, wake: () => undefined };
+    let woke: string | undefined;
+    this.waiting.set(id, w);
+    try {
+      for (;;) {
+        const why = woke ?? this.voidReason(programId, runId);
+        if (why) {
+          if (runId !== undefined) this.voided.set(runId, why);
+          return await this.close(programId, id, why);
+        }
+        const x = this.d.store.read(programId).state.escalations.find((e) => e.id === id);
+        if (x?.answer) return x.answer === 'yes';
+        if (this.d.clock().getTime() >= until) return await this.close(programId, id);
+        await new Promise<void>((resolve) => {
+          const t = setTimeout(resolve, this.pollMs);
+          w.wake = (reason) => {
+            woke ??= reason;
+            clearTimeout(t);
+            resolve();
+          };
+        });
+      }
+    } finally {
+      this.waiting.delete(id);
     }
-    // Decided under the lock: an answer that lands now is not lost to the expiry.
+  }
+
+  /**
+   * Ends a question under the lock: on expiry an answer that lands now is not lost; when
+   * the run was cancelled or stopped (`why`), the answer is a no whatever was said.
+   */
+  private async close(programId: string, id: string, why?: string): Promise<boolean> {
     const late = await this.d.store.locked(() => {
       const x = this.d.store.read(programId).state.escalations.find((e) => e.id === id);
-      if (x?.answer) return x.answer === 'yes';
+      if (x?.answer) return x.answer === 'yes' && !why;
       this.d.store.updateMeta(programId, (m) => {
         const e = m.escalations[id];
         if (e) e.expired = true;
@@ -130,7 +208,12 @@ export class ConfirmGate {
     });
     if (late !== undefined) return late;
     this.d.feed.notify('enterprise.inbox', { programId, escalationId: id, state: 'expired' });
-    this.fact(programId, { action: 'question expired', programId, escalationId: id });
+    this.fact(programId, {
+      action: 'question expired',
+      programId,
+      escalationId: id,
+      why: why ?? 'the wait ended',
+    });
     return false;
   }
 

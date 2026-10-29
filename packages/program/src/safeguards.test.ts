@@ -146,6 +146,8 @@ describe('approvals (S10 R8)', () => {
       'confirm.exec',
       'confirm.outside',
       'confirm.control',
+      // P5-R3: a pack zone relaxation or a workspace opt-in.
+      'confirm.zone',
       'x',
     ])
       expect(approvalClass({ rule })).toBe('consequential');

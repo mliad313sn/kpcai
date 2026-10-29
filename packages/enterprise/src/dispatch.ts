@@ -238,6 +238,10 @@ async function settle(c: Ctx, runId: string, o: RunOutcome | undefined): Promise
   if (!live) return;
   await Promise.race([live.ready, new Promise((r) => setTimeout(r, 30_000).unref())]);
   const r = resultOf(c, runId, live.sessionId, o);
+  // P5-R1: a run cancelled (or killed, stopped) while it waited on its start question is
+  // cancelled, not "not run".
+  const voided = c.gate.takeVoided(runId);
+  if ((live.guard === 'cancelled' || voided) && r.status === 'not_run') r.status = 'cancelled';
   const now = c.clock();
   await c.store.locked(() => {
     const breach = failOutsidePolicy(c, live, r);
