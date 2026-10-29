@@ -16,6 +16,8 @@ export interface LiveRun {
   /** Resolves once the machine recorded (or refused) the start: settle waits for it. */
   ready: Promise<void>;
   markReady: () => void;
+  /** What the run guard did to it (P5-F1): paused with its program, or cancelled. */
+  guard?: 'paused' | 'cancelled';
 }
 
 /** The kernel seen from the daemon: a `RunStarter` whose cached plans can be dropped. */
@@ -59,11 +61,16 @@ export function sessionCache(kernel: Kernel): (programId: string | undefined) =>
   };
 }
 
+/** A call that may throw (a kernel refusal, an unknown run, an unreadable file): undefined then. */
+export function attempt<T>(fn: () => T): T | undefined {
+  try {
+    return fn();
+  } catch {
+    return undefined;
+  }
+}
+
 /** Cancels a kernel run; false when the kernel does not know it (another process's run). */
 export function cancelRun(c: Pick<Ctx, 'kernel'>, runId: string): boolean {
-  try {
-    return c.kernel.cancel(runId);
-  } catch {
-    return false;
-  }
+  return attempt(() => c.kernel.cancel(runId)) === true;
 }

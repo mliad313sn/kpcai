@@ -24,6 +24,15 @@ const USAGE = [
 
 type Ctx = { io: Io; rt: EnterpriseRuntime; args: string[]; o: ReportCliOptions };
 
+/**
+ * "verified" is a delivery's word only (ADR-0031, P5-F7): any other report is "not a
+ * delivery", whatever its flag says. `kpai program show` uses the same words.
+ */
+export function deliveryWord(r: { kind: string; verified: boolean }): string {
+  if (r.kind !== 'final') return 'not a delivery';
+  return r.verified ? 'verified' : 'not verified';
+}
+
 function list({ io, rt, args }: Ctx): number {
   const id = args[0];
   if (!id) return usage(io);
@@ -31,7 +40,7 @@ function list({ io, rt, args }: Ctx): number {
   if (!all.length) io.out('no reports yet\n');
   for (const r of all)
     io.out(
-      `${r.reportId}  ${r.kind.padEnd(9)} ${r.at}  ${r.kind !== 'final' ? '-' : r.verified ? 'verified' : 'not verified'}  ${r.channels.map(clean).join(',')}\n`,
+      `${r.reportId}  ${r.kind.padEnd(9)} ${r.at}  ${deliveryWord(r)}  ${r.channels.map(clean).join(',')}\n`,
     );
   return 0;
 }

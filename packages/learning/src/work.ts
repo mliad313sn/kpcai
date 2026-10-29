@@ -97,7 +97,10 @@ function onResponse(w: NodeWork, e: JournalEvent, call: CallInfo | undefined): v
 /**
  * A `test.run` result (R-505): the command it ran must be a real test command (no dry run,
  * listing or `--passWithNoTests`, P4-F10) and its parsed status decides: passed 1, failed
- * or timed out 0; no test ran, a refused start or a cancel prove nothing.
+ * or timed out 0; no test ran, a refused start or a cancel prove nothing. Nor does a run
+ * whose own test configuration the run had changed (`tampered`, P5-F4): no V2, grade or DVO.
+ * When the configuration could not be checked (`configChecked: false`, no git), a failure
+ * still counts but a pass proves nothing (D-035).
  */
 function testRunResult(meta: unknown): boolean | undefined {
   const m = (meta ?? {}) as {
@@ -105,11 +108,15 @@ function testRunResult(meta: unknown): boolean | undefined {
     args?: unknown;
     status?: unknown;
     timedOut?: unknown;
+    tampered?: unknown;
+    configChecked?: unknown;
   };
+  if (m.tampered === true) return undefined;
+  const unchecked = m.configChecked === false;
   const args = Array.isArray(m.args) ? m.args.map(String) : [];
   if (typeof m.command !== 'string' || !isTestCommand(m.command, args)) return undefined;
-  if (m.status === 'passed') return true;
   if (m.status === 'failed' || m.timedOut === true) return false;
+  if (m.status === 'passed' && !unchecked) return true;
   return undefined;
 }
 
@@ -127,8 +134,16 @@ function testOutcome(e: JournalEvent): boolean | undefined {
   const input = (p.input ?? {}) as { command?: unknown; args?: unknown };
   const args = Array.isArray(input.args) ? input.args.map(String) : [];
   if (typeof input.command !== 'string' || !isTestCommand(input.command, args)) return undefined;
-  const meta = (p.meta ?? {}) as { exitCode?: unknown; timedOut?: unknown; aborted?: unknown };
-  return testRunOutcome({ ...meta, result: p.result });
+  const meta = (p.meta ?? {}) as {
+    exitCode?: unknown;
+    timedOut?: unknown;
+    aborted?: unknown;
+    tampered?: unknown;
+    configChecked?: unknown;
+  };
+  if (meta.tampered === true) return undefined; // P5-F4, as for test.run
+  const outcome = testRunOutcome({ ...meta, result: p.result });
+  return outcome === true && meta.configChecked === false ? undefined : outcome;
 }
 
 function duringRun(works: Map<string, NodeWork>, events: readonly JournalEvent[]): void {

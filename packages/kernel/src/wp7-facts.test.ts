@@ -30,7 +30,11 @@ const def = (name: string, risk: ToolDefinition['risk'], source = 'builtin'): To
 describe('WP7-F2: D-028 facts per confirmed tool', () => {
   it('only jailed builtin writers are in the worktree; unknown tools are destructive', () => {
     const run = { inWorktree: true, physical: false };
-    expect(toolFacts(def('fs.write', 'write'), run)).toEqual({ ...run, risk: 'write' });
+    expect(toolFacts(def('fs.write', 'write'), run)).toEqual({
+      ...run,
+      risk: 'write',
+      control: false,
+    });
     expect(toolFacts(def('git.apply', 'write'), run).inWorktree).toBe(true);
     expect(toolFacts(def('shell.run', 'destructive'), run).inWorktree).toBe(false);
     expect(toolFacts(def('test.run', 'write'), run).inWorktree).toBe(false);
@@ -39,10 +43,42 @@ describe('WP7-F2: D-028 facts per confirmed tool', () => {
       inWorktree: false,
       physical: false,
       risk: 'destructive',
+      control: false,
     });
     expect(toolFacts(def('fs.write', 'write'), { ...run, inWorktree: false }).inWorktree).toBe(
       false,
     );
+  });
+
+  it('a builtin write to a control file says so; other writes and tools do not (D-035)', () => {
+    const run = { inWorktree: true, physical: false };
+    const fsw = def('fs.write', 'write');
+    expect(toolFacts(fsw, run, { path: 'package.json', content: '{}' }).control).toBe(true);
+    expect(toolFacts(fsw, run, { path: '.kpstudio/test.json' }).control).toBe(true);
+    expect(toolFacts(def('fs.delete', 'write'), run, { path: '.claude/x.md' }).control).toBe(true);
+    expect(toolFacts(fsw, run, { path: 'src/a.ts', content: '' }).control).toBe(false);
+    const patch = 'diff --git a/vitest.config.ts b/vitest.config.ts\n--- a/vitest.config.ts\n';
+    expect(toolFacts(def('git.apply', 'write'), run, { patch }).control).toBe(true);
+    expect(toolFacts(def('fs.write', 'write', 'mcp:x'), run, { path: '.mcp.json' }).control).toBe(
+      false, // not confined: inWorktree is already false, so never pre-answered
+    );
+  });
+
+  it('the tracked bus exposes the input of the call in progress', async () => {
+    const inner: ToolBus = {
+      list: () => [def('fs.write', 'write')],
+      close: async () => undefined,
+      async call(_c: ToolCall, ctx: ToolContext) {
+        await ctx.confirm('q');
+        return { content: 'ok', isError: false };
+      },
+    };
+    const t = trackedBus(inner);
+    let seen: unknown;
+    const ctx = { confirm: async () => ((seen = t.input()), true) } as unknown as ToolContext;
+    await t.bus.call({ id: '1', name: 'fs.write', input: { path: 'package.json' } }, ctx);
+    expect(seen).toEqual({ path: 'package.json' });
+    expect(t.input()).toBeUndefined();
   });
 
   it('each concurrent call sees its own tool', async () => {

@@ -4,12 +4,11 @@
  * so pause, resume and stop stay one action away; the team, the live activity and the
  * reports on the right. "Stop everything" is always in the header (Simplicity Charter §2).
  */
-import { useEffect, useRef } from 'react';
+import { useRef } from 'react';
 import { t, type Key } from '../../i18n/core';
 import { summaryCounts } from '../../enterprise/derive';
 import { kill, loadSnapshot, unkill } from '../../enterprise/actions';
 import { patchUi, useEnt, type EntPane } from '../../enterprise/store';
-import { useStudio } from '../../store/store';
 import { ActivityFeed } from './Activity';
 import { Gauges } from './Gauges';
 import { HeartbeatBadge, HeartbeatBanner } from './Heartbeat';
@@ -161,17 +160,8 @@ function StatusBody() {
   return <p className="muted empty">{t('ent.loading')}</p>;
 }
 
-/** Loads the snapshot once connected, and again on every reconnect (connection.ts). */
-function useSnapshot(): void {
-  const conn = useStudio((s) => s.conn);
-  const status = useEnt((s) => s.ui.status);
-  useEffect(() => {
-    if (conn === 'open' && status === 'idle') void loadSnapshot();
-  }, [conn, status]);
-}
-
+/** The snapshot is loaded by the App for every tier (`useEnterpriseWatch`). */
 export function EnterpriseView() {
-  useSnapshot();
   const ready = useEnt((s) => s.ui.status === 'ready');
   return (
     <main className="enterprise" aria-labelledby="ent-title">

@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { patch, setPrefs, studio, useStudio } from '../store/store';
 import type { View } from '../store/types';
 import { t } from '../i18n/core';
+import { enterprise } from '../enterprise/store';
+import { keepEnterprise, visibility } from '../store/tier';
 import { stateLabel } from './StateBadge';
 import { activeRun } from './view';
 import { applyTheme, resolveTheme } from './theme';
@@ -45,8 +47,12 @@ export function useDocumentTitle(): void {
   }, [state, planning]);
 }
 
-/** Switches between the run console and the Enterprise view; focus goes to its heading. */
+/**
+ * Switches between the run console and the Enterprise view; focus goes to its heading.
+ * Once shown, the Enterprise view stays reachable on every tier (Charter §3, P5-F5).
+ */
 export function showView(view: View): void {
+  if (view === 'enterprise') keepEnterprise();
   patch({ view });
   requestAnimationFrame(() =>
     document.getElementById(view === 'enterprise' ? 'ent-title' : 'zone-center-heading')?.focus(),
@@ -75,12 +81,18 @@ function isEditable(t: EventTarget | null): boolean {
   return !!el && (el.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName));
 }
 
+/** The Enterprise view is on offer to this viewer (tier, program, or chosen once). */
+export function enterpriseShown(): boolean {
+  return visibility(studio.getState().prefs, enterprise.getState().data.programs.length).enterprise;
+}
+
 /**
  * Ctrl/Cmd+K palette, `/` focuses the command bar, Alt+1..5 focuses a zone, Alt+E switches
- * between the workspace and the Enterprise view.
+ * between the workspace and the Enterprise view (when this viewer's tier shows it).
  */
 export function onGlobalKey(e: KeyboardEvent): void {
   if (e.altKey && !e.ctrlKey && !e.metaKey && e.code === 'KeyE') {
+    if (!enterpriseShown()) return;
     e.preventDefault();
     showView(studio.getState().view === 'enterprise' ? 'workspace' : 'enterprise');
   } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {

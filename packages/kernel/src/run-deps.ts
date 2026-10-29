@@ -137,7 +137,7 @@ async function runTools(
     inWorktree: inWorktree(i.root, host.cwd),
     physical: physicalPacks(i.plan.packs.selected),
   };
-  return { tools, facts: () => toolFacts(tracked.current(), run) };
+  return { tools, facts: () => toolFacts(tracked.current(), run, tracked.input()) };
 }
 
 export async function runDeps(i: DepsInput): Promise<RunDeps> {

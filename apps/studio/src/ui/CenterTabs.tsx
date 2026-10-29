@@ -9,6 +9,8 @@ import { EvidenceView } from './Evidence';
 import { MemoryView } from './MemoryView';
 import { RunsView } from './RunsView';
 import { ToolsView } from './ToolsView';
+import type { Visibility } from '../store/tier';
+import { useVisibility } from './Tier';
 
 export const TABS: Array<{ id: Tab; label: Key }> = [
   { id: 'conversation', label: 'tab.conversation' },
@@ -22,13 +24,21 @@ export const TABS: Array<{ id: Tab; label: Key }> = [
   { id: 'files', label: 'tab.files' },
 ];
 
+/** The tabs this viewer's tier shows (Tools & skills from Regular up, Charter §3). */
+export function visibleTabs(v: Pick<Visibility, 'tools'>): typeof TABS {
+  return v.tools ? TABS : TABS.filter((x) => x.id !== 'tools');
+}
+
 function Placeholder({ what }: { what: Key }) {
   return <p className="muted empty">{t(what)}</p>;
 }
 
 /** WAI-ARIA tabs with automatic activation: arrows, Home and End move between tabs. */
 export function CenterTabs() {
-  const tab = useStudio((s) => s.tab);
+  const tabs = visibleTabs(useVisibility());
+  const chosen = useStudio((s) => s.tab);
+  // A tab the tier hides (say, Tools after moving to Beginner) falls back to the conversation.
+  const tab = tabs.some((x) => x.id === chosen) ? chosen : 'conversation';
   const patches = useStudio((s) => (s.activeRunId ? s.runs[s.activeRunId]?.patches.length : 0));
   const pending = useStudio((s) => s.memory.pending.length);
   return (
@@ -36,7 +46,7 @@ export function CenterTabs() {
       <h2 id="zone-center-heading" className="sr-only" tabIndex={-1}>
         {t('zone.workspace')}
       </h2>
-      <TabList tab={tab} patches={patches ?? 0} pending={pending} />
+      <TabList tabs={tabs} tab={tab} patches={patches ?? 0} pending={pending} />
       <TabPanel tab={tab} />
     </section>
   );
@@ -48,11 +58,11 @@ function tabLabel(tab: (typeof TABS)[number], patches: number, pending: number):
   return t(tab.label);
 }
 
-function TabList(props: { tab: Tab; patches: number; pending: number }) {
-  const { tab: current, patches, pending } = props;
+function TabList(props: { tabs: typeof TABS; tab: Tab; patches: number; pending: number }) {
+  const { tabs, tab: current, patches, pending } = props;
   const refs = useRef<Array<HTMLButtonElement | null>>([]);
   const onKeyDown = (e: React.KeyboardEvent, i: number) => {
-    const n = TABS.length;
+    const n = tabs.length;
     const moves: Record<string, number> = {
       ArrowRight: (i + 1) % n,
       ArrowLeft: (i - 1 + n) % n,
@@ -62,12 +72,12 @@ function TabList(props: { tab: Tab; patches: number; pending: number }) {
     const to = moves[e.key] ?? -1;
     if (to < 0) return;
     e.preventDefault();
-    patch({ tab: TABS[to]!.id });
+    patch({ tab: tabs[to]!.id });
     refs.current[to]?.focus();
   };
   return (
     <div role="tablist" aria-label={t('tab.list')} className="tabs">
-      {TABS.map((tab, i) => (
+      {tabs.map((tab, i) => (
         <button
           key={tab.id}
           ref={(el) => {

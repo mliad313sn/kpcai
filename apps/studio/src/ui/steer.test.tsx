@@ -120,7 +120,8 @@ describe('editable plan (R-301) and cost band (R-302)', () => {
 
 describe('routing panel (R-303), steering (R-304), live meter (R-302)', () => {
   it('shows reason, score parts and runner-up one click from the graph', async () => {
-    ({ kernel } = await renderStudio());
+    // The score breakdown is an expert panel (Simplicity Charter §3).
+    ({ kernel } = await renderStudio({}, { tier: 'expert' }));
     const user = userEvent.setup();
     await plan(user);
     await user.click(screen.getByRole('button', { name: /#impl/ }));

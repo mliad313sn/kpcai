@@ -11,11 +11,14 @@ export const ASK_ACTION = 'confirmation answered';
 
 /**
  * Consequential (S10 R8, METRICS-NORTH-STAR G2): a write to the user's own tree, a restore,
- * a spend question, a destructive or physical step. Writes into a run's worktree, memory
- * and read or write tool calls are trivial.
+ * a spend question, a destructive or physical step, a control-file write, and a tool that
+ * reaches past the run's worktree with more than read risk (`test.run`, `shell.run`,
+ * browser, MCP; D-035). Writes into a run's worktree, memory and read tool calls are trivial.
  */
 export function consequentialAsk(req: ConfirmRequest): boolean {
   if (req.physical === true || req.risk === 'destructive') return true;
+  if (req.control === true || req.overCap === true) return true;
+  if (req.kind === 'tool') return req.risk !== 'read' && req.inWorktree !== true;
   if (req.kind === 'budget' || req.kind === 'restore' || req.kind === 'dispute') return true;
   if (req.kind === 'patch' || req.kind === 'artifact') return req.inWorktree !== true;
   return false;

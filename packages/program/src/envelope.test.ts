@@ -233,11 +233,11 @@ describe('confirmations', () => {
   it('pre-answers budget within the envelope only, with an amount', () => {
     const s = running();
     expect(checkAction(s, c({ confirm: 'budget', amountUsd: 1 }), NOW).verdict).toBe('allow');
-    expect(checkAction(s, c({ confirm: 'budget' }), NOW).rule).toBe('confirm.budget');
+    expect(checkAction(s, c({ confirm: 'budget' }), NOW).rule).toBe('confirm.overcap');
     expect(checkAction(s, c({ confirm: 'budget', amountUsd: 50 }), NOW).verdict).toBe('escalate');
     expect(
       checkAction({ ...s, status: 'approved' }, c({ confirm: 'budget', amountUsd: 1 }), NOW).rule,
-    ).toBe('confirm.budget');
+    ).toBe('confirm.unbounded');
     const none = running({ envelope: { totalCapUsd: 10 } });
     expect(checkAction(none, c({ confirm: 'budget', amountUsd: 1 }), NOW).verdict).toBe('escalate');
   });
@@ -245,10 +245,35 @@ describe('confirmations', () => {
     const s = running();
     expect(checkAction(s, c({ confirm: 'patch', risk: 'write' }), NOW).verdict).toBe('allow');
     expect(checkAction(s, c({ confirm: 'patch', inWorktree: false }), NOW).rule).toBe(
-      'confirm.write',
+      'confirm.outside',
     );
     const none = running({ envelope: { totalCapUsd: 10 } });
     expect(checkAction(none, c({ confirm: 'artifact' }), NOW).verdict).toBe('escalate');
+  });
+});
+
+describe('confirmation classes (D-035, P5-F2)', () => {
+  const c = (o: Record<string, unknown>) => ({ kind: 'confirm', inWorktree: true, ...o });
+  const rule = (o: Record<string, unknown>, s = running()) => checkAction(s, c(o), NOW).rule;
+  it('spend past the accepted cap or of an unknown amount is over-cap, even pre-answered', () => {
+    expect(rule({ confirm: 'budget', amountUsd: 1, overCap: true })).toBe('confirm.overcap');
+    expect(rule({ confirm: 'budget' })).toBe('confirm.overcap');
+  });
+  it('in-envelope spend without the pre-answer stays trivial; above it never is', () => {
+    const none = running({ envelope: { totalCapUsd: 10 } });
+    expect(rule({ confirm: 'budget', amountUsd: 1 }, none)).toBe('confirm.budget');
+    expect(rule({ confirm: 'budget', amountUsd: 50 }, none)).toMatch(/^budget\./);
+  });
+  it('a tool past the worktree with more than read risk runs code: confirm.exec', () => {
+    expect(rule({ confirm: 'tool', risk: 'write', inWorktree: false })).toBe('confirm.exec');
+    expect(rule({ confirm: 'tool', inWorktree: false })).toBe('confirm.exec');
+    expect(rule({ confirm: 'tool', risk: 'read', inWorktree: false })).toBe('confirm.write');
+  });
+  it('writes outside a worktree and control-file writes are never pre-answered', () => {
+    expect(rule({ confirm: 'artifact', inWorktree: false })).toBe('confirm.outside');
+    expect(rule({ confirm: 'tool', risk: 'write', control: true })).toBe('confirm.control');
+    expect(rule({ confirm: 'patch', risk: 'write', control: true })).toBe('confirm.control');
+    expect(rule({ confirm: 'tool', risk: 'write' })).toBe('confirm.worktree');
   });
 });
 

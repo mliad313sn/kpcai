@@ -7,6 +7,8 @@
 import type { RunOutcome } from '@kernelpai/kernel';
 import {
   delegate,
+  policyBreach,
+  policyFor,
   settleEvent,
   settled,
   started as startedQueue,
@@ -16,7 +18,9 @@ import {
 } from '@kernelpai/program';
 import { cleanFinish, runAssurance } from './assure.js';
 import { newId } from './confirm-gate.js';
-import { cancelRun, type Ctx } from './context.js';
+import { classOf } from '@kernelpai/learning';
+import { cancelRun, type Ctx, type LiveRun } from './context.js';
+import { pauseFor } from './program-step.js';
 import type { StartedHandle } from './starter.js';
 
 /** A review job is keyed by its phase id; a work job by its work package id. */
@@ -36,10 +40,12 @@ export async function launch(c: Ctx, pick: Pick): Promise<void> {
   try {
     const { state } = c.store.read(job.programId);
     const now = c.clock();
+    const portfolio = c.store.config().portfolio.sources;
     const d = await delegate(state, job.wpId, c.starter, {
       now,
       purpose,
       escalationId: newId('esc'),
+      ...(portfolio ? { portfolio } : {}),
     });
     await c.store.locked(() => record(c, pick, d, now));
   } catch (err) {
@@ -179,8 +185,52 @@ export function resultOf(
     evidence,
     ...(a.label !== 'V3' ? { assurance: a.label } : {}),
     ...(a.testsPassed !== undefined ? { testsPassed: a.testsPassed } : {}),
+    ...usedBy(o),
     basis: a.basis,
   };
+}
+
+/**
+ * What the run really used and delivered (ADR-0033 D-028 outcome fields): the providers
+ * that served its steps, with their source (P5-F3), and whether its outputs are code or
+ * documents (P5-F8, docs/metrics/NORTH-STAR.md classes).
+ */
+function usedBy(o: RunOutcome | undefined): {
+  sources?: RunResult['sources'];
+  deliverable?: RunResult['deliverable'];
+} {
+  if (o?.status !== 'finished') return {};
+  const files = [...o.patches.flatMap((p) => p.files), ...o.artifacts.map((a) => a.path)];
+  const kind = o.patches.length ? 'patch' : o.artifacts.length ? 'artifact' : 'merge';
+  const delivered = o.patches.length + o.artifacts.length > 0;
+  return {
+    ...(o.sources?.length ? { sources: o.sources } : {}),
+    ...(delivered ? { deliverable: classOf({ kind, files }) } : {}),
+  };
+}
+
+/**
+ * P5-F3: a run that used a provider outside its work package's policy (the portfolio's
+ * level included) fails closed, and the Sponsor is asked. Inside `locked`.
+ */
+function failOutsidePolicy(c: Ctx, live: LiveRun, r: RunResult): string[] {
+  const { state } = c.store.read(live.programId);
+  const policy = policyFor(state.charter, live.wpId, c.store.config().portfolio.sources);
+  const breach = policyBreach(policy, r);
+  if (!breach.length) return breach;
+  if (r.status === 'finished') r.status = 'failed';
+  r.evidence.push(...breach.map((b) => `policy-breach:${b}`));
+  c.fact(live.programId, { action: 'run outside its source policy', runId: r.runId, breach });
+  return breach;
+}
+
+function askAboutBreach(c: Ctx, live: LiveRun, runId: string, breach: string[], now: Date): void {
+  pauseFor(c, live.programId, now, {
+    kind: 'policy',
+    rule: 'source.policy.breach',
+    question: `${live.wpId}: run ${runId} used ${breach.join(', ')}, outside its source policy. It was failed closed and its output is not used. Resume the program?`,
+    evidence: [{ kind: 'run', id: runId }],
+  });
 }
 
 async function settle(c: Ctx, runId: string, o: RunOutcome | undefined): Promise<void> {
@@ -190,7 +240,9 @@ async function settle(c: Ctx, runId: string, o: RunOutcome | undefined): Promise
   const r = resultOf(c, runId, live.sessionId, o);
   const now = c.clock();
   await c.store.locked(() => {
+    const breach = failOutsidePolicy(c, live, r);
     const t = c.store.applyLocked(live.programId, settleEvent(r), 'kernel', now);
+    if (breach.length) askAboutBreach(c, live, runId, breach, now);
     c.store.updateMeta(live.programId, (m) => {
       const x = m.runs[runId];
       if (x) {

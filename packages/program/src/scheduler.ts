@@ -40,7 +40,11 @@ export type Job = z.infer<typeof JobSchema>;
 export const PortfolioSchema = z.strictObject({
   id: IdSchema,
   capUsd: UsdSchema,
-  /** Global kill switch: nothing starts; the daemon cancels what runs. */
+  /**
+   * Global kill switch: nothing starts. Live runs are cancelled by the process that holds
+   * them: at once in the process that turned it on, and by the daemon's run guard, which
+   * reads this setting on every tick and every 250 ms, whichever process set it (P5-F1).
+   */
   killSwitch: z.boolean().default(false),
   limits: z.strictObject({
     total: z.number().int().min(1).max(256),
@@ -224,7 +228,10 @@ export function rateLimited(
   };
 }
 
-/** Kill switch: what the daemon must cancel now. Pending jobs stay queued, held. */
+/**
+ * Kill switch: the jobs whose runs are live now (journaled with the switch). Pending jobs
+ * stay queued, held. The runs themselves are cancelled by the daemon's run guard (P5-F1).
+ */
 export function killList(q: Queue): string[] {
   return q.running.map((r) => r.job.id);
 }

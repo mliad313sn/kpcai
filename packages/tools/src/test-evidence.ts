@@ -22,10 +22,17 @@ export interface TestEvidence extends TestCounts {
   exitCode: number | null;
   /** Failing test names, from the test output (untrusted text), at most 20. */
   failing: string[];
+  /**
+   * P5-F4 (D-035): test configuration files the run changed before this test run. A
+   * tampered run is shown to the critic and counts as no test evidence anywhere.
+   */
+  tampered?: string[];
 }
 
 export const MAX_FAILING = 20;
 const FAILING_HEAD = 'failing tests:';
+const TAMPERED_HEAD = 'tampered (this run changed its own test configuration; not test evidence): ';
+const MAX_TAMPERED = 10;
 const HEADER =
   /^test\.run: (passed|failed|no-tests|error) \(([\w.-]{1,32}), exit (-?\d+|none)\)(?:: (\d+|\?) passed, (\d+|\?) failed, (\d+|\?) skipped)?$/;
 
@@ -40,9 +47,12 @@ export function formatEvidence(e: TestEvidence): string {
       ? ''
       : `: ${n(e.passed)} passed, ${n(e.failed)} failed, ${n(e.skipped)} skipped`;
   const head = `test.run: ${e.status} (${e.runner}, exit ${e.exitCode ?? 'none'})${counts}`;
-  if (e.failing.length === 0) return head;
+  const tampered = e.tampered?.length
+    ? [TAMPERED_HEAD + e.tampered.slice(0, MAX_TAMPERED).map(oneLine).join(', ')]
+    : [];
+  if (e.failing.length === 0) return [head, ...tampered].join('\n');
   const names = e.failing.slice(0, MAX_FAILING).map((f) => `- ${oneLine(f)}`);
-  return [head, FAILING_HEAD, ...names].join('\n');
+  return [head, ...tampered, FAILING_HEAD, ...names].join('\n');
 }
 
 function oneLine(s: string): string {
@@ -57,9 +67,11 @@ export function readTestEvidence(content: string): TestEvidence | undefined {
   const lines = content.split('\n');
   const m = HEADER.exec(lines[0] ?? '');
   if (!m) return undefined;
+  const t = lines[1]?.startsWith(TAMPERED_HEAD) ? lines[1].slice(TAMPERED_HEAD.length) : undefined;
+  const at = t === undefined ? 1 : 2;
   const failing: string[] = [];
-  if (lines[1] === FAILING_HEAD) {
-    for (const l of lines.slice(2, 2 + MAX_FAILING)) {
+  if (lines[at] === FAILING_HEAD) {
+    for (const l of lines.slice(at + 1, at + 1 + MAX_FAILING)) {
       if (!l.startsWith('- ')) break;
       failing.push(l.slice(2));
     }
@@ -72,6 +84,7 @@ export function readTestEvidence(content: string): TestEvidence | undefined {
     failed: num(m[5]),
     skipped: num(m[6]),
     failing,
+    ...(t !== undefined ? { tampered: t.split(', ').filter((f) => f !== '') } : {}),
   };
 }
 
@@ -90,5 +103,6 @@ export function evidenceSummary(e: TestEvidence): string {
     'no-tests': 'no test ran',
     error: 'the test run did not complete',
   }[e.status];
-  return `${what}${counts} [${e.runner}]${names}`.slice(0, 600);
+  const tampered = e.tampered?.length ? ' (tampered: the run changed its test configuration)' : '';
+  return `${what}${counts} [${e.runner}]${tampered}${names}`.slice(0, 600);
 }

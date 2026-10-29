@@ -107,18 +107,48 @@ function checkConfirm(
     return escalate('confirm.destructive', 'destructive action', 'destructive');
   if (a.confirm === 'dispute' || a.confirm === 'memory')
     return escalate(`confirm.${a.confirm}`, 'a human choice by design (R-405, ADR-0027)');
-  if (a.confirm === 'budget') {
-    if (!pre.has('budget-within-envelope') || a.amountUsd === undefined)
-      return escalate('confirm.budget', 'budget question not pre-answered');
-    const phase = state.charter.phases[state.phaseIndex];
-    if ((state.status !== 'running' && state.status !== 'gate') || !phase)
-      return escalate('confirm.budget', 'no phase is running');
-    return withinEnvelope(state, phase, a.amountUsd, 'extra spend');
-  }
-  // tool, patch, artifact: a write (or read) confirmation.
+  if (a.confirm === 'budget') return checkBudgetConfirm(state, pre, a);
+  return checkWriteConfirm(pre, a);
+}
+
+/**
+ * A spend question (D-035, P5-F2): trivial only when its amount is known and fits the
+ * envelope; spend past a cap already accepted, an unknown amount or one above the envelope
+ * is consequential (`confirm.overcap` or the envelope's own budget rule).
+ */
+function checkBudgetConfirm(
+  state: ProgramState,
+  pre: ReadonlySet<string>,
+  a: Extract<ProposedAction, { kind: 'confirm' }>,
+): Verdict {
+  if (a.overCap || a.amountUsd === undefined)
+    return escalate('confirm.overcap', 'spend past an accepted cap, or of an unknown amount');
+  const phase = state.charter.phases[state.phaseIndex];
+  if ((state.status !== 'running' && state.status !== 'gate') || !phase)
+    return escalate('confirm.unbounded', 'no phase is running: the envelope cannot bound it');
+  const v = withinEnvelope(state, phase, a.amountUsd, 'extra spend');
+  if (v.verdict !== 'allow' || pre.has('budget-within-envelope')) return v;
+  return escalate('confirm.budget', 'in-envelope spend, not pre-answered');
+}
+
+/**
+ * tool, patch, artifact (D-035, P5-F2): a control-file write (`confirm.control`), a tool
+ * that reaches past the worktree with more than read risk (`confirm.exec`: test.run,
+ * shell.run, browser, MCP) and a write outside a worktree (`confirm.outside`) are
+ * consequential; `write-in-worktree` covers none of them.
+ */
+function checkWriteConfirm(
+  pre: ReadonlySet<string>,
+  a: Extract<ProposedAction, { kind: 'confirm' }>,
+): Verdict {
+  if (a.control) return escalate('confirm.control', 'writes a control file of the project');
+  if (!a.inWorktree && a.confirm === 'tool' && a.risk !== 'read')
+    return escalate('confirm.exec', 'runs code or acts outside the run worktree');
+  if (!a.inWorktree && a.confirm !== 'tool')
+    return escalate('confirm.outside', 'writes outside a run worktree');
   if (pre.has('write-in-worktree') && a.inWorktree)
     return allow('confirm.worktree', 'write inside the run worktree, pre-authorised');
-  return escalate('confirm.write', 'write outside a worktree or not pre-authorised');
+  return escalate('confirm.write', 'in-worktree write or read tool, not pre-authorised');
 }
 
 function checkMerge(policy: WritePolicy, a: Extract<ProposedAction, { kind: 'merge' }>): Verdict {

@@ -49,6 +49,17 @@ describe('BudgetGate caps', () => {
     yes.journal.close();
   });
 
+  it('says a cap question is over-cap, with no amount, so no program batches it (D-035)', async () => {
+    const g = gate(undefined);
+    await g.g.allow(CANDIDATE, 'graph total $9.50 > cap $1.00');
+    await g.g.allow(CANDIDATE, NODE_LABEL);
+    expect(g.asked.map((q) => [q.overCap, q.amountUsd])).toEqual([
+      [true, undefined],
+      [true, undefined],
+    ]);
+    g.journal.close();
+  });
+
   it('recognises a node cap whatever the id looks like (NF-1)', async () => {
     const spaced = gate(undefined);
     const label = 'node my node total: up to $0.40 would exceed budgetUsd $0.10 (author)';

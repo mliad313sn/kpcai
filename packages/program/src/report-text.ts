@@ -25,7 +25,8 @@ export interface ReportText {
   phaseBudget: (id: string, committed: string, cap: string) => string;
   bySource: (api: string, localHours: number) => string;
   subscription: (agent: string, runs: number, quota: string, hours: number) => string;
-  gate: (phase: string, verdict: string, reviewer: string) => string;
+  /** `counted` undefined: no machine counted the findings, the Sponsor decided (P5-F6). */
+  gate: (phase: string, verdict: string, reviewer: string, on: string, counted?: number) => string;
   noGates: string;
   decision: (actor: string, text: string) => string;
   noDecisions: string;
@@ -69,7 +70,8 @@ const en: ReportText = {
   phaseBudget: (id, c, cap) => `${id}: ${c} of ${cap}`,
   bySource: (api, h) => `by source: API ${api}, local compute ${h.toFixed(1)} h`,
   subscription: (a, r, q, h) => `subscription ${a}: ${r} runs of ${q}, ${h.toFixed(1)} h`,
-  gate: (p, v, r) => `${p}: ${v} (reviewer ${r})`,
+  gate: (p, v, r, on, n) =>
+    `${p}: ${v} (reviewer ${r} on ${on}; ${n === undefined ? 'the Sponsor decided, findings not counted by a machine' : `${n} open Critical/High`})`,
   noGates: 'no gate closed yet',
   decision: (a, t) => `${a}: "${t}"`,
   noDecisions: 'none',
@@ -113,7 +115,8 @@ const fr: ReportText = {
   phaseBudget: (id, c, cap) => `${id} : ${c} sur ${cap}`,
   bySource: (api, h) => `par source : API ${api}, calcul local ${h.toFixed(1)} h`,
   subscription: (a, r, q, h) => `abonnement ${a} : ${r} exécutions sur ${q}, ${h.toFixed(1)} h`,
-  gate: (p, v, r) => `${p} : ${v} (relecteur ${r})`,
+  gate: (p, v, r, on, n) =>
+    `${p} : ${v} (relecteur ${r} sur ${on} ; ${n === undefined ? 'décision du Sponsor, constats non comptés par une machine' : `${n} Critique/Élevé ouverts`})`,
   noGates: 'aucune porte franchie pour le moment',
   decision: (a, t) => `${a} : « ${t} »`,
   noDecisions: 'aucune',

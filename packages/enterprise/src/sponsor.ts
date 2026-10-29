@@ -7,7 +7,8 @@
  */
 import { KernelError } from '@kernelpai/kernel';
 import { answerBlocker, approvalClass } from '@kernelpai/program';
-import { cancelRun, type Ctx } from './context.js';
+import type { Ctx } from './context.js';
+import { guardRuns } from './guard.js';
 import type { Ref } from './meta.js';
 
 function must(ok: boolean, code: 'refused' | 'not_found', message: string): void {
@@ -30,12 +31,16 @@ export class Sponsor {
     this.c.fact(id, { action: `sponsor ${String(event['type'])}`, programId: id });
     this.c.feed.notify('enterprise.program', { programId: id, status: t.ok ? t.state.status : '' });
     this.c.feed.line(`the Sponsor: ${String(event['type'])}`, id, [], now);
+    guardRuns(this.c);
   }
 
-  /** Stop also cancels the program's live runs; the program stays readable. */
+  /**
+   * Stop also cancels the program's live runs; the program stays readable. Here at once for
+   * this process's runs; a daemon in another process cancels its own on its next guard
+   * check (P5-F1). A pause pauses them the same way (`act`).
+   */
   async stop(id: string, reason: string): Promise<void> {
     await this.act(id, { type: 'stop', reason });
-    for (const [runId, r] of this.c.live) if (r.programId === id) cancelRun(this.c, runId);
   }
 
   /** The Sponsor opened evidence: a run, a diff, a report, an escalation's evidence. */

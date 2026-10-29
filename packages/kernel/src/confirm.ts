@@ -35,6 +35,13 @@ export interface ConfirmRequest {
   inWorktree?: boolean;
   /** The step may actuate a physical device (a selected pack has physical effects, D-019). */
   physical?: boolean;
+  /**
+   * The write touches a control file (D-035, P5-F2): `.kpstudio/`, `.claude/`, `.mcp.json`,
+   * package.json or a test configuration. Never pre-answered, never batch-approved.
+   */
+  control?: boolean;
+  /** For `budget`: spend past a cap the human already accepted (D-035, P5-F2). */
+  overCap?: boolean;
   /** For `patch`: the exact diff that would be applied (shown apart from the question). */
   patch?: string;
   /** For `artifact`: the exact text that would be written, and what it is. */

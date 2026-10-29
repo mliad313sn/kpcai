@@ -8,9 +8,13 @@ import type { Escalation } from './schemas.js';
 export type ApprovalClass = 'trivial' | 'consequential';
 
 /**
- * Low-risk questions only: a write the envelope did not pre-answer and a budget question
- * not pre-answered. Everything else (spend beyond the envelope, merges, widening, gates,
- * progress pauses, destructive or physical steps, disputes, unknown rules) is consequential.
+ * Low-risk questions only: an in-worktree write or read tool call the envelope did not
+ * pre-answer (`confirm.write`) and an in-envelope spend of a known amount not pre-answered
+ * (`confirm.budget`). Everything else is consequential: spend past an accepted cap or of
+ * an unknown amount (`confirm.overcap`) or beyond the envelope, a tool that runs code or
+ * acts past the worktree (`confirm.exec`), a write outside a worktree (`confirm.outside`)
+ * or to a control file (`confirm.control`) (D-035, P5-F2), merges, widening, gates,
+ * progress pauses, destructive or physical steps, disputes and unknown rules.
  */
 const TRIVIAL_RULES: ReadonlySet<string> = new Set(['confirm.write', 'confirm.budget']);
 

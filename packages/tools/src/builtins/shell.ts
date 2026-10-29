@@ -4,6 +4,7 @@ import { checkLexical, resolveInRoot } from '../paths.js';
 import { runProcess } from '../process.js';
 import { detectSandbox, type ShellSandbox } from '../sandbox.js';
 import { fail, ok, ToolError, type LocalTool, type ToolOutcome } from '../types.js';
+import { testConfigTamper } from './test-tamper.js';
 
 /**
  * Commands that only read, classed `write` (confirmed per batch) instead of
@@ -100,6 +101,11 @@ async function runShell(
   const cwd = (await resolveInRoot(ctx.root, '.')).abs;
   const env = options.env ?? process.env;
   const cmd = sandbox.prepare({ command, args: argList(input), cwd, env });
+  // P5-F4: a test command run after the run changed its test configuration is no evidence.
+  const tamper = await testConfigTamper(ctx.root, undefined, {
+    ...(options.env ? { env: options.env } : {}),
+    ...(ctx.signal ? { signal: ctx.signal } : {}),
+  });
   const r = await runProcess({
     ...cmd,
     timeoutMs,
@@ -113,6 +119,7 @@ async function runShell(
     truncated: r.truncated,
     aborted: r.aborted,
     runMs: r.durationMs,
+    ...(tamper.files.length ? { tampered: true, tamperedFiles: tamper.files } : {}),
   };
   const failed = r.error !== undefined || r.timedOut || r.aborted || r.code !== 0;
   return failed ? fail(render(r, timeoutMs), meta) : ok(render(r, timeoutMs), meta);

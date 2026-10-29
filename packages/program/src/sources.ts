@@ -43,6 +43,16 @@ export function permits(p: EffectivePolicy, source: SourceKind, provider: string
   return !p.providers || p.providers.includes(provider);
 }
 
+/** Providers a run used outside its policy (P5-F3): the run then fails closed. */
+export function policyBreach(
+  policy: EffectivePolicy,
+  r: { sources?: ReadonlyArray<{ provider: string; source: SourceKind }> },
+): string[] {
+  return (r.sources ?? [])
+    .filter((x) => !permits(policy, x.source, x.provider))
+    .map((x) => `${x.source}:${x.provider}`);
+}
+
 /**
  * The policy a work package's runs follow: program, then the lead seat's department, then
  * the seat. A review run (keyed by the phase id) follows the review department's.

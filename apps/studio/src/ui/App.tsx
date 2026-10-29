@@ -12,6 +12,7 @@ import { useDocumentTitle, useGlobalKeys, useThemeEffect } from './hooks';
 import { Onboarding } from './Onboarding';
 import { Palette } from './Palette';
 import { Thread } from './Thread';
+import { useEnterpriseWatch, useVisibility } from './Tier';
 import { Splitter } from './Zone';
 
 /** Polite announcements of run state changes, plan readiness and confirmations. */
@@ -70,7 +71,9 @@ export function App({ url }: { url: string }) {
   useGlobalKeys();
   useDocumentTitle();
   const locale = useLocale();
+  useEnterpriseWatch();
   const view = useStudio((s) => s.view);
+  const entShown = useVisibility().enterprise;
   return (
     <div className="studio" key={locale}>
       <a className="skip-link" href="#command-input">
@@ -78,7 +81,7 @@ export function App({ url }: { url: string }) {
       </a>
       <Header url={url} />
       <CommandBar />
-      {view === 'enterprise' ? <EnterpriseView /> : <Workspace />}
+      {view === 'enterprise' && entShown ? <EnterpriseView /> : <Workspace />}
       <LastLog />
       <LiveRegion />
       <Palette />

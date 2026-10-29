@@ -7,6 +7,7 @@ import { useEnt } from '../enterprise/store';
 import { showView } from './hooks';
 import { Modal } from './Modal';
 import { nextTheme } from './Palette';
+import { HeaderStopAll, TierSelect, useVisibility } from './Tier';
 
 const CONN: Record<string, { icon: string; key: Key }> = {
   idle: { icon: '○', key: 'conn.idle' },
@@ -46,8 +47,8 @@ export function LanguageSelect() {
   );
 }
 
-/** Workspace or Enterprise view (R-5E10); Alt+E switches too. */
-function ViewSwitch() {
+/** Workspace or Enterprise view (R-5E10); Alt+E switches too. Beginners read plain words. */
+function ViewSwitch({ plain }: { plain: boolean }) {
   const view = useStudio((s) => s.view);
   const asks = useEnt((s) => (s.ui.status === 'ready' ? s.data.inbox.length : 0));
   return (
@@ -57,7 +58,7 @@ function ViewSwitch() {
         aria-current={view === 'workspace' ? 'page' : undefined}
         onClick={() => showView('workspace')}
       >
-        {t('view.workspace')}
+        {t(plain ? 'view.workspace.plain' : 'view.workspace')}
       </button>
       <button
         type="button"
@@ -65,7 +66,9 @@ function ViewSwitch() {
         onClick={() => showView('enterprise')}
         aria-keyshortcuts="Alt+E"
       >
-        {asks ? t('view.enterpriseAsks', { count: asks }) : t('view.enterprise')}
+        {asks
+          ? t(plain ? 'view.enterpriseAsks.plain' : 'view.enterpriseAsks', { count: asks })
+          : t(plain ? 'view.enterprise.plain' : 'view.enterprise')}
       </button>
     </nav>
   );
@@ -76,6 +79,7 @@ export function Header({ url }: { url: string }) {
   const detail = useStudio((s) => s.connDetail);
   const prefs = useStudio((s) => s.prefs);
   const c = CONN[conn] ?? CONN.idle!;
+  const shown = useVisibility();
   return (
     <header className="app-header">
       <h1 className="brand">KP Studio</h1>
@@ -84,8 +88,9 @@ export function Header({ url }: { url: string }) {
         {t(c.key)}
         {detail && conn !== 'open' ? <span className="muted small"> ({detail})</span> : null}
       </p>
-      <ViewSwitch />
+      {shown.enterprise ? <ViewSwitch plain={shown.plainWords} /> : null}
       <span className="spacer" />
+      <HeaderStopAll />
       <button type="button" onClick={() => patch({ paletteOpen: true })}>
         {t('header.commands')} <kbd>Ctrl K</kbd>
       </button>
@@ -101,6 +106,7 @@ export function Header({ url }: { url: string }) {
       >
         {t('header.compact')}
       </button>
+      <TierSelect />
       <LanguageSelect />
       {(conn === 'unauthorized' || conn === 'idle') && <TokenPrompt url={url} />}
     </header>

@@ -18,7 +18,8 @@ test('the routing panel shows the kernel reason, score, breakdown and runner-up'
   open,
   kernel,
 }) => {
-  const page = await open();
+  // Expert: the score breakdown is an expert panel (Simplicity Charter §3).
+  const page = await open({ tier: 'expert' });
   await connected(page);
   await plan(page, CODE_REQUEST);
   // The router is deterministic: a second plan of the same request gives the same routing.

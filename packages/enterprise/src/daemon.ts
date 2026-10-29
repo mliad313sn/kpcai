@@ -10,16 +10,19 @@ import { randomBytes } from 'node:crypto';
 import { existsSync, readFileSync, rmSync } from 'node:fs';
 import {
   killList,
+  policyFor,
   schedule,
   velocityBlocker,
+  type EffectivePolicy,
   type Job,
   type Pick,
   type Queue,
   type RunRecord,
 } from '@kernelpai/program';
 import type { EnterpriseConfig } from './config.js';
-import { cancelRun, type Ctx } from './context.js';
+import type { Ctx } from './context.js';
 import { launch } from './dispatch.js';
+import { GUARD_MS, guardRuns } from './guard.js';
 import { HEARTBEAT_FILE, Liveness, readHeartbeat } from './liveness.js';
 import { maybeDigest } from './period.js';
 import { stepProgram, type Need } from './program-step.js';
@@ -30,11 +33,13 @@ interface PlannedNeed extends Need {
   capUsd: number;
   providers: string[];
   source: 'local' | 'api' | 'subscription';
+  policy: EffectivePolicy;
 }
 
 export class Daemon {
   readonly liveness: Liveness;
   private timer: NodeJS.Timeout | undefined;
+  private guardTimer: NodeJS.Timeout | undefined;
   private ticking: Promise<void> | undefined;
   private owner = false;
 
@@ -60,12 +65,16 @@ export class Daemon {
     const every = this.c.store.config().tickMs;
     this.timer = setInterval(() => void this.tick(), every);
     this.timer.unref();
+    // P5-F1: a kill, stop or pause from another process reaches this process's runs fast.
+    this.guardTimer = setInterval(() => this.guard(), Math.min(every, GUARD_MS));
+    this.guardTimer.unref();
     return true;
   }
 
   async stop(): Promise<void> {
     if (this.timer) clearInterval(this.timer);
-    this.timer = undefined;
+    if (this.guardTimer) clearInterval(this.guardTimer);
+    this.timer = this.guardTimer = undefined;
     await this.ticking;
     if (this.owner) rmSync(this.c.store.path('daemon.pid'), { force: true });
     this.owner = false;
@@ -77,10 +86,22 @@ export class Daemon {
     return this.ticking;
   }
 
+  /** Cancels or pauses this process's runs per the store (P5-F1); never throws. */
+  guard(): ReturnType<typeof guardRuns> | undefined {
+    try {
+      return guardRuns(this.c);
+    } catch (err) {
+      const why = err instanceof Error ? err.message : String(err);
+      this.c.feed.line(`run guard failed: ${why.slice(0, 200)}`);
+      return undefined;
+    }
+  }
+
   private async pass(): Promise<void> {
+    this.guard();
     const cfg = this.c.store.config();
     const needs = await this.c.store.locked(() => this.steps(cfg));
-    const planned = await this.plan(needs);
+    const planned = await this.plan(needs, cfg);
     const picks = await this.c.store.locked(() => this.enqueue(cfg, planned));
     for (const p of picks) {
       this.c.inflight.add(p.job.id);
@@ -120,12 +141,16 @@ export class Daemon {
     return out;
   }
 
-  private async plan(needs: Need[]): Promise<PlannedNeed[]> {
+  private async plan(needs: Need[], cfg: EnterpriseConfig): Promise<PlannedNeed[]> {
     const out: PlannedNeed[] = [];
     for (const n of needs) {
       try {
-        const p = await this.c.starter.plan({ ...n, packs: [] });
-        out.push({ ...n, capUsd: p.capUsd, providers: p.providers, source: p.source });
+        // P5-F3: planned within the effective policy, as `delegate` plans it again.
+        const { charter } = this.c.store.read(n.programId).state;
+        const policy = policyFor(charter, n.wpId, cfg.portfolio.sources);
+        const p = await this.c.starter.plan({ ...n, packs: [], policy });
+        const figures = { capUsd: p.capUsd, providers: p.providers, source: p.source };
+        out.push({ ...n, ...figures, policy });
       } catch (err) {
         const why = err instanceof Error ? err.message : String(err);
         this.c.feed.line(`${n.wpId}: cannot be planned (${why.slice(0, 200)})`, n.programId);
@@ -200,17 +225,18 @@ export class Daemon {
     return out;
   }
 
-  /** Kill switch: nothing starts, every live program run is cancelled; programs stay. */
+  /**
+   * Kill switch: nothing starts, every live program run is cancelled; programs stay. Runs
+   * of a daemon in another process are cancelled by its own guard (P5-F1).
+   */
   async kill(on: boolean): Promise<string[]> {
     const ids = await this.c.store.locked(() => {
       const cfg = this.c.store.config();
       this.c.store.saveConfig({ ...cfg, portfolio: { ...cfg.portfolio, killSwitch: on } });
       return on ? killList(this.c.store.queue()) : [];
     });
-    const cancelled: string[] = [];
-    if (on) {
-      for (const runId of this.c.live.keys()) if (cancelRun(this.c, runId)) cancelled.push(runId);
-    }
+    // This process's runs at once; a daemon in another process on its next guard check.
+    const cancelled = on ? (this.guard()?.cancel ?? []) : [];
     this.c.fact(undefined, {
       action: on ? 'kill switch on' : 'kill switch off',
       cancelled,
@@ -252,6 +278,12 @@ function jobOf(n: PlannedNeed, now: Date): Job {
     wpId: n.wpId,
     priority: n.purpose === 'review' ? 'high' : 'normal',
     candidates: n.providers.slice(0, 8).map((provider) => ({ provider, source: n.source })),
+    // P5-F3: the scheduler holds the job to its work package's policy too.
+    policy: {
+      sources: n.policy.sources,
+      ...(n.policy.providers ? { providers: n.policy.providers.slice(0, 30) } : {}),
+      denyProviders: n.policy.deny.slice(0, 30),
+    },
     capUsd: n.capUsd,
     enqueuedAt: now.toISOString(),
     attempts: 0,

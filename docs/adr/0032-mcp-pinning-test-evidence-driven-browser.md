@@ -33,3 +33,9 @@ The OS sandbox is wired (egress then enforced for every server), MCP over HTTP i
 - Block reasons keep only safe tokens from server-chosen names and versions.
 - The browser sends every host that is neither loopback nor allow-listed to a refusing loopback proxy, so redirects and sub-resources cannot leave the policy.
 - Writes to `.kpstudio/`, `.claude/` and `.mcp.json` are confirmed on every call.
+
+## Addendum (D-035: test evidence the run cannot write itself, S7)
+
+- **P5-F4.** `test.run` reads its command from the run's own worktree, so a run could write `"test": "echo 7 passed"` and earn V2 with no test. Before it asks and before it runs, `test.run` compares the root with HEAD (a run worktree starts from its checkpoint commit, so every change is the run's own; `test-tamper.ts`). The run is `tampered` when it changed a package.json's `scripts`, `jest` field or detected runner, `.kpstudio/test.json`, a vitest / vite / jest / mocha / pytest / tox / Cargo / go.mod / Makefile configuration, a `conftest.py`, or a script file the test command or the root `scripts` name.
+- A tampered run says so in the confirmation (`TAMPERED: …`), in a second evidence line the critic reads (`tampered (this run changed its own test configuration; not test evidence): …`) and in the journaled meta (`tampered`, `tamperedFiles`). `shell.run` journals the same facts, so `npm test` by hand is caught too. packages/learning counts neither as test evidence: no tests signal, no V2, no DVO.
+- Outside git there is nothing to compare with: `configChecked: false`, and the run is not marked. A program run always has a worktree.

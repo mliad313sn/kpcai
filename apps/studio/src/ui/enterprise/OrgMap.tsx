@@ -11,7 +11,7 @@ import { matchesFilter, orgRows, type OrgRow } from '../../enterprise/derive';
 import type { SeatView } from '../../enterprise/schemas';
 import { seatKey } from '../../enterprise/state';
 import { patchUi, useEnt } from '../../enterprise/store';
-import { OrgToolbar, SeatDetail } from './OrgParts';
+import { OrgToolbar, SeatDetail, useOrgMode } from './OrgParts';
 import { SeatStateBadge, SourceBadge, kindIcon } from './parts';
 import { moveIndex, useSize, useWindowOn } from './virtual';
 
@@ -164,7 +164,7 @@ function useOrgKeys(lay: Layout, perRow: number, reveal: (row: number) => void) 
 function Grid({ seats }: { seats: SeatView[] }) {
   const ref = useRef<HTMLDivElement | null>(null);
   const size = useSize(ref);
-  const mode = useEnt((s) => s.ui.orgMode);
+  const mode = useOrgMode();
   const selected = useEnt((s) => s.ui.selectedSeat);
   const perRow = Math.max(1, Math.floor(size.width / CARD_W));
   const lay = useMemo(() => layout(seats, mode, perRow), [seats, mode, perRow]);

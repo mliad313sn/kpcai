@@ -7,11 +7,13 @@ import { z } from 'zod';
 import {
   AssuranceSchema,
   DecisionSchema,
+  DeliverableSchema,
   EscalationSchema,
   EvidenceSchema,
   GateRecordSchema,
   IdSchema,
   RunRecordSchema,
+  SourceKindSchema,
   UsdSchema,
 } from './schemas.js';
 
@@ -36,6 +38,13 @@ export const ProgramEventSchema = z.discriminatedUnion('type', [
     evidence: EvidenceSchema,
     /** S10 R5: V0–V2 from the run's journal (a kernel fact, never the PO's word). */
     assurance: AssuranceSchema.optional(),
+    /** Providers that actually served the run, with their source (P5-F3, ADR-0033). */
+    sources: z
+      .array(z.strictObject({ provider: z.string().min(1).max(64), source: SourceKindSchema }))
+      .max(20)
+      .optional(),
+    /** What the run delivered (P5-F8): code needs V2, documents V1. */
+    deliverable: DeliverableSchema.optional(),
   }),
   z.strictObject({ type: z.literal('gate.open') }),
   z.strictObject({ type: z.literal('gate.close'), record: GateRecordSchema }),

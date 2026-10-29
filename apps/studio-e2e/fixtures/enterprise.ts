@@ -119,9 +119,11 @@ function answer(ws: WebSocketRoute, fake: FakeEnterprise, text: string): void {
 export interface OpenOptions extends SnapOptions {
   theme?: 'dark' | 'light';
   locale?: 'en' | 'fr';
+  /** Simplicity Charter tier; the console's own default (Beginner) when left out. */
+  tier?: 'beginner' | 'regular' | 'expert';
 }
 
-/** Opens the console on the fake; the Enterprise view is one Alt+E away. */
+/** Opens the console on the fake (which has programs); the Enterprise view is one Alt+E away. */
 export async function openFake(page: Page, o: OpenOptions = {}): Promise<FakeEnterprise> {
   let seq = 0;
   let socket: WebSocketRoute | undefined;
@@ -142,7 +144,12 @@ export async function openFake(page: Page, o: OpenOptions = {}): Promise<FakeEnt
     socket = ws;
     ws.onMessage((m) => answer(ws, fake, String(m)));
   });
-  const prefs = { onboarded: true, locale: o.locale ?? 'en', theme: o.theme ?? 'dark' };
+  const prefs = {
+    onboarded: true,
+    locale: o.locale ?? 'en',
+    theme: o.theme ?? 'dark',
+    ...(o.tier ? { tier: o.tier } : {}),
+  };
   await page.addInitScript((p) => {
     if (!sessionStorage.getItem('kp-e2e.seeded')) {
       localStorage.setItem('kp-studio.prefs', JSON.stringify(p));
@@ -154,8 +161,12 @@ export async function openFake(page: Page, o: OpenOptions = {}): Promise<FakeEnt
   return fake;
 }
 
-/** Shows the Enterprise view and waits for its gauges. */
+/**
+ * Shows the Enterprise view and waits for its gauges. The view switch appears first: on
+ * every tier from Regular up, or for a beginner once the snapshot shows a program.
+ */
 export async function showEnterprise(page: Page): Promise<void> {
+  await page.locator('.view-switch').waitFor();
   await page.keyboard.press('Alt+e');
   await page.locator('#ent-title').waitFor();
   await page.locator('.gauges').waitFor();

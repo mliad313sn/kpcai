@@ -76,7 +76,7 @@ function handlers(extra: Record<string, (p: unknown) => unknown> = {}) {
 }
 
 async function openTools(extra: Record<string, (p: unknown) => unknown> = {}) {
-  ({ kernel } = await renderStudio(handlers(extra)));
+  ({ kernel } = await renderStudio(handlers(extra), { tier: 'regular' }));
   const user = userEvent.setup();
   await user.click(screen.getByRole('tab', { name: 'Tools & skills' }));
   await until(() => tools.getState().loaded);

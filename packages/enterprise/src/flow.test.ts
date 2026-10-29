@@ -44,15 +44,22 @@ describe('program flow', () => {
     expect(w.rt.reports(id)[0]!.markdown).toMatch(/V1/);
     // The gate: consequential, so the Sponsor opens the review run before passing it.
     const gate = w.rt.get(id).escalations.find((e) => e.rule === 'gate.pass')!;
+    // P5-F8: no progress pause at the gate; its figures are in the question (code needs V2).
+    expect(gate.question).toMatch(/0 verified result\(s\) \(code needs V2, documents V1\)/);
+    expect(gate.question).toMatch(/No machine counted the findings/);
+    expect(work.every((r) => r.deliverable === 'code')).toBe(true);
     await w.rt.sponsor.viewed(id, { kind: 'run', id: review.runId }, gate.id);
     await w.rt.sponsor.answer(id, gate.id, 'yes');
     await w.until(() => w!.rt.get(id).status === 'delivered');
     const done = w.rt.get(id);
     expect(done.gates[0]).toMatchObject({ verdict: 'pass', reviewerProvider: review.providers[0] });
+    // P5-F6: no machine check is claimed; the report says the Sponsor decided.
+    expect(done.gates[0]!.openCriticalOrHigh).toBeUndefined();
     const final = w.rt.reports(id).find((r) => r.kind === 'final')!;
     // No CI for the exact commit here: delivered, honestly "not verified".
     expect(final.verified).toBe(false);
     expect(final.markdown).toMatch(/Not verified/);
+    expect(final.markdown).toMatch(/the Sponsor decided, findings not counted by a machine/);
     expect(w.rt.history(id).ok).toBe(true);
   });
 });

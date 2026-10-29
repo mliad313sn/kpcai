@@ -64,7 +64,10 @@ describe('kpai report', () => {
     expect(await main(['report', 'list', id], io)).toBe(0);
     const repId = /(rep-[0-9a-f]+) {2}gate/.exec(io.stdout)![1]!;
     // "verified" is a delivery's word only (ADR-0031): a gate report shows none.
-    expect(io.stdout).toMatch(/gate +\S+ {2}- {2}markdown/);
+    expect(io.stdout).toMatch(/gate +\S+ {2}not a delivery {2}markdown/);
+    // P5-F7: `kpai program show` uses the same words: never "verified", nor silent.
+    expect(await main(['program', 'show', id], io)).toBe(0);
+    expect(io.stdout).toMatch(new RegExp(`report ${repId} gate \\S+ \\(not a delivery\\)`));
     expect(await main(['report', 'show', id], io)).toBe(0);
     expect(io.stdout).toMatch(
       /## What needs your answer[\s\S]*## What changed[\s\S]*## Forecast[\s\S]*## Top risk/,

@@ -91,6 +91,15 @@ describe('honest reports', () => {
           evidence: ['event:1'],
           at: NOW.toISOString(),
         },
+        // P5-F6: nothing counted the findings: the Sponsor decided, and the report says so.
+        {
+          phaseId: 'p1',
+          verdict: 'hold',
+          reviewer: 'rv',
+          reviewerProvider: 'mock-delta',
+          evidence: ['event:2'],
+          at: NOW.toISOString(),
+        },
       ],
     };
     const r = buildReport(s, good, { kind: 'digest', now: NOW });
@@ -99,7 +108,13 @@ describe('honest reports', () => {
     expect(md).toContain('spent $2.00, committed $2.00 of $10.00 (20 %)');
     expect(md).toContain('by source: API $2.00, local compute 1.5 h');
     expect(md).toContain('subscription claude-code: 1 runs of 5, 0.5 h');
-    expect(md).toContain('p0: pass (reviewer rv)');
+    expect(md).toContain('p0: pass (reviewer rv on google; 0 open Critical/High)');
+    expect(md).toContain(
+      'p1: hold (reviewer rv on mock-delta; the Sponsor decided, findings not counted by a machine)',
+    );
+    // P5-F7: every claim has its evidence, yet a report that is not a delivery is never
+    // "verified".
+    expect(r.verified).toBe(false);
     expect(md).toContain('po: "Use OpenSCAD"');
     expect(md).toContain('"Raise phase 1 to $6?"');
     expect(md).toContain(`CI green for ${HEAD.slice(0, 12)}`);
@@ -108,6 +123,8 @@ describe('honest reports', () => {
       buildReport({ ...s, amendment: s.charter }, {}, { kind: 'digest', now: NOW, locale: 'fr' }),
     );
     expect(fr).toContain('aucune preuve de test');
+    expect(fr).toContain('relecteur rv sur mock-delta ; décision du Sponsor');
+    expect(fr).toContain('relecteur rv sur google ; 0 Critique/Élevé ouverts');
     expect(fr).toContain('Charte en attente de votre approbation');
     const empty = reportMarkdown(
       buildReport(

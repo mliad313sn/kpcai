@@ -4,7 +4,7 @@ import { t } from '../../i18n/core';
 import type { SeatFilter } from '../../enterprise/derive';
 import { seatKey } from '../../enterprise/state';
 import { patchUi, saveOrgMode, useEnt, type OrgMode } from '../../enterprise/store';
-import { announce, patch } from '../../store/store';
+import { announce, patch, useStudio } from '../../store/store';
 import { SeatStateBadge, SourceBadge, kindIcon } from './parts';
 
 const FILTERS: SeatFilter[] = ['all', 'attention', 'working', 'idle'];
@@ -12,6 +12,13 @@ const FILTERS: SeatFilter[] = ['all', 'attention', 'working', 'idle'];
 function setMode(orgMode: OrgMode): void {
   saveOrgMode(orgMode);
   patchUi({ orgMode });
+}
+
+/** Departments are an expert view (Charter §3): other tiers always see one team. */
+export function useOrgMode(): OrgMode {
+  const expert = useStudio((s) => s.prefs.tier === 'expert');
+  const mode = useEnt((s) => s.ui.orgMode);
+  return expert ? mode : 'team';
 }
 
 /** Program choice shared by the org map and the activity feed. */
@@ -33,18 +40,25 @@ export function ProgramFilter({ id }: { id: string }) {
   );
 }
 
+function ModeToggle() {
+  const mode = useOrgMode();
+  return (
+    <span role="group" aria-label={t('ent.org.showAs')} className="segmented">
+      {(['team', 'departments'] as const).map((m) => (
+        <button key={m} type="button" aria-pressed={mode === m} onClick={() => setMode(m)}>
+          {t(m === 'team' ? 'ent.org.team' : 'ent.org.departments')}
+        </button>
+      ))}
+    </span>
+  );
+}
+
 export function OrgToolbar({ shown }: { shown: number }) {
-  const mode = useEnt((s) => s.ui.orgMode);
+  const expert = useStudio((s) => s.prefs.tier === 'expert');
   const filter = useEnt((s) => s.ui.filter);
   return (
     <div className="ent-toolbar">
-      <span role="group" aria-label={t('ent.org.showAs')} className="segmented">
-        {(['team', 'departments'] as const).map((m) => (
-          <button key={m} type="button" aria-pressed={mode === m} onClick={() => setMode(m)}>
-            {t(m === 'team' ? 'ent.org.team' : 'ent.org.departments')}
-          </button>
-        ))}
-      </span>
+      {expert ? <ModeToggle /> : null}
       <span className="field">
         <label htmlFor="ent-seat-filter">{t('ent.filter.seats')}</label>
         <select

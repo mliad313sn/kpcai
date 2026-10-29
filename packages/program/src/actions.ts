@@ -60,6 +60,10 @@ export const ProposedActionSchema = z.discriminatedUnion('kind', [
     inWorktree: z.boolean(),
     /** The step actuates a physical device (D-019). */
     physical: z.boolean().default(false),
+    /** The write touches a control file (`.kpstudio/`, `.claude/`, package.json…, D-035). */
+    control: z.boolean().default(false),
+    /** For `budget`: spend past a cap already accepted (D-035); like a missing amount. */
+    overCap: z.boolean().default(false),
   }),
   z.strictObject({
     kind: z.literal('merge'),

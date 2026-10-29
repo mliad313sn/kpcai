@@ -6,6 +6,7 @@ import { frLearn } from './fr-learn';
 import { frReview } from './fr-review';
 import { frRun } from './fr-run';
 import { frTools } from './fr-tools';
+import { frTier } from './fr-tier';
 
 export const fr: Catalogue = {
   ...frApp,
@@ -14,4 +15,5 @@ export const fr: Catalogue = {
   ...frReview,
   ...frEnterprise,
   ...frTools,
+  ...frTier,
 };

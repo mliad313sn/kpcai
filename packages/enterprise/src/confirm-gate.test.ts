@@ -76,7 +76,8 @@ describe('envelope pre-answers (R-5PA)', () => {
   it('the run waits for the Sponsor and gets their answer', async () => {
     w = world();
     const id = await runningProgram(w);
-    const pending = w.rt.ctx.gate.decide(ctxOf(id), { ...base, kind: 'patch', risk: 'write' });
+    // A read tool's question: trivial (D-035: a write outside a worktree no longer is).
+    const pending = w.rt.ctx.gate.decide(ctxOf(id), { ...base, kind: 'tool', risk: 'read' });
     let e: { id: string } | undefined;
     for (let i = 0; i < 100 && !e; i++) {
       await new Promise((r) => setTimeout(r, 10));

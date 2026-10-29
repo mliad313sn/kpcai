@@ -10,6 +10,7 @@ import {
   envelopeExpired,
   expiryFrom,
   noProgress,
+  progressLine,
   reviewRequest,
   type ProgramState,
 } from '@kernelpai/program';
@@ -101,8 +102,9 @@ function gateVerdict(c: Ctx, id: string, escId: string, yes: boolean, now: Date)
     phaseId: phase.id,
     verdict: yes ? 'pass' : 'hold',
     reviewer: reviewer.id,
-    reviewerProvider: review.providers[0] ?? 'unknown',
-    openCriticalOrHigh: 0,
+    // P5-F6: the providers the review actually used; no machine counted its findings
+    // (absent `openCriticalOrHigh`): the Sponsor's answer is the verdict, and reports say so.
+    reviewerProvider: review.providers.join('+').slice(0, 64) || 'unknown',
     evidence: [`run:${review.runId}`, `escalation:${escId}`],
     at: now.toISOString(),
   };
@@ -131,7 +133,8 @@ function followUps(c: Ctx, id: string, now: Date): void {
     if (info.handled || !e?.answer) continue;
     c.store.updateMeta(id, (m) => void (m.escalations[escId]!.handled = true));
     const yes = e.answer === 'yes';
-    if (info.kind === 'progress' && yes) {
+    if (info.kind === 'policy' && yes) resumeByPo(c, id, now);
+    else if (info.kind === 'progress' && yes) {
       const phaseId = state.charter.phases[state.phaseIndex]?.id ?? '';
       c.store.updateMeta(id, (m) => void (m.progressAck[phaseId] = info.checkpoint ?? 0));
       resumeByPo(c, id, now);
@@ -200,7 +203,8 @@ function reviewStep(
   if (done) {
     const asked = Object.values(c.store.read(id).meta.escalations);
     if (asked.some((x) => x.kind === 'gate' && x.runId === done.runId)) return [];
-    const question = `Phase ${phase.id}: the independent review run ${done.runId} finished (${done.assurance ?? 'V0'}, on ${done.providers.join(', ') || '?'}). Pass the gate? Say yes only if it lists no open Critical or High finding.`;
+    // P5-F8: the progress safeguard does not pause at the gate; its figures are stated here.
+    const question = `Phase ${phase.id}: the independent review run ${done.runId} finished (${done.assurance ?? 'V0'}, on ${done.providers.join(', ') || '?'}). Progress ${progressLine(s)}. Pass the gate? No machine counted the findings: say yes only if it lists no open Critical or High finding.`;
     const escId = newId('esc');
     const t = apply(
       c,

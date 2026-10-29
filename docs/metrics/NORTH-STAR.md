@@ -40,13 +40,14 @@ API: `northStar(journal, { project, since?, now?, durableWindowMs?, verify? })`.
 - **Diagnostic.** `v3Share` = V3 ÷ (DVO + DVO-doc). It has no target.
 - **Durability label.** `rollback and revert` once any write in the project carries J3 images, else `rollback-only`.
 
-| Gaming move                                     | Why it does not raise DVO (test in `north-star.test.ts`)                 |
-| ----------------------------------------------- | ------------------------------------------------------------------------ |
-| Split a change into more patches, runs or forks | One intent, one DVO ("splitting one intent … never inflates it")         |
-| Lenient critic, no tests                        | Code stays V1 ("code needs V2, documents V1")                            |
-| Self-review                                     | V0 ("a V0 doc does not count")                                           |
-| Accept now, revert tomorrow                     | Undone within 7 days ("a later write back to the pre-image is a revert") |
-| Re-deliver an old intent in a new week          | Once ever ("later ones of the intent never count")                       |
+| Gaming move                                     | Why it does not raise DVO (test in `north-star.test.ts`)                        |
+| ----------------------------------------------- | ------------------------------------------------------------------------------- |
+| Split a change into more patches, runs or forks | One intent, one DVO ("splitting one intent … never inflates it")                |
+| Lenient critic, no tests                        | Code stays V1 ("code needs V2, documents V1")                                   |
+| Self-review                                     | V0 ("a V0 doc does not count")                                                  |
+| Accept now, revert tomorrow                     | Undone within 7 days ("a later write back to the pre-image is a revert")        |
+| Re-deliver an old intent in a new week          | Once ever ("later ones of the intent never count")                              |
+| Rewrite the test script so it "passes"          | A `tampered` test run is no evidence: code stays V1 (`tampered.test.ts`, D-035) |
 
 ## Guardrails (window = runs and events at or after `since`)
 

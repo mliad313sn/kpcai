@@ -36,7 +36,10 @@ export interface Report {
   programId: string;
   title: string;
   headline: string;
-  /** True when every success claim in the report has evidence. */
+  /**
+   * True only for a delivery whose success claim has its evidence (CI green on the exact
+   * head, tests passed). False for any other report: it is not a delivery (P5-F7).
+   */
   verified: boolean;
   sections: Array<{ key: string; title: string; lines: ReportLine[] }>;
   link: string;
@@ -74,7 +77,8 @@ export function buildReport(s: ProgramState, m: JournalMetrics, o: ReportOptions
     programId: s.charter.programId,
     title: t.title(o.kind, s.charter.programId),
     headline: headline(s, t, unverified),
-    verified: unverified === undefined,
+    // P5-F7: only a delivery can be verified; any other report is not a delivery.
+    verified: s.status === 'delivered' && unverified === undefined,
     sections,
     link: t.link,
   };
@@ -152,7 +156,7 @@ function budget(s: ProgramState, t: T, f: (n: number) => string): ReportLine[] {
 function gates(s: ProgramState, t: T): ReportLine[] {
   if (!s.gates.length) return [{ text: t.noGates, evidence: [] }];
   return s.gates.map((g) => ({
-    text: t.gate(g.phaseId, g.verdict, g.reviewer),
+    text: t.gate(g.phaseId, g.verdict, g.reviewer, g.reviewerProvider, g.openCriticalOrHigh),
     evidence: g.evidence,
   }));
 }

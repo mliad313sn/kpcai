@@ -5,6 +5,7 @@ import { enLearn } from './en-learn';
 import { enReview } from './en-review';
 import { enRun } from './en-run';
 import { enTools } from './en-tools';
+import { enTier } from './en-tier';
 
 export const en = {
   ...enApp,
@@ -13,4 +14,5 @@ export const en = {
   ...enReview,
   ...enEnterprise,
   ...enTools,
+  ...enTier,
 } as const;

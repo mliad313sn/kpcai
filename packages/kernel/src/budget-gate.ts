@@ -88,21 +88,23 @@ export class BudgetGate {
   private async graphCap(label: string, cap: string): Promise<boolean> {
     const ok =
       this.flags.overBudget === true ||
-      (await this.ask(`${label}: the run would exceed ${cap}. Continue?`));
+      (await this.ask(`${label}: the run would exceed ${cap}. Continue?`, undefined, true));
     if (!ok) this.host.say(`not continued — ${label}\n`);
     return this.record(`${ok ? 'accepted' : 'refused'}: ${label}`, { label }, ok);
   }
 
   /**
    * `amountUsd` (D-028) only when the amount is known: going past an accepted cap has no
-   * structured amount, so no delegate can pre-answer it.
+   * structured amount, so no delegate can pre-answer it, and says `overCap` (D-035, P5-F2)
+   * so a program classes it consequential: never batch-approved, counted by G2.
    */
-  private ask(question: string, amountUsd?: number): Promise<boolean> {
+  private ask(question: string, amountUsd?: number, overCap = false): Promise<boolean> {
     return this.host.confirm({
       kind: 'budget',
       question,
       ...(this.ctx.runId ? { runId: this.ctx.runId } : {}),
       ...(amountUsd !== undefined && Number.isFinite(amountUsd) ? { amountUsd } : {}),
+      ...(overCap ? { overCap: true } : {}),
       // A spend question actuates nothing (D-028: said, not left to the escalating default).
       physical: false,
     });

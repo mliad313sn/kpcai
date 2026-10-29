@@ -18,7 +18,9 @@ import {
   type Charter,
   type ProgramState,
   type ProgramStatus,
+  type RunRecord,
 } from './schemas.js';
+import { policyBreach, policyFor } from './sources.js';
 
 export type Transition = { ok: true; state: ProgramState } | { ok: false; reason: string };
 type Ev<T extends ProgramEvent['type']> = Extract<ProgramEvent, { type: T }>;
@@ -125,18 +127,40 @@ export function sponsorYes(
 const runSettled: Handler<'run.settled'> = (s, e, c) => {
   const run = s.runs.find((r) => r.runId === e.runId);
   if (!run || run.status !== 'running') return no(`no running run ${e.runId}`);
-  const settled = {
+  // P5-F3: a run that used a provider outside the charter's policy fails closed.
+  const breach = policyBreach(policyFor(s.charter, run.wpId), e);
+  const settled: RunRecord = {
     ...run,
-    status: e.status,
+    ...usedSources(run, e.sources),
+    status: breach.length && e.status === 'finished' ? 'failed' : e.status,
     costUsd: e.costUsd,
     testsPassed: e.testsPassed,
     hours: e.hours ?? run.hours,
-    evidence: [...run.evidence, ...e.evidence],
+    evidence: [
+      ...new Set([...run.evidence, ...e.evidence, ...breach.map((b) => `policy-breach:${b}`)]),
+    ],
     settledAt: c.now.toISOString(),
     ...(e.assurance ? { assurance: e.assurance } : {}),
+    ...(e.deliverable ? { deliverable: e.deliverable } : {}),
   };
   return ok({ ...s, runs: s.runs.map((r) => (r.runId === e.runId ? settled : r)) });
 };
+
+/**
+ * The providers that actually served a run replace the planned ones (P5-F3); the plan's
+ * are kept beside them when they differ. A mixed run counts as its most restricted source.
+ */
+function usedSources(
+  run: RunRecord,
+  used: Ev<'run.settled'>['sources'],
+): Pick<RunRecord, 'providers' | 'source' | 'plannedProviders'> {
+  if (!used?.length) return { providers: run.providers, source: run.source };
+  const providers = [...new Set(used.map((x) => x.provider))].sort().slice(0, 20);
+  const kinds = new Set(used.map((x) => x.source));
+  const source = (['subscription', 'api', 'local'] as const).find((k) => kinds.has(k))!;
+  const same = providers.join() === [...run.providers].sort().join();
+  return { providers, source, ...(same ? {} : { plannedProviders: run.providers }) };
+}
 
 const gateOpen: Handler<'gate.open'> = (s) => {
   if (s.status !== 'running') return no(`no gate from ${s.status}`);
@@ -172,13 +196,17 @@ const gateClose: Handler<'gate.close'> = (s, e) => {
 
 /** Why a pass verdict cannot close the gate (charter §4), or undefined. */
 function passBlocker(s: ProgramState, g: ProgramState['gates'][number]): string | undefined {
-  if (g.openCriticalOrHigh > 0) return 'Critical/High findings are still open';
+  // Absent: nothing counted the findings; the Sponsor's verdict decides (P5-F6).
+  if ((g.openCriticalOrHigh ?? 0) > 0) return 'Critical/High findings are still open';
   if (!g.evidence.length) return 'a pass needs journal evidence';
   const runs = s.runs.filter((r) => r.phaseId === g.phaseId);
-  const review = runs.find((r) => r.purpose === 'review' && r.status === 'finished');
+  const review = runs.filter((r) => r.purpose === 'review' && r.status === 'finished').at(-1);
   if (!review) return 'no finished independent review run for this phase';
+  // P5-F3: the providers the runs actually used (planned ones while a run is live).
   const builders = new Set(runs.filter((r) => r.purpose === 'work').flatMap((r) => r.providers));
-  if (builders.has(g.reviewerProvider)) return 'the reviewer shares a provider with a builder';
+  const reviewers = [g.reviewerProvider, ...review.providers];
+  if (reviewers.some((p) => builders.has(p)))
+    return 'the reviewer shares a provider with a builder';
   return undefined;
 }
 

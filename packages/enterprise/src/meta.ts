@@ -70,7 +70,7 @@ export const ProgramMetaSchema = z.object({
     .record(
       Id,
       z.object({
-        kind: z.enum(['run', 'confirm', 'gate', 'progress', 'expiry']),
+        kind: z.enum(['run', 'confirm', 'gate', 'progress', 'expiry', 'policy']),
         runId: Id.optional(),
         evidence: z.array(RefSchema).max(20).default([]),
         expired: z.boolean().optional(),

@@ -92,8 +92,10 @@ test('the Sponsor approves a gate in the view; the daemon in the same home deliv
   const child = await daemon(kernel.home, kernel.repo);
   try {
     await until(read, (s) => s.escalations.some((e) => e.rule === 'gate.pass'), 'the gate');
+    // Beginner (the default): the program exists, so the view switch appears, in plain words.
     await open();
     await connected(page);
+    await expect(page.getByRole('button', { name: /^Delegated projects/ })).toBeVisible();
     await page.keyboard.press('Alt+e');
     await expect(page.locator('#ent-title')).toBeVisible();
     const program = page.getByRole('article', { name: id });

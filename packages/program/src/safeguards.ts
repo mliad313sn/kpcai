@@ -79,7 +79,7 @@ export interface ProgressCheck {
   phaseId: string;
   /** Quarters of the phase cap spent so far (0–4). */
   checkpoint: number;
-  /** Finished runs of the phase with assurance ≥ V1. */
+  /** Verified results of the phase: finished code runs ≥ V2, document runs ≥ V1 (P5-F8). */
   verified: number;
   spentUsd: number;
   capUsd: number;
@@ -93,7 +93,7 @@ export function progressOf(s: ProgramState): ProgressCheck | undefined {
   const spentUsd = runs.reduce((a, r) => a + r.costUsd, 0);
   const step = phase.capUsd * PROGRESS_STEP;
   const checkpoint = step > 0 ? Math.min(4, Math.floor(spentUsd / step + EPS)) : 0;
-  const verified = runs.filter((r) => r.status === 'finished' && atLeast(r.assurance, 'V1'));
+  const verified = runs.filter((r) => r.status === 'finished' && verifiedRun(r));
   return {
     phaseId: phase.id,
     checkpoint,
@@ -104,12 +104,30 @@ export function progressOf(s: ProgramState): ProgressCheck | undefined {
 }
 
 /**
+ * Verified as docs/metrics/NORTH-STAR.md counts it: code needs ≥ V2, a document ≥ V1. A run
+ * whose deliverable is unknown counts as code (the stricter bar).
+ */
+export function verifiedRun(r: Pick<RunRecord, 'assurance' | 'deliverable'>): boolean {
+  return atLeast(r.assurance, r.deliverable === 'doc' ? 'V1' : 'V2');
+}
+
+/**
  * S10 R3 progress gating: after each quarter of the phase cap, at least one more verified
- * result (≥ V1) or the program pauses. `acked` is the last checkpoint the Sponsor let pass.
+ * result (code ≥ V2, documents ≥ V1) or the program pauses. `acked` is the last checkpoint
+ * the Sponsor let pass. Only a running program pauses: at the gate no pause is added, the
+ * gate question itself states these figures (`progressLine`) and the Sponsor's verdict
+ * decides (D-035, P5-F8); after a hold the check applies again.
  */
 export function noProgress(s: ProgramState, acked = 0): ProgressCheck | undefined {
   if (s.status !== 'running') return undefined;
   const p = progressOf(s);
   if (!p || p.checkpoint < 1 || p.checkpoint <= acked) return undefined;
   return p.verified >= p.checkpoint ? undefined : p;
+}
+
+/** The progress figures a gate question states (P5-F8): spent, cap, verified results. */
+export function progressLine(s: ProgramState): string {
+  const p = progressOf(s);
+  if (!p) return '';
+  return `${p.phaseId}: $${p.spentUsd.toFixed(2)} of $${p.capUsd.toFixed(2)} spent, ${p.verified} verified result(s) (code needs V2, documents V1)`;
 }

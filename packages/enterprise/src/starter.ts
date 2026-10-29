@@ -8,12 +8,18 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import {
   plannedSources,
+  sourceOf,
   type GraphOptions,
   type Kernel,
   type Plan,
   type RunHandle,
 } from '@kernelpai/kernel';
-import type { PlannedRun, RunStarter } from '@kernelpai/program';
+import {
+  permits,
+  type EffectivePolicy,
+  type PlannedRun,
+  type RunStarter,
+} from '@kernelpai/program';
 import { soloGraph } from './solo.js';
 
 export interface ProgramContext {
@@ -26,6 +32,8 @@ export const programContext = new AsyncLocalStorage<ProgramContext>();
 
 interface Planned {
   plan: PlannedRun;
+  /** The source policy it was planned within (a new policy plans again). */
+  policyKey: string;
   /** A review run's one-node read-only graph (passed as the plan's edit). */
   graph?: unknown;
   request: string;
@@ -70,6 +78,38 @@ function kindOf(p: Plan, provider: string): string | undefined {
   }
 }
 
+type PlanInput = Parameters<RunStarter['plan']>[0];
+
+/**
+ * A work package's source policy as routing options (P5-F3): local-only when only local
+ * sources are allowed, and every known provider outside the policy excluded, so the run's
+ * in-run fallback (rate limit, error) stays within it. `known` maps provider id → kind.
+ */
+export function policyOptions(
+  policy: EffectivePolicy | undefined,
+  known: ReadonlyMap<string, string | undefined>,
+): Pick<GraphOptions, 'localOnly' | 'exclude'> {
+  if (!policy) return {};
+  const outside = [...known].filter(([id, kind]) => !permits(policy, sourceOf(kind), id));
+  const exclude = [...new Set([...policy.deny, ...outside.map(([id]) => id)])].sort();
+  return {
+    ...(policy.sources.every((x) => x === 'local') ? { localOnly: true } : {}),
+    ...(exclude.length ? { exclude } : {}),
+  };
+}
+
+function merged(
+  base: GraphOptions,
+  extra: string[],
+  over: Pick<GraphOptions, 'localOnly' | 'exclude'>,
+): GraphOptions {
+  const exclude = [...new Set([...extra, ...(over.exclude ?? [])])];
+  const out: GraphOptions = { ...base, ...(over.localOnly ? { localOnly: true } : {}) };
+  if (exclude.length) out.exclude = exclude;
+  else delete out.exclude;
+  return out;
+}
+
 /** The gate review as one read-only critique node, re-estimated (its cap is what is checked). */
 function reviewPlan(k: Kernel, p: Plan, request: string) {
   const graph = soloGraph(p, 'Independent gate review', request);
@@ -82,27 +122,21 @@ function reviewPlan(k: Kernel, p: Plan, request: string) {
 export class KernelRunStarter implements RunStarter {
   private readonly planned = new Map<string, Planned>();
   private readonly byWp = new Map<string, string>();
+  /** Providers the kernel's registry holds, id → kind, learnt from plans (P5-F3). */
+  private readonly known = new Map<string, string | undefined>();
 
   constructor(private readonly o: StarterOptions) {}
 
-  async plan(input: Parameters<RunStarter['plan']>[0]): Promise<PlannedRun> {
+  async plan(input: PlanInput): Promise<PlannedRun> {
     const key = `${input.programId}/${input.wpId}/${input.purpose}`;
+    const policyKey = JSON.stringify(input.policy ?? null);
     const cached = this.planned.get(this.byWp.get(key) ?? '');
-    if (cached && cached.request === input.request) return cached.plan;
+    if (cached && cached.request === input.request && cached.policyKey === policyKey)
+      return cached.plan;
     const ctx = { programId: input.programId, wpId: input.wpId };
-    const exclude =
-      input.purpose === 'review' ? (this.o.reviewExclude?.(input.programId) ?? []) : [];
-    const options: GraphOptions = {
-      ...this.o.options,
-      isolated: true,
-      unattended: true,
-      ...(exclude.length
-        ? { exclude: [...new Set([...(this.o.options?.exclude ?? []), ...exclude])] }
-        : {}),
-    };
     const k = this.o.kernel;
     const sessionId = k.openSession(`program ${input.programId} ${input.wpId}`, false);
-    const p = await programContext.run(ctx, () => k.plan(input.request, options, sessionId));
+    const { p, options } = await this.planWithin(input, ctx, sessionId);
     const review = input.purpose === 'review' ? reviewPlan(k, p, input.request) : undefined;
     const est = review?.estimate ?? p.estimate;
     const sources = plannedSources(est, (provider) => kindOf(p, provider));
@@ -121,6 +155,7 @@ export class KernelRunStarter implements RunStarter {
     const graph = review ? { graph: review.graph } : {};
     this.planned.set(p.planId, {
       plan,
+      policyKey,
       request: input.request,
       sessionId,
       options,
@@ -130,6 +165,32 @@ export class KernelRunStarter implements RunStarter {
     });
     this.byWp.set(key, p.planId);
     return plan;
+  }
+
+  /**
+   * Plans within the work package's source policy (P5-F3). Providers the kernel knows are
+   * learnt from each plan's registry; when one turns out to be outside the policy and was
+   * not yet excluded, the request is planned again with it excluded (once per provider).
+   */
+  private async planWithin(input: PlanInput, ctx: ProgramContext, sessionId: string) {
+    const review =
+      input.purpose === 'review' ? (this.o.reviewExclude?.(input.programId) ?? []) : [];
+    const extra = [...(this.o.options?.exclude ?? []), ...review];
+    const base: GraphOptions = { ...this.o.options, isolated: true, unattended: true };
+    const k = this.o.kernel;
+    const run = (o: GraphOptions) =>
+      programContext.run(ctx, () => k.plan(input.request, o, sessionId));
+    let options = merged(base, extra, policyOptions(input.policy, this.known));
+    let p = await run(options);
+    if (!input.policy) return { p, options };
+    for (const a of p.setup.registry.list?.() ?? [])
+      this.known.set(a.descriptor.id, a.descriptor.kind);
+    const again = merged(base, extra, policyOptions(input.policy, this.known));
+    if ((again.exclude ?? []).some((x) => !(options.exclude ?? []).includes(x))) {
+      options = again;
+      p = await run(options);
+    }
+    return { p, options };
   }
 
   /** Starts a plan this starter made; the envelope has allowed it (the driver's contract). */

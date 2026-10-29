@@ -8,6 +8,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { resolve } from 'node:path';
 import type { GraphResult, ToolBus, ToolDefinition } from '@kernelpai/core';
 import type { Pack } from '@kernelpai/packs';
+import { writesControl } from '@kernelpai/tools';
 import type { ConfirmKind, ConfirmRequest } from './confirm.js';
 
 export type SourceKind = 'local' | 'api' | 'subscription';
@@ -96,6 +97,8 @@ export function confirmFacts(req: ConfirmRequest): {
   amountUsd?: number;
   inWorktree: boolean;
   physical: boolean;
+  control: boolean;
+  overCap: boolean;
 } {
   return {
     kind: 'confirm',
@@ -105,6 +108,9 @@ export function confirmFacts(req: ConfirmRequest): {
     inWorktree: req.inWorktree === true,
     // ADR-0033 §7 (WP7-L3): an unknown physical fact takes the escalating value.
     physical: req.physical !== false,
+    // D-035: said by the asker; a missing amount alone already makes a budget ask over-cap.
+    control: req.control === true,
+    overCap: req.overCap === true,
   };
 }
 
@@ -120,12 +126,20 @@ export const CONFINED_TOOLS: ReadonlySet<string> = new Set(['fs.write', 'fs.dele
 export function toolFacts(
   tool: Pick<ToolDefinition, 'name' | 'risk' | 'source'> | undefined,
   run: { inWorktree: boolean; physical: boolean },
-): { risk: 'read' | 'write' | 'destructive'; inWorktree: boolean; physical: boolean } {
+  input?: unknown,
+): {
+  risk: 'read' | 'write' | 'destructive';
+  inWorktree: boolean;
+  physical: boolean;
+  control: boolean;
+} {
   const confined = tool?.source === 'builtin' && CONFINED_TOOLS.has(tool.name);
   return {
     risk: tool?.risk ?? 'destructive',
     inWorktree: run.inWorktree && confined,
     physical: run.physical,
+    // D-035 (P5-F2): a write to a control file is never covered by `write-in-worktree`.
+    control: confined && writesControl(tool.name, input),
   };
 }
 
@@ -136,17 +150,20 @@ export function toolFacts(
 export function trackedBus(inner: ToolBus): {
   bus: ToolBus;
   current(): ToolDefinition | undefined;
+  /** The input of the call in progress (what a write tool would write, D-035). */
+  input(): unknown;
 } {
-  const calling = new AsyncLocalStorage<string>();
+  const calling = new AsyncLocalStorage<{ name: string; input: unknown }>();
   return {
     bus: {
       list: () => inner.list(),
       close: () => inner.close(),
-      call: (c, ctx) => calling.run(c.name, () => inner.call(c, ctx)),
+      call: (c, ctx) => calling.run({ name: c.name, input: c.input }, () => inner.call(c, ctx)),
     },
     current: () => {
-      const name = calling.getStore();
+      const name = calling.getStore()?.name;
       return name === undefined ? undefined : inner.list().find((d) => d.name === name);
     },
+    input: () => calling.getStore()?.input,
   };
 }

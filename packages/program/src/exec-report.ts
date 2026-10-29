@@ -109,7 +109,8 @@ export function buildExecutiveReport(s: ProgramState, i: ExecInput, o: ExecOptio
     programId: s.charter.programId,
     title: reportText(locale).title(o.kind, s.charter.programId),
     headline: headline(s, locale, counts, gap, i.metrics),
-    verified: gap === undefined,
+    // P5-F7: only a delivery can be verified; any other report is not a delivery.
+    verified: s.status === 'delivered' && gap === undefined,
     sections,
     link: reportText(locale).link,
     counts,
@@ -196,7 +197,7 @@ function changeLine(
       return { text: t.gateOpen(s.charter.phases[s.phaseIndex]?.id ?? '?'), evidence: [] };
     case 'gate.close':
       return {
-        text: t.gateClosed(e.record.phaseId, e.record.verdict),
+        text: t.gateClosed(e.record.phaseId, e.record.verdict, e.record.openCriticalOrHigh),
         evidence: e.record.evidence.slice(0, 5),
       };
     case 'pause':

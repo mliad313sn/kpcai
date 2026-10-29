@@ -5,7 +5,7 @@
  */
 import { writeFileSync } from 'node:fs';
 import { afterEach, describe, expect, it } from 'vitest';
-import { fakeStarter, FINISHED, type Fake } from './test-helpers/fake.js';
+import { cancelling, fakeStarter, FINISHED, type Fake } from './test-helpers/fake.js';
 import { world, type World } from './test-helpers/world.js';
 
 let w: World | undefined;
@@ -121,15 +121,22 @@ describe('kill switch and the daemon slot', () => {
   it('cancels live runs and starts nothing while on', async () => {
     w = world();
     const fake = fakeStarter(w.rt);
-    await approved(w);
+    const id = await approved(w);
     await tick(w);
     expect(fake.runs).toHaveLength(2);
-    await w.rt.daemon.kill(true);
+    const cancel = cancelling(w, fake);
+    const cancelled = await w.rt.daemon.kill(true);
     expect(w.rt.snapshot().killSwitch).toBe(true);
-    fake.runs.forEach((r) => r.finish({ status: 'not_run', reason: 'cancelled' }));
+    // Every live run is cancelled through the kernel, and settles cancelled.
+    const ids = fake.runs.map((r) => r.runId);
+    expect(cancelled.sort()).toEqual([...ids].sort());
+    expect(cancel.mock.calls.map(([id]) => id).sort()).toEqual([...ids].sort());
     await w.rt.idle();
+    expect(w.rt.ctx.live.size).toBe(0);
+    expect(w.rt.get(id).runs.map((r) => r.status)).toEqual(['cancelled', 'cancelled']);
     await tick(w, 2);
     expect(fake.runs).toHaveLength(2);
+    expect(cancel).toHaveBeenCalledTimes(2);
     await w.rt.daemon.kill(false);
     await tick(w);
     expect(fake.runs.length).toBeGreaterThan(2);

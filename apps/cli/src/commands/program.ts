@@ -11,6 +11,7 @@ import { approvalClass } from '@kernelpai/program';
 import { sanitizeForTerminal as clean } from '../sanitize.js';
 import type { Io } from '../io.js';
 import { notRun, open } from './graph.js';
+import { deliveryWord } from './report.js';
 
 export interface ProgramCliOptions {
   db?: string | undefined;
@@ -89,7 +90,7 @@ function show({ io, rt, args }: Ctx): number {
     );
   if (s.meta.pausedReason) io.out(`paused: ${clean(s.meta.pausedReason)}\n`);
   for (const r of s.meta.reports)
-    io.out(`report ${r.reportId} ${r.kind} ${r.at}${r.verified ? '' : ' (not verified)'}\n`);
+    io.out(`report ${r.reportId} ${r.kind} ${r.at} (${deliveryWord(r)})\n`);
   return 0;
 }
 

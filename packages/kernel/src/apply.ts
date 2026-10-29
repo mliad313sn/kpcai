@@ -1,5 +1,11 @@
 import type { Journal } from '@kernelpai/journal';
-import { createToolBus, type LocalToolBus, type PackZoneOptions } from '@kernelpai/tools';
+import {
+  createToolBus,
+  isControlPath,
+  patchPaths,
+  type LocalToolBus,
+  type PackZoneOptions,
+} from '@kernelpai/tools';
 import { unreviewedOverwrite, type Artifact } from './artifacts.js';
 import type { Confirm } from './confirm.js';
 import { kpaiHome } from './env.js';
@@ -125,6 +131,8 @@ export function applyAll(c: ApplyContext, patches: Patch[]): Promise<ApplyResult
                   risk: 'write',
                   runId: c.runId,
                   ...facts(c),
+                  // D-035: a patch to a control file is never pre-answered or batched.
+                  control: patchPaths(p.patch).some(isControlPath),
                 }),
         },
       );
@@ -199,6 +207,7 @@ function artifactAsk(c: ApplyContext, a: Artifact): (question: string) => Promis
       risk: 'write',
       runId: c.runId,
       ...facts(c),
+      control: isControlPath(a.path),
     });
 }
 

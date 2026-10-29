@@ -289,6 +289,9 @@ export type Tab =
 /** The run console, or the Enterprise view of programs and seats (R-5E10). */
 export type View = 'workspace' | 'enterprise';
 
+/** Simplicity Charter §3 tiers: what the console shows (P5-F5). */
+export type Tier = 'beginner' | 'regular' | 'expert';
+
 export interface Prefs {
   theme: 'system' | 'dark' | 'light';
   density: 'comfortable' | 'compact';
@@ -302,6 +305,10 @@ export interface Prefs {
   onboarded: boolean;
   /** Display language; `system` follows the browser or OS (WI-S6-02). */
   locale: LocalePref;
+  /** Disclosure tier (Simplicity Charter §3); Beginner on first run. */
+  tier: Tier;
+  /** The Enterprise view was shown once (a program existed, or "Delegate a whole project"). */
+  enterpriseShown: boolean;
 }
 
 export interface StudioState {

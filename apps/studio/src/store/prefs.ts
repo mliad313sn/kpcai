@@ -19,9 +19,12 @@ export function defaultPrefs(): Prefs {
     localOnly: false,
     onboarded: false,
     locale: 'system',
+    tier: 'beginner',
+    enterpriseShown: false,
   };
 }
 
+const TIERS: ReadonlySet<string> = new Set(['beginner', 'regular', 'expert']);
 const PROFILES: ReadonlySet<string> = new Set(['economy', 'balanced', 'performance']);
 
 export const clampSize = (zone: Zone, px: number): number =>
@@ -50,6 +53,8 @@ export function loadPrefs(): Prefs {
       localOnly: p.localOnly === true,
       onboarded: p.onboarded === true,
       locale: p.locale === 'en' || p.locale === 'fr' ? p.locale : 'system',
+      tier: TIERS.has(p.tier ?? '') ? p.tier! : d.tier,
+      enterpriseShown: p.enterpriseShown === true,
     };
   } catch {
     return d;

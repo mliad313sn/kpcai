@@ -270,6 +270,9 @@ export const EvidenceSchema = z.array(z.string().min(1).max(200)).max(100);
 export const AssuranceSchema = z.enum(['V0', 'V1', 'V2', 'V3']);
 export type Assurance = z.infer<typeof AssuranceSchema>;
 
+/** What a run delivered (docs/metrics/NORTH-STAR.md): code needs ≥ V2, documents ≥ V1. */
+export const DeliverableSchema = z.enum(['code', 'doc']);
+
 export const RunRecordSchema = z.strictObject({
   runId: IdSchema,
   wpId: IdSchema,
@@ -282,8 +285,15 @@ export const RunRecordSchema = z.strictObject({
   source: SourceKindSchema.default('api'),
   /** Wall time: local compute time, or subscription hours. */
   hours: z.number().nonnegative().default(0),
-  /** `provider` of the run's authors, as the kernel journaled it (cross-provider gate check). */
+  /**
+   * Providers of the run: those its plan routes to while it runs, those that actually
+   * served it once settled (P5-F3; the cross-provider gate check reads these).
+   */
   providers: z.array(Text(64)).max(20).default([]),
+  /** The plan's providers, kept when the providers used differ from them. */
+  plannedProviders: z.array(Text(64)).max(20).optional(),
+  /** Set at settlement from the run's outputs (P5-F8); unknown counts as code. */
+  deliverable: DeliverableSchema.optional(),
   /** True only when the kernel reports tests run and passed for this run. */
   testsPassed: z.boolean().optional(),
   evidence: EvidenceSchema.default([]),
@@ -301,7 +311,11 @@ export const GateRecordSchema = z.strictObject({
   reviewer: IdSchema,
   /** The provider the review ran on: must differ from every builder's (cross-provider). */
   reviewerProvider: Text(64),
-  openCriticalOrHigh: z.number().int().nonnegative(),
+  /**
+   * Open Critical/High findings when a machine counted them. Absent: nothing counted them,
+   * the Sponsor's verdict decided (P5-F6); a report says so.
+   */
+  openCriticalOrHigh: z.number().int().nonnegative().optional(),
   evidence: EvidenceSchema,
   at: z.iso.datetime(),
 });

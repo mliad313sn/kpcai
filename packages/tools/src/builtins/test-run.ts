@@ -17,6 +17,7 @@ import {
   type TestCommandConfig,
 } from './test-detect.js';
 import { evidenceOf, type ParserName } from './test-parse.js';
+import { tamperNote, testConfigTamper, type TamperCheck } from './test-tamper.js';
 
 export interface TestRunToolOptions {
   /** The test command; detected from the workspace when absent. */
@@ -58,6 +59,8 @@ async function runTests(
   ctx: ToolContext,
 ): Promise<ToolOutcome> {
   const { cmd, args } = await planned(options, input, ctx);
+  // Before the tests run: what the command runs is what counts (P5-F4).
+  const tamper = await testConfigTamper(ctx.root, cmd, tamperOpts(options, ctx));
   const timeoutMs =
     typeof input.timeoutMs === 'number'
       ? input.timeoutMs
@@ -71,17 +74,26 @@ async function runTests(
     maxOutputBytes: options.maxOutputBytes ?? TEST_RUN_MAX_OUTPUT_BYTES,
     signal: ctx.signal,
   });
-  return outcome(cmd, args, sandbox, r, timeoutMs);
+  return outcome({ cmd, args, sandbox, timeoutMs, tamper }, r);
+}
+
+function tamperOpts(options: TestRunToolOptions, ctx: ToolContext) {
+  return {
+    ...(options.env ? { env: options.env } : {}),
+    ...(ctx.signal ? { signal: ctx.signal } : {}),
+  };
+}
+
+interface Ran {
+  cmd: TestCommand;
+  args: string[];
+  sandbox: ShellSandbox;
+  timeoutMs: number;
+  tamper: TamperCheck;
 }
 
 /** The evidence header first, then the output tail; meta for the journal and grades. */
-function outcome(
-  cmd: TestCommand,
-  args: string[],
-  sandbox: ShellSandbox,
-  r: RunResult,
-  timeoutMs: number,
-): ToolOutcome {
+function outcome({ cmd, args, sandbox, timeoutMs, tamper }: Ran, r: RunResult): ToolOutcome {
   const output = `${r.stdout}\n${r.stderr}`;
   const prefer = PARSERS.has(cmd.kind) ? (cmd.kind as ParserName) : undefined;
   const facts = {
@@ -91,7 +103,8 @@ function outcome(
     error: r.error,
     output,
   };
-  const e = evidenceOf(facts, prefer);
+  const parsed = evidenceOf(facts, prefer);
+  const e = tamper.files.length ? { ...parsed, tampered: tamper.files } : parsed;
   const why = r.error
     ? `failed to start: ${r.error}`
     : r.timedOut
@@ -109,6 +122,11 @@ function outcome(
     ...{ passed: e.passed, failed: e.failed, skipped: e.skipped, failing: e.failing },
     ...{ sandbox: sandbox.mode, exitCode: r.code, timedOut: r.timedOut, truncated: r.truncated },
     ...{ aborted: r.aborted, runMs: r.durationMs },
+    // P5-F4: a run that changed its own test configuration proves nothing (packages/learning).
+    tampered: tamper.files.length > 0,
+    // False outside git: nothing to compare with, so no claim either way.
+    configChecked: tamper.checked,
+    ...(tamper.files.length ? { tamperedFiles: tamper.files } : {}),
   };
   return e.status === 'passed' ? ok(body, meta) : fail(body, meta);
 }
@@ -139,7 +157,8 @@ export function testRunTool(options: TestRunToolOptions = {}): LocalTool {
     async prepare(input, ctx) {
       const { cmd, args } = await planned(options, input, ctx);
       const shown = [cmd.command, ...args].map((a) => JSON.stringify(a)).join(' ');
-      return { summary: `run tests: ${shown} (${cmd.origin}; sandbox: ${sandbox.mode})` };
+      const tamper = tamperNote(await testConfigTamper(ctx.root, cmd, tamperOpts(options, ctx)));
+      return { summary: `run tests: ${shown} (${cmd.origin}; sandbox: ${sandbox.mode})${tamper}` };
     },
     run: (input, ctx) => runTests(options, sandbox, input, ctx),
   };

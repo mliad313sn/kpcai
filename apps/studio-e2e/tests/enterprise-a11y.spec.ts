@@ -35,7 +35,8 @@ async function audit(page: Page, screen: string): Promise<Finding[]> {
 
 for (const theme of ['dark', 'light'] as const) {
   test(`Enterprise view, ${theme} theme: 0 serious or critical`, async ({ page }) => {
-    await openFake(page, { theme });
+    // Expert: the departments view is audited too (Simplicity Charter §3).
+    await openFake(page, { theme, tier: 'expert' });
     await showEnterprise(page);
     const found = await audit(page, 'enterprise overview');
     await shot(page, `enterprise-${theme}`);
@@ -61,7 +62,8 @@ for (const theme of ['dark', 'light'] as const) {
   });
 
   test(`Tools & skills tab and stale heartbeat, ${theme} theme`, async ({ page }) => {
-    await openFake(page, { theme, heartbeatAgeSec: 3600 });
+    // Regular: the first tier that shows the Tools & skills tab.
+    await openFake(page, { theme, heartbeatAgeSec: 3600, tier: 'regular' });
     await page.getByRole('tab', { name: 'Tools & skills' }).click();
     await expect(page.getByRole('article', { name: 'gh' })).toBeVisible();
     const found = await audit(page, 'tools & skills');

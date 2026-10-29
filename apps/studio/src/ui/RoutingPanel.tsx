@@ -114,6 +114,8 @@ export function RoutingPanel({ est, n }: { est: NodeEstimate | undefined; n?: No
   const { reason, evidence } = splitEvidence(n?.reason ?? est?.reason);
   const score = n?.score ?? est?.score;
   const ref = n?.ref ?? est?.ref ?? undefined;
+  // Score breakdowns are an expert panel (Simplicity Charter §3).
+  const expert = useStudio((s) => s.prefs.tier === 'expert');
   return (
     <section aria-labelledby="detail-routing" className="routing">
       <h4 id="detail-routing">{t('routing.title')}</h4>
@@ -146,7 +148,7 @@ export function RoutingPanel({ est, n }: { est: NodeEstimate | undefined; n?: No
           </>
         )}
       </dl>
-      {est?.parts && <Parts parts={est.parts} />}
+      {expert && est?.parts && <Parts parts={est.parts} />}
       {est && <Steps est={est} />}
     </section>
   );

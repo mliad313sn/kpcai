@@ -25,7 +25,8 @@ function report(results: Record<string, Stats>): void {
 }
 
 test('Enterprise local actions answer in under 100 ms', async ({ page }) => {
-  await openFake(page);
+  // Expert: the team / departments toggle is timed too.
+  await openFake(page, { tier: 'expert' });
   await showEnterprise(page);
   const results: Record<string, Stats> = {};
   results['switch view (Alt+E)'] = await series(async (i) => {
@@ -59,7 +60,7 @@ test('Enterprise local actions answer in under 100 ms', async ({ page }) => {
 test('500 seats: windowed, keyboard reachable, smooth under a burst of updates', async ({
   page,
 }) => {
-  const fake = await openFake(page, { seats: 500 });
+  const fake = await openFake(page, { seats: 500, tier: 'expert' });
   const t0 = Date.now();
   await showEnterprise(page);
   await expect(page.getByRole('group', { name: 'Seats (500)' })).toBeVisible();

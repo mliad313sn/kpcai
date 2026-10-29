@@ -27,7 +27,8 @@ export interface ExecText {
   runStarted: (wp: string, purpose: string, top: string) => string;
   runSettled: (wp: string, status: string, label: string, basis: string) => string;
   gateOpen: (phase: string) => string;
-  gateClosed: (phase: string, verdict: string) => string;
+  /** `counted` undefined: no machine counted the findings, the Sponsor decided (P5-F6). */
+  gateClosed: (phase: string, verdict: string, counted?: number) => string;
   status: (type: string, actor: string) => string;
   amend: (type: string) => string;
   decision: (actor: string, text: string) => string;
@@ -81,7 +82,8 @@ const en: ExecText = {
   runStarted: (wp, p, top) => `${wp}: ${p} run started (band top ${top})`,
   runSettled: (wp, st, l, b) => `${wp}: ${st}, ${l} (${b})`,
   gateOpen: (p) => `phase ${p} reached its gate`,
-  gateClosed: (p, v) => `gate ${p}: ${v}`,
+  gateClosed: (p, v, n) =>
+    `gate ${p}: ${v} (${n === undefined ? 'the Sponsor decided, findings not counted by a machine' : `${n} open Critical/High`})`,
   status: (ty, a) => `${ty} by ${a}`,
   amend: (ty) => `charter ${ty}`,
   decision: (a, tx) => `decision by ${a}: "${tx}"`,
@@ -136,7 +138,8 @@ const fr: ExecText = {
   runStarted: (wp, p, top) => `${wp} : exécution ${p} démarrée (haut de fourchette ${top})`,
   runSettled: (wp, st, l, b) => `${wp} : ${st}, ${l} (${b})`,
   gateOpen: (p) => `la phase ${p} est à sa porte`,
-  gateClosed: (p, v) => `porte ${p} : ${v}`,
+  gateClosed: (p, v, n) =>
+    `porte ${p} : ${v} (${n === undefined ? 'décision du Sponsor, constats non comptés par une machine' : `${n} Critique/Élevé ouverts`})`,
   status: (ty, a) => `${ty} par ${a}`,
   amend: (ty) => `charte : ${ty}`,
   decision: (a, tx) => `décision de ${a} : « ${tx} »`,

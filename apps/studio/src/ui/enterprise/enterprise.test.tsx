@@ -27,7 +27,11 @@ async function openEnterprise(
   extra: Record<string, (p: unknown) => unknown> = {},
 ) {
   resetEnterprise();
-  ({ kernel } = await renderStudio({ ...enterpriseFake(snapshot(o)).handlers, ...extra }));
+  // Expert: every part of the view, departments included (Simplicity Charter §3).
+  ({ kernel } = await renderStudio(
+    { ...enterpriseFake(snapshot(o)).handlers, ...extra },
+    { tier: 'expert' },
+  ));
   const user = userEvent.setup();
   await user.click(screen.getByRole('button', { name: /^Enterprise/ }));
   // Focus moves to the view's heading (a frame later).
@@ -292,7 +296,7 @@ describe('Enterprise view (R-5E10)', () => {
     };
     setPrefs((p) => ({ ...p, locale: 'fr' }));
     resetEnterprise();
-    ({ kernel } = await renderStudio(enterpriseFake(empty).handlers));
+    ({ kernel } = await renderStudio(enterpriseFake(empty).handlers, { tier: 'regular' }));
     setPrefs((p) => ({ ...p, locale: 'fr' }));
     const user = userEvent.setup();
     await user.click(screen.getByRole('button', { name: /^Entreprise/ }));
@@ -308,7 +312,7 @@ describe('Enterprise view (R-5E10)', () => {
 
   it('switches views with Alt+E and the palette', async () => {
     resetEnterprise();
-    ({ kernel } = await renderStudio(enterpriseFake().handlers));
+    ({ kernel } = await renderStudio(enterpriseFake().handlers, { tier: 'regular' }));
     const user = userEvent.setup();
     await user.keyboard('{Alt>}e{/Alt}');
     expect(studio.getState().view).toBe('enterprise');

@@ -130,6 +130,22 @@ describe('the kernel fills the facts (D-028)', () => {
     expect(rec?.payload).toMatchObject({ providers: o.providers, source: 'api' });
   });
 
+  it('a patch to a control file says so; a plain one does not (D-035, P5-F2)', async () => {
+    const h = recordingHost({ KPAI_CONFIRM_ABOVE_USD: '100' });
+    h.fallback = true;
+    const k = new Kernel(h);
+    const request =
+      'add an OAuth state validator with tests [[diff:src/s.ts]] [[testdiff:vitest.config.ts]]';
+    const handle = await k.startRun({ request, options: { ...TEST_OPTIONS, isolated: true } });
+    await handle.done;
+    await k.applyPatches(handle.runId);
+    const asked = h.asked.filter((q) => q.kind === 'patch');
+    const control = asked.filter((q) => q.patch?.includes('vitest.config.ts'));
+    expect(control.length).toBeGreaterThan(0);
+    for (const q of asked) expect(q.control).toBe(control.includes(q));
+    await k.close();
+  });
+
   it('an isolated run’s writes are said to land in its worktree', async () => {
     const h = recordingHost({ KPAI_CONFIRM_ABOVE_USD: '100' });
     h.fallback = true;

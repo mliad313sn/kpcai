@@ -11,7 +11,8 @@ import { checkAction } from './envelope.js';
 import { sponsorYes } from './machine.js';
 import type { ProgramEvent } from './events.js';
 import type { Verdict } from './actions.js';
-import type { ProgramState, RunRecord } from './schemas.js';
+import type { ProgramState, RunRecord, SourceKind, SourcePolicy } from './schemas.js';
+import { permits, policyFor, type EffectivePolicy } from './sources.js';
 
 export interface PlannedRun {
   planId: string;
@@ -36,6 +37,11 @@ export interface RunStarter {
     request: string;
     packs: string[];
     purpose: 'work' | 'review';
+    /**
+     * The work package's effective source policy (portfolio, program, department, seat):
+     * the kernel run is held to it, in-run fallback included (P5-F3).
+     */
+    policy?: EffectivePolicy;
   }): Promise<PlannedRun>;
   /** Starts the planned run in its own worktree. Never called unless the envelope allowed. */
   start(planId: string, options: { isolated: true }): Promise<StartedRun>;
@@ -53,6 +59,10 @@ export interface RunResult {
   assurance?: 'V0' | 'V1' | 'V2';
   /** Model text for people to read. Never parsed, never acted on. */
   untrustedSummary?: string;
+  /** Providers that actually served the run's steps, with their source (ADR-0033, D-028). */
+  sources?: Array<{ provider: string; source: SourceKind }>;
+  /** What the run delivered: code needs V2 to count as verified, documents V1 (P5-F8). */
+  deliverable?: 'code' | 'doc';
 }
 
 export type Delegation =
@@ -66,6 +76,8 @@ export interface DelegateOptions {
   purpose?: 'work' | 'review';
   /** Id for the escalation if one is needed. */
   escalationId: string;
+  /** The portfolio's source policy, the outermost level (P5-F3). */
+  portfolio?: SourcePolicy;
 }
 
 /**
@@ -87,12 +99,14 @@ export async function delegate(
     const verdict = refusal(`${wpId} is not in the current phase`);
     return { outcome: 'refused', verdict };
   }
+  const policy = policyFor(state.charter, wpId, o.portfolio);
   const plan = await kernel.plan({
     programId: state.charter.programId,
     wpId,
     request,
     packs: packsFor(state, wp?.lead),
     purpose,
+    policy,
   });
   const action = {
     kind: 'run.start',
@@ -103,7 +117,7 @@ export async function delegate(
     source: plan.source,
     providers: plan.providers,
   };
-  const verdict = checkAction(state, action, o.now);
+  const verdict = outsidePolicy(policy, plan) ?? checkAction(state, action, o.now);
   if (verdict.verdict === 'refuse') return { outcome: 'refused', verdict };
   if (verdict.verdict === 'escalate' && !sponsorYes(state, verdict.rule, wpId, plan.capUsd))
     return { outcome: 'escalated', verdict, event: escalation(o, verdict, wpId, plan.capUsd) };
@@ -136,6 +150,13 @@ function runRecord(
   };
 }
 
+/** The plan's providers against the whole policy, the portfolio's included (P5-F3). */
+function outsidePolicy(policy: EffectivePolicy, plan: PlannedRun): Verdict | undefined {
+  const out = plan.providers.find((p) => !permits(policy, plan.source, p));
+  if (!out) return undefined;
+  return refusal(`${plan.source}:${out} is outside the source policy`, 'source.policy');
+}
+
 /** The `run.settled` event for a result: typed fields only. */
 export function settleEvent(r: RunResult): ProgramEvent {
   return {
@@ -147,6 +168,8 @@ export function settleEvent(r: RunResult): ProgramEvent {
     hours: r.hours,
     evidence: r.evidence,
     ...(r.assurance ? { assurance: r.assurance } : {}),
+    ...(r.sources ? { sources: r.sources.slice(0, 20) } : {}),
+    ...(r.deliverable ? { deliverable: r.deliverable } : {}),
   };
 }
 
@@ -180,6 +203,6 @@ function packsFor(s: ProgramState, lead: string | undefined): string[] {
   return [...new Set([...s.charter.packs, ...(seat?.packs ?? [])])];
 }
 
-function refusal(reason: string): Verdict {
-  return { verdict: 'refuse', rule: 'run.scope', reason };
+function refusal(reason: string, rule = 'run.scope'): Verdict {
+  return { verdict: 'refuse', rule, reason };
 }

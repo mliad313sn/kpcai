@@ -10,6 +10,8 @@ export interface Prefs {
   onboarded?: boolean;
   theme?: 'system' | 'dark' | 'light';
   locale?: 'system' | 'en' | 'fr';
+  /** Simplicity Charter tier; left out, the console's default (Beginner). */
+  tier?: 'beginner' | 'regular' | 'expert';
 }
 
 export interface Fixtures {

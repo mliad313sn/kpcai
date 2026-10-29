@@ -94,3 +94,18 @@ KP Studio will **not** ship the following. Proposing one needs a Sponsor decisio
   - axe on every view.
 - **Gate review:** the independent reviewer checks §1 for every new user-visible feature. A failed test is a **Medium** finding, and a **High** one when it breaks "safe if ignored".
 - **Yearly prune:** the PO lists features with under 2 % use among opting-in users (from local, opt-in counters only) or that fail §1 today, and removes or demotes them.
+
+## 8. One in, one out: ledger
+
+The ledger started in [SCOPE-REVIEW.md](SCOPE-REVIEW.md) §4. Entries from phase 5 onward are kept here.
+
+**PO note (D-035, finding P5-F5, 2026-10-29).** The console now has the §3 tiers: Beginner (the default on first run), Regular and Expert. The tier is kept per viewer in browser storage (Beginner when storage is unavailable). It is set from a visible "Level" switch in the header and from the command palette, in French and English.
+
+| Added to the default experience                                                    | Removed or hidden from the default experience (Beginner)                                                                        |
+| ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| The "Level" switch (Beginner, Regular, Expert)                                     | The Workspace / Enterprise switch and Alt+E, until a program exists or the user picks "Delegate a whole project"; then it stays |
+| One palette entry, "Delegate a whole project"                                      | The palette's "Show the Enterprise view", "Go to Tools & skills" and `/tools` entries                                           |
+| "Stop everything" in the header whenever a program runs, on every tier             | The Tools & skills tab (shown from Regular)                                                                                     |
+| Beginner labels for the view switch: "My tasks", "Delegated projects", "questions" | The org map's team / departments toggle and the score breakdown table (shown in Expert only)                                    |
+
+Not yet done: the offer to move to Regular after 5 finished tasks (§3), and the tiers in the terminal client.

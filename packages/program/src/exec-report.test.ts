@@ -141,6 +141,19 @@ describe('executive report v2 (S10 R4)', () => {
       expect(r.verified).toBe(false);
       expect(r.headline).toMatch(/^Delivered\. Not verified: /);
     }
+    // P5-F6: a gate closed on the Sponsor's word alone says so.
+    const t = execText('fr');
+    expect(t.gateClosed('p1', 'pass')).toBe(
+      'porte p1 : pass (décision du Sponsor, constats non comptés par une machine)',
+    );
+    expect(t.gateClosed('p1', 'hold', 2)).toBe('porte p1 : hold (2 Critique/Élevé ouverts)');
+    expect(execText('en').gateClosed('p1', 'pass')).toMatch(/the Sponsor decided/);
+    // P5-F7: a gate or milestone report is not a delivery: never "verified", even with
+    // every piece of evidence there.
+    for (const kind of ['gate', 'milestone', 'digest'] as const) {
+      const r = buildExecutiveReport(running(), { events: [], metrics: good }, { kind, now: NOW });
+      expect(r.verified).toBe(false);
+    }
   });
 
   it('shows assurance labels and flags results below V2 as the top risk', () => {
@@ -245,7 +258,7 @@ describe('executive report v2 (S10 R4)', () => {
       'you approved the charter',
       'the program started',
       'phase p1 reached its gate',
-      'gate p1: pass',
+      'gate p1: pass (0 open Critical/High)',
       'pause by sponsor',
       'decision by po: "Use M4 screws"',
       'you answered yes to e0',

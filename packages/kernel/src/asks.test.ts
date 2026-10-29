@@ -17,7 +17,12 @@ describe('consequential questions (G2)', () => {
     expect(consequentialAsk(q({ kind: 'dispute' }))).toBe(true);
     expect(consequentialAsk(q({ kind: 'tool', risk: 'destructive' }))).toBe(true);
     expect(consequentialAsk(q({ kind: 'tool', risk: 'write', physical: true }))).toBe(true);
-    expect(consequentialAsk(q({ kind: 'tool', risk: 'write' }))).toBe(false);
+    expect(consequentialAsk(q({ kind: 'tool', risk: 'write', inWorktree: true }))).toBe(false);
+    expect(consequentialAsk(q({ kind: 'tool', risk: 'read' }))).toBe(false);
+    // D-035 (P5-F2): project code past the worktree, control files, spend past the cap.
+    expect(consequentialAsk(q({ kind: 'tool', risk: 'write' }))).toBe(true);
+    expect(consequentialAsk(q({ kind: 'patch', inWorktree: true, control: true }))).toBe(true);
+    expect(consequentialAsk(q({ kind: 'memory', overCap: true }))).toBe(true);
     expect(consequentialAsk(q({ kind: 'memory' }))).toBe(false);
   });
 

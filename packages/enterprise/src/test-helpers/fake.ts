@@ -1,5 +1,6 @@
 /** A fake kernel side for the daemon: plans with chosen figures, runs settled by the test. */
 import type { RunOutcome } from '@kernelpai/kernel';
+import { vi } from 'vitest';
 import type { PlannedRun } from '@kernelpai/program';
 import type { ProgramStarter } from '../context.js';
 import { watch } from '../dispatch.js';
@@ -55,4 +56,18 @@ export function fakeStarter(rt: EnterpriseRuntime): Fake {
   };
   rt.ctx.starter = fake;
   return fake;
+}
+
+/**
+ * The kernel's `cancel`, `pause` and `resume` on a fake's runs: a cancel settles the run
+ * cancelled (as the kernel does); pause and resume are recorded. Returns the cancel spy.
+ */
+export function cancelling(w: { kernel: EnterpriseRuntime['ctx']['kernel'] }, fake: Fake) {
+  vi.spyOn(w.kernel, 'pause').mockImplementation(() => undefined);
+  vi.spyOn(w.kernel, 'resume').mockImplementation(() => undefined);
+  return vi.spyOn(w.kernel, 'cancel').mockImplementation((runId) => {
+    const run = fake.runs.find((r) => r.runId === runId);
+    run?.finish({ ...FINISHED, cancelled: true });
+    return run !== undefined;
+  });
 }

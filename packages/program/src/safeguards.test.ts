@@ -6,9 +6,11 @@ import {
   effectiveExpiry,
   envelopeExpired,
   noProgress,
+  progressLine,
   progressOf,
   spendLastHour,
   velocityBlocker,
+  verifiedRun,
 } from './safeguards.js';
 import { deadMan, watchdog } from './watchdog.js';
 import { NOW, run, running } from './test-helpers/fixtures.js';
@@ -76,7 +78,7 @@ describe('progress-gated burn (S10 R3)', () => {
 
   it('a verified result per quarter keeps it running', () => {
     const s = withRuns(running(), [
-      run({ runId: 'a', status: 'finished', costUsd: 1, assurance: 'V1' }),
+      run({ runId: 'a', status: 'finished', costUsd: 1, assurance: 'V1', deliverable: 'doc' }),
       run({ runId: 'b', status: 'finished', costUsd: 1, assurance: 'V0' }),
     ]);
     expect(noProgress(s)).toMatchObject({ checkpoint: 2, verified: 1 });
@@ -85,6 +87,33 @@ describe('progress-gated burn (S10 R3)', () => {
       run({ runId: 'b', status: 'finished', costUsd: 1, assurance: 'V2' }),
     ]);
     expect(noProgress(two)).toBeUndefined();
+  });
+
+  it('code counts at V2, documents at V1, as in NORTH-STAR.md (P5-F8)', () => {
+    const code = withRuns(running(), [
+      run({ runId: 'a', status: 'finished', costUsd: 1, assurance: 'V1', deliverable: 'code' }),
+    ]);
+    expect(noProgress(code)).toMatchObject({ checkpoint: 1, verified: 0 });
+    // An unknown deliverable is held to the code bar.
+    const unknown = withRuns(running(), [
+      run({ runId: 'a', status: 'finished', costUsd: 1, assurance: 'V1' }),
+    ]);
+    expect(noProgress(unknown)?.verified).toBe(0);
+    const doc = withRuns(running(), [
+      run({ runId: 'a', status: 'finished', costUsd: 1, assurance: 'V1', deliverable: 'doc' }),
+    ]);
+    expect(noProgress(doc)).toBeUndefined();
+    expect(verifiedRun({ assurance: 'V2', deliverable: 'code' })).toBe(true);
+    expect(progressLine(code)).toBe(
+      'p1: $1.00 of $4.00 spent, 0 verified result(s) (code needs V2, documents V1)',
+    );
+  });
+
+  it('at the gate no pause is added; the figures go into the gate question', () => {
+    const s = withRuns(running(), [run({ status: 'finished', costUsd: 3, assurance: 'V0' })]);
+    expect(noProgress({ ...s, status: 'gate' })).toBeUndefined();
+    expect(progressLine({ ...s, status: 'gate' })).toMatch(/0 verified result/);
+    expect(progressLine({ ...s, phaseIndex: 9 })).toBe('');
   });
 
   it('below a quarter, or not running, never pauses', () => {
@@ -111,6 +140,12 @@ describe('approvals (S10 R8)', () => {
       'envelope.widen',
       'gate.pass',
       'confirm.destructive',
+      // D-035 (P5-F2): over-cap spend, project code, outside writes, control files.
+      'confirm.overcap',
+      'confirm.unbounded',
+      'confirm.exec',
+      'confirm.outside',
+      'confirm.control',
       'x',
     ])
       expect(approvalClass({ rule })).toBe('consequential');
